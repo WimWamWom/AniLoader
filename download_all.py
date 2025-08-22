@@ -152,27 +152,6 @@ def rename_latest_episode(latest_folder, season, episode, title, language):
         print(f"[FEHLER] Umbenennen: {e}")
         return False
 
-def sort_series_folder(series_folder):
-    """Sortiert Dateien in Unterordner: Filme, Staffel 1, Staffel 2…"""
-    if not os.path.exists(series_folder):
-        return
-    for file in os.listdir(series_folder):
-        file_path = os.path.join(series_folder, file)
-        if not os.path.isfile(file_path):
-            continue
-        # Filme
-        if re.match(r'filme|film', file, re.I):
-            target_folder = os.path.join(series_folder, "Filme")
-        else:
-            m = re.search(r'S(\d+)E\d+', file, re.I)
-            if m:
-                season_num = int(m.group(1))
-                target_folder = os.path.join(series_folder, f"Staffel {season_num}")
-            else:
-                target_folder = os.path.join(series_folder, "Andere")
-        os.makedirs(target_folder, exist_ok=True)
-        shutil.move(file_path, os.path.join(target_folder, file))
-
 def run_download(cmd):
     try:
         process = subprocess.run(cmd, capture_output=True, text=True)
@@ -190,24 +169,21 @@ def download_episode(episode_url, season, episode, anime_id, german_only=False):
     series_title = get_series_title(episode_url)
     if not series_title: return False
     series_folder = os.path.join(DOWNLOAD_DIR, series_title)
-    os.makedirs(series_folder, exist_ok=True)
     if episode_already_downloaded(series_folder, season, episode):
         return True
 
     langs_to_try = ["German Dub"] if german_only else LANGUAGES
     for lang in langs_to_try:
-        cmd = ["aniworld", "--language", lang, "-o", series_folder, "--episode", episode_url]
+        cmd = ["aniworld", "--language", lang, "-o", DOWNLOAD_DIR, "--episode", episode_url]
         result = run_download(cmd)
         if result == "OK":
             title = get_episode_title(episode_url)
             rename_latest_episode(series_folder, season, episode, title, lang)
-            sort_series_folder(series_folder)
             return True
     return False
 
 def download_films(base_url, anime_id, german_only=False):
     film_num = 1
-    conn = sqlite3.connect(DB_PATH)
     while True:
         url = f"{base_url}/filme/film-{film_num}"
         success = download_episode(url, 0, film_num, anime_id, german_only)
@@ -215,7 +191,6 @@ def download_films(base_url, anime_id, german_only=False):
         update_anime(anime_id, last_film=film_num)
         film_num += 1
         time.sleep(1)
-    conn.close()
 
 def download_seasons(base_url, anime_id, german_only=False, start_season=1, start_episode=1):
     season = start_season
