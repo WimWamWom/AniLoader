@@ -2,10 +2,3 @@ https://github.com/phoenixthrush/AniWorld-Downloader
 
 aniworld --episode-file B:\Aniloader\Anime.txt --language "German Dub" -o B:\Anime
 aniworld --language "German Dub" -o B:\Aniloader\Anime --episode https://aniworld.to/anime/stream/classroom-of-the-elite/staffel-1/episode-1
-
-VOE
-Vidmoly
-Doodstream
-Vidoza
-Streamtape
-SpeedFiles

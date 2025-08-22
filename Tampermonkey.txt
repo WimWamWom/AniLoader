@@ -1,0 +1,64 @@
+// ==UserScript==
+// @name         AniWorld Export Button (unter Episodenliste)
+// @namespace    http://tampermonkey.net/
+// @version      1.4
+// @description  Fügt einen Export-Button unter die Episodenliste ein, um den Anime-Link an ein lokales Python-Skript zu senden.
+// @author       Wim
+// @match        https://aniworld.to/anime/stream/*
+// @grant        GM_openInTab
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Funktion, um die Basis-URL des Animes zu extrahieren
+    function getAnimeBaseUrl() {
+        const url = window.location.href;
+        const match = url.match(/https:\/\/aniworld\.to\/anime\/stream\/([^\/]+)/);
+        return match ? `https://aniworld.to/anime/stream/${match[1]}` : url;
+    }
+
+    // Container mit Staffel- und Episodenübersicht
+    const streamContainer = document.querySelector('#stream');
+    if (!streamContainer) return;
+
+    // Wrapper für Button erstellen
+    const buttonWrapper = document.createElement("div");
+    buttonWrapper.style.marginTop = "16px";  // Abstand nach oben
+    buttonWrapper.style.marginBottom = "16px"; // Abstand nach unten
+    buttonWrapper.style.textAlign = "left";  // Button mittig ausrichten
+
+    // Button erstellen
+    const exportButton = document.createElement("button");
+    exportButton.innerText = "📤 Anime-Link exportieren";
+    exportButton.style.backgroundColor = "rgba(99,124,249,1)";
+    exportButton.style.color = "white";
+    exportButton.style.fontSize = "15px";
+    exportButton.style.fontWeight = "bold";
+    exportButton.style.padding = "10px 18px";
+    exportButton.style.border = "none";
+    exportButton.style.borderRadius = "8px";
+    exportButton.style.cursor = "pointer";
+    exportButton.style.boxShadow = "0px 3px 8px rgba(0,0,0,0.25)";
+    exportButton.style.transition = "all 0.25s ease-in-out";
+
+    // Hover-Effekt
+    exportButton.addEventListener("mouseover", () => {
+        exportButton.style.backgroundColor = "rgba(79,104,229,1)";
+    });
+    exportButton.addEventListener("mouseout", () => {
+        exportButton.style.backgroundColor = "rgba(99,124,249,1)";
+    });
+
+    // Klick-Event: Anime-Link an Python-Skript senden
+    exportButton.addEventListener("click", () => {
+        const animeUrl = getAnimeBaseUrl();
+        GM_openInTab(`http://127.0.0.1:5000/export?url=${encodeURIComponent(animeUrl)}`, { active: true });
+    });
+
+    // Button in Wrapper setzen
+    buttonWrapper.appendChild(exportButton);
+
+    // Button direkt UNTER den Container mit Episoden platzieren
+    streamContainer.insertAdjacentElement("afterend", buttonWrapper);
+})();
