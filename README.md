@@ -71,6 +71,7 @@ https://s.to/serie/stream/the-rookie
 Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Anime/ der Serie sein, nicht zu einer spezifischen Folge.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Nutzung
 
 ### Alle Anime herunterladen
