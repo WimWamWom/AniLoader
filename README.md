@@ -45,7 +45,7 @@ AniWorld-Downloader/
 └─ README.md                              # Diese Datei
 ```
 
-
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 ## Installation
 
 1. **Repository klonen**
@@ -70,7 +70,7 @@ https://s.to/serie/stream/the-rookie
 ```
 Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Anime/ der Serie sein, nicht zu einer spezifischen Folge.
 
-
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 ## Nutzung
 
 ### Alle Anime herunterladen
@@ -98,7 +98,7 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 - `ANIME_TXT`: Pfad zur Anime-Textdatei
 - `LANGUAGES`: Reihenfolge und Sprachen, die beim Download versucht werden
 - `DB_PATH`: Speicherort der JSON-Datenbank
-
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 ## Beispiele
 
 ### Dateiname nach Download
@@ -153,7 +153,9 @@ Umbenannt in: S01E004 - Freundschaft und Rivalen [Sub].mp4
 [NO_STREAMS] Episode S01E05: Kein Stream verfügbar.
 [INFO] Staffel 1 beendet nach 4 Episoden.
 ```
-
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 ## Lizenz
 
-Dieses Projekt ist unter der MIT-Lizenz lizenziert.
+Dieses Projekt ist unter der [MIT-Lizenz](https://github.com/WimWamWom/AniLoader/blob/main/LICENSE) lizenziert. </br>
+Genauer Informatoinen stehen in der LICENSE-Datei.
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
