@@ -1,4 +1,7 @@
+<a id="readme-top"></a>
+
 # AniLoader
+
 <ins> ***Momentan noch in Arbeit.*** </ins> </br>
 ***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
 Ein Python-Skript zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf deutsche Dub- oder Sub-Versionen. Das Skript verwaltet eine JSON-Datenbank, überprüft fehlende Episoden und benennt heruntergeladene Dateien automatisch sauber um.
@@ -100,6 +103,7 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 - `LANGUAGES`: Reihenfolge und Sprachen, die beim Download versucht werden
 - `DB_PATH`: Speicherort der JSON-Datenbank
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Beispiele
 
 ### Dateiname nach Download
@@ -155,6 +159,7 @@ Umbenannt in: S01E004 - Freundschaft und Rivalen [Sub].mp4
 [INFO] Staffel 1 beendet nach 4 Episoden.
 ```
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Lizenz
 
 Dieses Projekt ist unter der [MIT-Lizenz](https://github.com/WimWamWom/AniLoader/blob/main/LICENSE) lizenziert. </br>
