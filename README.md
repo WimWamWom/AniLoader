@@ -46,19 +46,19 @@ AniWorld-Downloader/
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Installation
 
 1. **Repository klonen**
 
-`git clone https://github.com/dein-nutzername/aniworld-downloader.git`
-cd aniworld-downloader
+- ```git clone https://github.com/dein-nutzername/aniworld-downloader.git```
 
 2. **Python-Abhängigkeiten installieren**
 
-```pip install requests beautifulsoup4```
+- ```pip install requests beautifulsoup4```
 
 3. **Download-Tool `aniworld` installieren**  
-Stelle sicher, dass das CLI-Tool `pip install aniworld` auf deinem System verfügbar ist.
+- Stelle sicher, dass das CLI-Tool `pip install aniworld` auf deinem System verfügbar ist.
 
 
 ### Anime-Liste-erstellen
