@@ -1,5 +1,6 @@
 # AniLoader
 <ins> ***Momentan noch in Arbeit.*** </ins> </br>
+***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
 Ein Python-Skript zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf deutsche Dub- oder Sub-Versionen. Das Skript verwaltet eine JSON-Datenbank, überprüft fehlende Episoden und benennt heruntergeladene Dateien automatisch sauber um.
 
 ---
