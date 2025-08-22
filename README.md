@@ -51,7 +51,7 @@ AniWorld-Downloader/
 
 1. **Repository klonen**
 
-- ```git clone https://github.com/dein-nutzername/aniworld-downloader.git```
+- ```https://github.com/WimWamWom/AniLoader```
 
 2. **Python-Abhängigkeiten installieren**
 
