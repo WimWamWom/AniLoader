@@ -45,7 +45,7 @@ AniWorld-Downloader/
 ```
 
 
-## ⚙️ Installation
+## Installation
 
 1. **Repository klonen**
 
@@ -153,6 +153,6 @@ Umbenannt in: S01E004 - Freundschaft und Rivalen [Sub].mp4
 [INFO] Staffel 1 beendet nach 4 Episoden.
 ```
 
-## 📌 Lizenz
+## Lizenz
 
 Dieses Projekt ist unter der MIT-Lizenz lizenziert.
