@@ -12,7 +12,7 @@ import shutil
 
 # -------------------- Konfiguration --------------------
 BASE_DIR = Path(__file__).resolve().parent
-ANIME_TXT = BASE_DIR / "Anime.txt"
+ANIME_TXT = BASE_DIR / "Download.txt"
 DOWNLOAD_DIR = BASE_DIR / "Anime"
 DB_PATH = BASE_DIR / "anime.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
