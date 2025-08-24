@@ -8,9 +8,9 @@ import re
 
 # ------------------ Konfiguration ------------------
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ANIME_TXT = os.path.join(BASE_DIR, "Anime.txt")
-DOWNLOAD_DIR = os.path.join(BASE_DIR, "Anime")
+BASE_DIR = Path(__file__).resolve().parent
+ANIME_TXT = BASE_DIR / "Download.txt"
+DOWNLOAD_DIR = BASE_DIR / "Downloads"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 
 # ------------------ Hilfsfunktionen ------------------

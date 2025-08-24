@@ -1,8 +1,11 @@
 import sqlite3
 import json
+from pathlib import Path
 
 # Pfad zur Datenbankdatei
-DB_PATH = r"C:\Users\Wim\Desktop\AniLoader\anime.db"
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "download.db"
+
 
 def insert_or_update_anime():
     conn = sqlite3.connect(DB_PATH)
