@@ -12,14 +12,14 @@ def insert_or_update_anime():
     c = conn.cursor()
 
     # Werte definieren
-    title = "SOKO Wismar"
-    url = "https://s.to/serie/stream/soko-wismar"
-    complete = 0
+    title = "Rascal Does Not Dream of Bunny Girl Senpai"
+    url = "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai"
+    complete = 1
     deutsch_komplett = 0
-    fehlende_deutsch_folgen = json.dumps([])  # als JSON-String speichern
-    last_film = 0
-    last_episode = 26
-    last_season = 16
+    fehlende_deutsch_folgen = json.dumps(["https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-1/episode-13","https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-1", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-2", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-3", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-4", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-5", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-6", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-7", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-8"])  # als JSON-String speichern
+    last_film = 3
+    last_episode = 8
+    last_season = 1
 
     # Insert oder Update bei vorhandenem url (wegen UNIQUE constraint)
     c.execute("""
