@@ -6,20 +6,38 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "download.db"
 
-
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS anime (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            url TEXT UNIQUE,
+            complete BOOLEAN DEFAULT 0,
+            deutsch_komplett BOOLEAN DEFAULT 0,
+            fehlende_deutsch_folgen TEXT DEFAULT '[]',
+            last_film INTEGER DEFAULT 0,
+            last_episode INTEGER DEFAULT 0,
+            last_season INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+    
 def insert_or_update_anime():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     # Werte definieren
-    title = "Rascal Does Not Dream of Bunny Girl Senpai"
-    url = "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai"
-    complete = 1
+    title = "Nicht nachmachen!"
+    url = "https://s.to/serie/stream/nicht-nachmachen"
+    complete = 0
     deutsch_komplett = 0
-    fehlende_deutsch_folgen = json.dumps(["https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-1/episode-13","https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-1", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-2", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-3", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-4", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-5", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-6", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-7", "https://aniworld.to/anime/stream/rascal-does-not-dream-of-bunny-girl-senpai/staffel-2/episode-8"])  # als JSON-String speichern
-    last_film = 3
-    last_episode = 8
-    last_season = 1
+    fehlende_deutsch_folgen = json.dumps([])  # als JSON-String speichern
+    last_film = 0
+    last_episode = 0
+    last_season = 0
 
     # Insert oder Update bei vorhandenem url (wegen UNIQUE constraint)
     c.execute("""
@@ -40,4 +58,6 @@ def insert_or_update_anime():
     print("Eintrag wurde erfolgreich hinzugefügt oder aktualisiert.")
 
 if __name__ == "__main__":
-    insert_or_update_anime()
+    init_db()  # Tabelle erstellen, falls sie nicht existiert
+
+

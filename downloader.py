@@ -165,7 +165,7 @@ def delete_old_non_german_versions(series_folder, season, episode):
                 os.remove(file)
                 print(f"[DEL] Alte Version gelöscht: {file.name}")
             except Exception as e:
-                print(f"[FEHLER] Konnte Datei nicht löschen: {file.name} → {e}")
+                print(f"[FEHLER] Konnte Datei nicht löschen: {file.name} -> {e}")
 
 def rename_downloaded_file(series_folder, season, episode, title, language):
     lang_suffix = {
@@ -205,7 +205,7 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
 
     try:
         shutil.move(file_to_rename, new_path)
-        print(f"[OK] Umbenannt: {file_to_rename.name} → {new_name}")
+        print(f"[OK] Umbenannt: {file_to_rename.name} -> {new_name}")
         return True
     except Exception as e:
         print(f"[FEHLER] Umbenennen fehlgeschlagen: {e}")
@@ -237,11 +237,11 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     german_available = False
 
     for lang in langs_to_try:
-        print(f"[DOWNLOAD] Versuche {lang} → {episode_url}")
+        print(f"[DOWNLOAD] Versuche {lang} -> {episode_url}")
         cmd = ["aniworld", "--language", lang, "-o", DOWNLOAD_DIR, "--episode", episode_url]
         result = run_download(cmd)
         if result == "NO_STREAMS":
-            print(f"[INFO] Kein Stream verfügbar: {episode_url} → Abbruch")
+            print(f"[INFO] Kein Stream verfügbar: {episode_url} -> Abbruch")
             return "NO_STREAMS"
         elif result == "OK":
             title = get_episode_title(episode_url)
@@ -255,7 +255,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
         elif result == "LANGUAGE_ERROR":
             continue
 
-    # Wenn German Dub nicht verfügbar → in fehlende_deutsch_folgen speichern
+    # Wenn German Dub nicht verfügbar -> in fehlende_deutsch_folgen speichern
     if not german_available:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -316,7 +316,7 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
         else:
             consecutive_empty_seasons = 0
 
-        # Wenn 2 leere Staffeln in Folge → Serie abgeschlossen
+        # Wenn 2 leere Staffeln in Folge -> Serie abgeschlossen
         if consecutive_empty_seasons >= 2:
             print(f"[INFO] Keine weiteren Staffeln gefunden. '{series_title}' scheint abgeschlossen zu sein.")
             update_anime(anime_id, complete=True)

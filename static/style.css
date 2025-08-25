@@ -1,0 +1,134 @@
+/* ---------------- Grundlayout ---------------- */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    background-color: #0d0d0d;
+    color: #f0f0f0;
+}
+
+header {
+    background-color: #141414;
+    padding: 20px;
+    text-align: center;
+    font-size: 1.8em;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #637cf9;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+
+nav {
+    display: flex;
+    justify-content: center;
+    background-color: #1a1a1a;
+    padding: 12px;
+    gap: 12px;
+    border-bottom: 1px solid #333;
+}
+
+nav .tab {
+    padding: 10px 25px;
+    cursor: pointer;
+    background-color: #222;
+    border: none;
+    color: #637cf9;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+nav .tab:hover,
+nav .tab.active {
+    background-color: #637cf9;
+    color: #0d0d0d;
+    box-shadow: 0 4px 12px rgb(22, 53, 209);
+}
+
+main {
+    padding: 25px;
+    max-width: 1200px;
+    margin: auto;
+}
+
+/* ---------------- Tabellen ---------------- */
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background-color: #1a1a1a;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 15px;
+    box-shadow: 0 0 20px rgb(22, 53, 209);
+}
+
+table th {
+    background-color: #222;
+    padding: 12px;
+    color: #637cf9;
+    font-weight: bold;
+    text-align: left;
+}
+
+table td {
+    padding: 12px;
+    border-top: 1px solid #333;
+    color: #f0f0f0;
+}
+
+/* Links in Tabelle */
+table a {
+    
+    color: #637cf9;
+    text-decoration: none;
+}
+
+table a:hover {
+    text-decoration: underline;
+}
+
+/* ---------------- Live Log ---------------- */
+pre {
+    background-color: #1a1a1a;
+    padding: 15px;
+    height: 450px;
+    overflow-y: scroll;
+    border-radius: 10px;
+    border: 1px solid #333;
+    box-shadow: inset 0 0 10px rgba(255,102,0,0.2);
+    font-family: Consolas, monospace;
+    font-size: 0.95em;
+}
+
+/* ---------------- Buttons ---------------- */
+button {
+    font-family: inherit;
+    font-size: 1em;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+#download button {
+    background-color: #637cf9;
+    color: #0d0d0d;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgb(22, 53, 209);
+}
+
+/* ---------------- Tab Content ---------------- */
+.tab-content {
+    animation: fadeIn 0.3s ease;
+}
+
+/* ---------------- Animation ---------------- */
+@keyframes fadeIn {
+    from {opacity: 0;}
+    to {opacity: 1;}
+}
