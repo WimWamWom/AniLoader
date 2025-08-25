@@ -4,7 +4,7 @@
 
 <ins>***Momentan noch in Arbeit.***</ins> </br>
 ***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
-Ein Python-Skript zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf **deutsche Dub- oder Sub-Versionen**.  
+Ein Python-Skript mit optionalem Webinterface zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf **deutsche Dub- oder Sub-Versionen**.  
 Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden**, benennt heruntergeladene Dateien automatisch sauber um und sortiert **Filme** und **Staffeln** nach dem Download in Unterordner.
 
 ---
@@ -15,6 +15,7 @@ Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden*
 - [Nutzung](#nutzung)
 - [Hinweise](#hinweise)
 - [Beispiele](#beispiele)
+- [Lizenz](#lizenz)
 
 ---
 
@@ -36,12 +37,11 @@ Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden*
   - Filme → `Filme`
   - Staffeln → `Staffel 1`, `Staffel 2`, …
 - Option, nur **fehlende deutsche Folgen** (`german`) oder **neue Episoden** (`new`) zu prüfen
+- **Webinterface** zur Kontrolle des Downloads, Überwachung der Logs und Datenbankabfrage
 
 ---
 
 ## Dateistruktur
-
-
 
 ```
 AniLoader/
@@ -53,13 +53,16 @@ AniLoader/
 │ │ │ ├─ Film01.mp4
 │ │ │ └─ ...
 │ │ ├─ Staffel 1/
-│ │ │ ├─ S01E001 - Titel [Dub].mp4
+│ │ │ ├─ S01E001 - Titel.mp4
 │ │ │ └─ ...
 │ │ ├─ Staffel 2/
 │ │ │ ├─ S02E001 - Titel [Sub].mp4
 │ │ │ └─ ...
 ├─ downloader.py # Hauptskript
-└─ README.md # Diese Datei
+├─ combined_web_downloader.py # Hauptskript mit Webinterface
+├─ templates/ # HTML-Templates für Webinterface
+├─ static/ # CSS/JS für Webinterface
+└─ README.md # README
 ```
 
 
@@ -76,7 +79,9 @@ git clone https://github.com/WimWamWom/AniLoader
 
 2. **Python-Abhängigkeiten installieren**
 
-- ```pip install requests beautifulsoup4 aniworld```
+```
+pip install requests beautifulsoup4 flask aniworld
+ ```
 
 
 ### Download-Liste erstellen
@@ -93,7 +98,9 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 
 ## Nutzung
 
-### Alle Anime herunterladen
+### AniLoader als lokales Programm
+
+#### Alle Anime herunterladen
 
 ```
 py AniLoader.py
@@ -103,7 +110,7 @@ py AniLoader.py
 - Aktualisiert die SQLite-Datenbank und markiert abgeschlossene Anime
 - Sortiert die Dateien automatisch in Unterordner
 
-### Nur fehlende deutsche Folgen herunterladen
+#### Nur fehlende deutsche Folgen herunterladen
 
 ```
 py AniLoader.py german
@@ -112,7 +119,7 @@ py AniLoader.py german
 - Prüft nur Anime mit fehlenden deutschen Folgen (`fehlende_deutsch_folgen`) und lädt diese herunter
 - Löscht automatisch folgen welche nun Syncro haben
 
-### Neue Episoden prüfen und herunterladen
+#### Neue Episoden prüfen und herunterladen
 
 ```
 py AniLoader.py new
@@ -120,6 +127,25 @@ py AniLoader.py new
 
 - Prüft bei jedem Anime nach neuen Filmen oder Staffeln ab der letzten heruntergeladenen Folge
 - Lädt neue Episoden herunter und aktualisiert die Datenbank
+
+### AniLoader mit Webinterface
+
+#### Starten 
+Starte das Programm mit 
+```
+py fullweb.py
+```
+
+#### Web-Interface
+Öffne im Browser: [http://localhost:5000](http://localhost:5000)
+
+##### Features
+- Start/Stop von Downloads
+- Überwachung von Logs in Echtzeit
+- Datenbankeinträge anzeigen, filtern und sortieren
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 ## Hinweise
 ### Good to Know
