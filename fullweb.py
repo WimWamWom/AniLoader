@@ -67,6 +67,20 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+# -------------------- DB-Update-Funktion --------------------
+def update_db():
+    if not ANIME_TXT.exists():
+        log(f"[FEHLER] Download.txt nicht gefunden: {ANIME_TXT}")
+        return
+
+    with open(ANIME_TXT, "r", encoding="utf-8") as f:
+        links = [line.strip() for line in f if line.strip()]
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    for url in links:
+        insert_anime(url=url)
+    conn.commit()
+    conn.close()
 
 def insert_anime(url, title=None):
     conn = sqlite3.connect(DB_PATH)
@@ -580,6 +594,7 @@ def index():
 # -------------------- Entrypoint --------------------
 if __name__ == "__main__":
     init_db()
+    update_db()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     log("[SYSTEM] AniLoader API starting...")
     # run Flask WITHOUT reloader so background threads survive page reloads

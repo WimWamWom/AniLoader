@@ -80,7 +80,7 @@ git clone https://github.com/WimWamWom/AniLoader
 2. **Python-Abhängigkeiten installieren**
 
 ```
-pip install requests beautifulsoup4 flask aniworld
+pip install requests beautifulsoup4 flask flask_cors aniworld
  ```
 
 
