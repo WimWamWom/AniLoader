@@ -13,26 +13,11 @@ import threading
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 
-import sys
-from pathlib import Path
-
-def is_frozen() -> bool:
-    return getattr(sys, "frozen", False)
-
-# Ordner mit ausführbarer Datei (Schreibort für DB/Downloads)
-APP_DIR = Path(sys.executable).resolve().parent if is_frozen() else Path(__file__).resolve().parent
-
-# Ordner, aus dem PyInstaller eingebettete Dateien ausliefert (Leseort für templates/static)
-RESOURCE_DIR = Path(sys._MEIPASS) if is_frozen() else Path(__file__).resolve().parent
-
-TEMPLATE_DIR = RESOURCE_DIR / "templates"
-STATIC_DIR   = RESOURCE_DIR / "static"
-
-BASE_DIR   = APP_DIR  # für Abwärtskompatibilität
-ANIME_TXT  = APP_DIR / "Download.txt"    # schreibbar neben der .exe
-DOWNLOAD_DIR = APP_DIR / "Downloads"
-DB_PATH      = APP_DIR / "download.db"
-
+# -------------------- Konfiguration --------------------
+BASE_DIR = Path(__file__).resolve().parent
+ANIME_TXT = BASE_DIR / "Download.txt"
+DOWNLOAD_DIR = BASE_DIR / "Downloads"
+DB_PATH = BASE_DIR / "download.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 
 # -------------------- Logging-System --------------------
