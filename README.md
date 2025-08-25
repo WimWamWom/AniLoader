@@ -2,72 +2,86 @@
 
 # AniLoader
 
-<ins> ***Momentan noch in Arbeit.*** </ins> </br>
+<ins>***Momentan noch in Arbeit.***</ins> </br>
 ***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
-Ein Python-Skript zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf deutsche Dub- oder Sub-Versionen. Das Skript verwaltet eine SQLite-Datenbank, überprüft fehlende Episoden und benennt heruntergeladene Dateien automatisch sauber um. Außerdem werden Filme und Staffeln nach dem Download automatisch in Unterordner sortiert.
+Ein Python-Skript zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf **deutsche Dub- oder Sub-Versionen**.  
+Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden**, benennt heruntergeladene Dateien automatisch sauber um und sortiert **Filme** und **Staffeln** nach dem Download in Unterordner.
 
 ---
+
 ## Inhalt
-- [Funktion](#Funktion)
-- [Installation](#Installation)
-- [Nutzung](#Nutzung)
-- [Hinweise](#Hinweise)  
-- [Beispiele](#Beispiele)
+- [Funktion](#funktion)
+- [Installation](#installation)
+- [Nutzung](#nutzung)
+- [Hinweise](#hinweise)
+- [Beispiele](#beispiele)
+
+---
 
 ## Funktion
+
 ### Features
-
-- Import von Anime-Links aus einer Textdatei (`Anime.txt`)
-- Verwaltung des Download-Status in einer SQLite-Datenbank (`anime.db`)
-- Priorisierung von Sprachen:
-  - German Dub
-  -> German Sub
-  -> English Dub
-  -> English Sub
+- **Import von Anime/Serien-Links** aus einer Textdatei (`Download.txt`)
+- Verwaltung des Download-Status in einer SQLite-Datenbank (`download.db`)
+- **Priorisierung von Sprachen**:
+  1. German Dub
+  2. German Sub
+  3. English Dub
+  4. English Sub
 - Automatische Erkennung bereits heruntergeladener Episoden
-- Löschen alter Untertitelversionen außer German Dub
-- Sauberes Umbenennen von Episoden nach Staffel, Episode, Titel und Sprache
-- Download von Staffeln und Filmen
-- Sortierung nach Download: Filme → `Filme`, Staffeln → `Staffel 1`, `Staffel 2` …
-- Option, nur fehlende deutsche Folgen zu prüfen (`german`) oder neue Episoden zu prüfen (`new-episodes`)
+- **Löschen alter Untertitelversionen** außer German Dub
+- Sauberes **Umbenennen** von Episoden nach Staffel, Episode, Titel und Sprache
+- **Download von Staffeln und Filmen**
+- Automatische Sortierung der Downloads:  
+  - Filme → `Filme`
+  - Staffeln → `Staffel 1`, `Staffel 2`, …
+- Option, nur **fehlende deutsche Folgen** (`german`) oder **neue Episoden** (`new`) zu prüfen
 
-### Dateistruktur
+---
+
+## Dateistruktur
+
+
 
 ```
 AniLoader/
-├─ Anime.txt # Liste der Anime-URLs (eine pro Zeile)
-├─ anime.db # SQLite-Datenbank für Fortschritt und fehlende Folgen
-├─ Anime/ # Standard-Downloadordner
-│ ├─ Titel/ # Unterordner pro Serie
-│ │ ├─ Filme/ # Filme
-│ │ │ ├─ Film-1.mp4
+├─ Download.txt # Liste der Anime-URLs (eine pro Zeile)
+├─ download.db # SQLite-Datenbank für Fortschritt und fehlende Folgen
+├─ Downloads/ # Standard-Downloadordner
+│ ├─ Naruto/
+│ │ ├─ Filme/
+│ │ │ ├─ Film01.mp4
 │ │ │ └─ ...
-│ │ ├─ Staffel 1/ # Staffeln
+│ │ ├─ Staffel 1/
 │ │ │ ├─ S01E001 - Titel [Dub].mp4
+│ │ │ └─ ...
+│ │ ├─ Staffel 2/
+│ │ │ ├─ S02E001 - Titel [Sub].mp4
 │ │ │ └─ ...
 ├─ downloader.py # Hauptskript
 └─ README.md # Diese Datei
 ```
 
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
 
 ## Installation
 
-1. **Repository klonen**
-
-- ```https://github.com/WimWamWom/AniLoader```
+### 1. Repository klonen
+```
+git clone https://github.com/WimWamWom/AniLoader
+```
 
 2. **Python-Abhängigkeiten installieren**
 
-- ```pip install requests beautifulsoup4```
+- ```pip install requests beautifulsoup4 aniworld```
 
-3. **Download-Tool `aniworld` installieren**  
 
-- Stelle sicher, dass das CLI-Tool `pip install aniworld` auf deinem System verfügbar ist.
+### Download-Liste erstellen
 
-### Anime-Liste erstellen
-
-Die Datei `Anime.txt` enthält die Links zu den Animes / Serien, z. B.:
+Die Datei `Download.txt` enthält die Links zu den Animes / Serien, z. B.:
 
 ```
 https://aniworld.to/serie/naruto
@@ -81,7 +95,9 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 
 ### Alle Anime herunterladen
 
-```py downloader.py```
+```
+py AniLoader.py
+```
 
 - Lädt alle Filme und Staffeln herunter
 - Aktualisiert die SQLite-Datenbank und markiert abgeschlossene Anime
@@ -89,13 +105,18 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 
 ### Nur fehlende deutsche Folgen herunterladen
 
-```py downloader.py german```
+```
+py AniLoader.py german
+```
 
-- Prüft nur Anime mit fehlenden deutschen Folgen (`fehlende_deutsch_folgen`) und lädt diese nach
+- Prüft nur Anime mit fehlenden deutschen Folgen (`fehlende_deutsch_folgen`) und lädt diese herunter
+- Löscht automatisch folgen welche nun Syncro haben
 
 ### Neue Episoden prüfen und herunterladen
 
-```py downloader.py new-episodes```
+```
+py AniLoader.py new
+```
 
 - Prüft bei jedem Anime nach neuen Filmen oder Staffeln ab der letzten heruntergeladenen Folge
 - Lädt neue Episoden herunter und aktualisiert die Datenbank
@@ -108,8 +129,9 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 
 ### Anpassung
 
+Die wichtigsten Konfigurationen befinden sich am Anfang von `AniLoader.py`:
 - `DOWNLOAD_DIR`: Ordner für die Downloads
-- `ANIME_TXT`: Pfad zur Anime-Textdatei
+- `DOWNLOAD_TXT`: Pfad zur Download-Textdatei
 - `LANGUAGES`: Reihenfolge und Sprachen, die beim Download versucht werden
 - `DB_PATH`: Speicherort der SQLite-Datenbank
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -122,9 +144,10 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 ```
 S01E005 - Der Ninja-Test [Dub].mp4
 S01E006 - Kampf der Klingen [Sub].mp4
+Film01 - Naruto Movie [Dub].mp4
 ```
 
-### Beispiel für die Eingabe der Link  (`Anime.txt`)
+### Beispiel für die Eingabe der Link  (`Download.txt`)
 ```
 https://aniworld.to/anime/stream/a-certain-magical-index
 https://s.to/serie/stream/family-guy
@@ -135,15 +158,15 @@ https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
 ```
 
 
-### Beispiel SQLite-Datenbank (`anime.db`)
+### Beispiel SQLite-Datenbank (`download.db`)
 - wird automatisch erstellt, enthält pro Anime:
-  - `title`
-  - `url`
-  - `complete`
-  - `deutsch_komplett`
-  - `fehlende_deutsch_folgen` (JSON-Array)
-  - `last_film` (Integer)
-  - `last_episode` (Integer)
+  - title
+  - url
+  - complete
+  - deutsch_komplett
+  - fehlende_deutsch_folgen (JSON-Array)
+  - last_film (Integer)
+  - last_episode (Integer)
 
 ### Ausgabe in CMD 
 ```
