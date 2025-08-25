@@ -7,7 +7,7 @@
 Ein Python-Skript zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf **deutsche Dub- oder Sub-Versionen**.  
 Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden**, benennt heruntergeladene Dateien automatisch sauber um und sortiert **Filme** und **Staffeln** nach dem Download in Unterordner.
 
----
+
 
 ## Inhalt
 - [Funktion](#funktion)
@@ -16,7 +16,7 @@ Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden*
 - [Hinweise](#hinweise)
 - [Beispiele](#beispiele)
 
----
+
 
 ## Funktion
 
