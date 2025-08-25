@@ -1,36 +1,45 @@
 // ==UserScript==
-// @name         AniWorld Export Button (unter Episodenliste)
+// @name         AniWorld & S.to Download-Button
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  Fügt einen Export-Button unter die Episodenliste ein, um den Anime-Link an ein lokales Python-Skript zu senden.
+// @version      1.7
+// @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
+// @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld.to und S.to.
 // @author       Wim
-// @match        https://aniworld.to/anime/stream/*
-// @grant        GM_openInTab
+// @match        https://aniworld.to/*
+// @match        https://s.to/*
+// @grant        none
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    // Funktion, um die Basis-URL des Animes zu extrahieren
     function getAnimeBaseUrl() {
         const url = window.location.href;
-        const match = url.match(/https:\/\/aniworld\.to\/anime\/stream\/([^\/]+)/);
-        return match ? `https://aniworld.to/anime/stream/${match[1]}` : url;
+        let match;
+
+        if(url.includes("aniworld.to")) {
+            match = url.match(/https:\/\/aniworld\.to\/anime\/stream\/([^\/]+)/);
+            return match ? `https://aniworld.to/anime/stream/${match[1]}` : url;
+        }
+
+        if(url.includes("s.to")) {
+            match = url.match(/https:\/\/s\.to\/serie\/stream\/([^\/]+)/);
+            return match ? `https://s.to/serie/stream/${match[1]}` : url;
+        }
+
+        return url;
     }
 
-    // Container mit Staffel- und Episodenübersicht
-    const streamContainer = document.querySelector('#stream');
+    const streamContainer = document.querySelector('#stream') || document.querySelector('.episodes-list');
     if (!streamContainer) return;
 
-    // Wrapper für Button erstellen
     const buttonWrapper = document.createElement("div");
-    buttonWrapper.style.marginTop = "16px";  // Abstand nach oben
-    buttonWrapper.style.marginBottom = "16px"; // Abstand nach unten
-    buttonWrapper.style.textAlign = "left";  // Button mittig ausrichten
+    buttonWrapper.style.marginTop = "16px";
+    buttonWrapper.style.marginBottom = "16px";
+    buttonWrapper.style.textAlign = "left";
 
-    // Button erstellen
     const exportButton = document.createElement("button");
-    exportButton.innerText = "📤 Anime-Link exportieren";
+    exportButton.innerText = "📤 Downloaden";
     exportButton.style.backgroundColor = "rgba(99,124,249,1)";
     exportButton.style.color = "white";
     exportButton.style.fontSize = "15px";
@@ -42,23 +51,55 @@
     exportButton.style.boxShadow = "0px 3px 8px rgba(0,0,0,0.25)";
     exportButton.style.transition = "all 0.25s ease-in-out";
 
-    // Hover-Effekt
     exportButton.addEventListener("mouseover", () => {
-        exportButton.style.backgroundColor = "rgba(79,104,229,1)";
+        if(!exportButton.disabled) exportButton.style.backgroundColor = "rgba(79,104,229,1)";
     });
     exportButton.addEventListener("mouseout", () => {
-        exportButton.style.backgroundColor = "rgba(99,124,249,1)";
+        if(!exportButton.disabled) exportButton.style.backgroundColor = "rgba(99,124,249,1)";
     });
 
-    // Klick-Event: Anime-Link an Python-Skript senden
     exportButton.addEventListener("click", () => {
+        if(exportButton.disabled) return; // kein Klick wenn deaktiviert
+
         const animeUrl = getAnimeBaseUrl();
-        GM_openInTab(`http://127.0.0.1:5000/export?url=${encodeURIComponent(animeUrl)}`, { active: true });
+
+        fetch("http://localhost:5000/export", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: animeUrl })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.status === "ok") {
+                exportButton.innerText = "✅ Gedownloaded!";
+                exportButton.style.backgroundColor = "rgba(0,200,0,0.8)";
+                exportButton.disabled = true; // Button deaktivieren
+                exportButton.style.cursor = "not-allowed";
+            } else {
+                exportButton.innerText = "⚠ Fehler!";
+                exportButton.style.backgroundColor = "rgba(200,0,0,0.8)";
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            exportButton.innerText = "⚠ Fehler!";
+            exportButton.style.backgroundColor = "rgba(200,0,0,0.8)";
+        });
     });
 
-    // Button in Wrapper setzen
-    buttonWrapper.appendChild(exportButton);
+    const animeUrl = getAnimeBaseUrl();
+    fetch(`http://localhost:5000/check?url=${encodeURIComponent(animeUrl)}`)
+        .then(response => response.json())
+        .then(data => {
+            if(data.exists) {
+                exportButton.innerText = "✅ Gedownloaded!";
+                exportButton.style.backgroundColor = "rgba(0,200,0,0.8)";
+                exportButton.disabled = true; // Button deaktivieren
+                exportButton.style.cursor = "not-allowed";
+            }
+        })
+        .catch(err => console.error(err));
 
-    // Button direkt UNTER den Container mit Episoden platzieren
+    buttonWrapper.appendChild(exportButton);
     streamContainer.insertAdjacentElement("afterend", buttonWrapper);
 })();

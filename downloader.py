@@ -392,7 +392,7 @@ def main():
             check_deutsch_komplett(anime_id)
             update_anime(anime_id, complete=True)
             print(f"[COMPLETE] Download abgeschlossen für: '{series_title}'")
-    input("\n[FERTIG] Alle Aufgaben abgeschlossen, drücke eine beliebige Taste zum Beenden.")
+    print("\n[FERTIG] Alle Aufgaben abgeschlossen, drücke eine beliebige Taste zum Beenden.")
 
 if __name__ == "__main__":
     main()
