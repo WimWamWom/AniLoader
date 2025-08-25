@@ -103,7 +103,7 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 #### Alle Anime herunterladen
 
 ```
-py AniLoader.py
+py downloader.py
 ```
 
 - Lädt alle Filme und Staffeln herunter
@@ -113,7 +113,7 @@ py AniLoader.py
 #### Nur fehlende deutsche Folgen herunterladen
 
 ```
-py AniLoader.py german
+py downloader.py german
 ```
 
 - Prüft nur Anime mit fehlenden deutschen Folgen (`fehlende_deutsch_folgen`) und lädt diese herunter
@@ -122,7 +122,7 @@ py AniLoader.py german
 #### Neue Episoden prüfen und herunterladen
 
 ```
-py AniLoader.py new
+py downloader.py new
 ```
 
 - Prüft bei jedem Anime nach neuen Filmen oder Staffeln ab der letzten heruntergeladenen Folge
@@ -133,11 +133,11 @@ py AniLoader.py new
 #### Starten 
 Starte das Programm mit 
 ```
-py fullweb.py
+py AniLoader.py
 ```
 
 #### Web-Interface
-Öffne im Browser: [http://localhost:5000](http://localhost:5000)
+Öffne im Browser: [http://localhost:8081](http://localhost:8081)
 
 ##### Features
 - Start/Stop von Downloads

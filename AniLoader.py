@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# combined_web_downloader.py
 import os
 import subprocess
 import time
@@ -69,16 +67,22 @@ def init_db():
     conn.close()
 # -------------------- DB-Update-Funktion --------------------
 def update_db():
+    """Liest alle Links aus Download.txt und fügt sie ggf. in die Datenbank ein."""
     if not ANIME_TXT.exists():
         log(f"[FEHLER] Download.txt nicht gefunden: {ANIME_TXT}")
         return
 
     with open(ANIME_TXT, "r", encoding="utf-8") as f:
         links = [line.strip() for line in f if line.strip()]
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     for url in links:
-        insert_anime(url=url)
+        try:
+            title = get_series_title(url) or (re.search(r"/anime/stream/([^/]+)", url).group(1).replace("-", " ").title() if re.search(r"/anime/stream/([^/]+)", url) else url)
+            c.execute("INSERT OR IGNORE INTO anime (url, title) VALUES (?, ?)", (url, title))
+        except Exception as e:
+            log(f"[DB-ERROR] Fehler beim Einfügen von {url}: {e}")
     conn.commit()
     conn.close()
 
@@ -598,4 +602,4 @@ if __name__ == "__main__":
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     log("[SYSTEM] AniLoader API starting...")
     # run Flask WITHOUT reloader so background threads survive page reloads
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=8081, debug=False, threaded=True)
