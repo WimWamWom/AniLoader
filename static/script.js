@@ -60,7 +60,10 @@ function renderOverview(items) {
   overviewEl.innerHTML = '';
   if (!Array.isArray(items)) return;
   items.forEach(item => {
-    const pct = item.estimated_total_episodes ? Math.round(Math.min(item.count_episodes, item.estimated_total_episodes) / item.estimated_total_episodes * 100) : 0;
+    const seasons = item.last_season || 0;
+    const episodes = item.last_episode || 0;
+    const films = item.last_film || 0;
+    const pct = episodes ? 100 : 0;
     const card = document.createElement('div');
     card.className = 'col-12';
     card.innerHTML = `
@@ -74,12 +77,13 @@ function renderOverview(items) {
             <div class="text-end">
               ${item.complete ? '<span class="badge text-bg-success">Komplett</span>' : '<span class="badge text-bg-warning">Läuft</span>'}
               ${item.deutsch_komplett ? '<span class="badge text-bg-primary">Deutsch komplett</span>' : '<span class="badge text-bg-secondary">Deutsch fehlend</span>'}
+              ${item.deleted ? '<span class="badge text-bg-danger">Deleted</span>' : ''}
             </div>
           </div>
           <div class="mt-3">
             <div class="d-flex justify-content-between small mb-1">
-              <div>Episoden: <strong>${item.count_episodes}</strong> ${item.estimated_total_episodes ? `/ ${item.estimated_total_episodes}` : ''}</div>
-              <div>Filme: <strong>${item.count_films}</strong></div>
+              <div>Staffeln: <strong>${seasons}</strong> • Episoden: <strong>${episodes}</strong></div>
+              <div>Filme: <strong>${films}</strong></div>
             </div>
             <div class="progress"><div class="progress-bar" role="progressbar" style="width:${pct}%;"></div></div>
           </div>
@@ -99,20 +103,22 @@ async function fetchOverview() {
       url: it.url,
       complete: it.complete,
       deutsch_komplett: it.deutsch_komplett,
+      deleted: it.deleted,
       fehlende: it.fehlende,
-      count_episodes: (it.last_season && it.last_episode) ? (it.last_season * it.last_episode) : 0,
-      count_films: it.last_film || 0,
-      estimated_total_episodes: (it.last_season && it.last_episode) ? Math.max(it.last_episode, 0) : 0
+      last_season: it.last_season || 0,
+      last_episode: it.last_episode || 0,
+      last_film: it.last_film || 0
     }));
     renderOverview(items);
     lastUpdated.textContent = 'Stand: ' + new Date().toLocaleTimeString('de-DE');
   } catch(e) { console.error(e); }
 }
 
+// Datenbank-Filter mit Deleted
 async function fetchDatabase() {
   try {
     const q = encodeURIComponent(dbSearch.value.trim());
-    const complete = dbComplete.value;
+    const complete = dbComplete.value; // jetzt enthält auch 'deleted'
     const sort_by = dbSort.value;
     const order = dbOrder.value;
     const url = `/database?q=${q}&complete=${complete}&sort_by=${sort_by}&order=${order}&limit=200`;
@@ -127,6 +133,7 @@ async function fetchDatabase() {
         <td><a href="${row.url}" target="_blank" rel="noreferrer">${row.url}</a></td>
         <td>${row.complete ? "✅" : "❌"}</td>
         <td>${row.deutsch_komplett ? "✅" : "❌"}</td>
+        <td>${row.deleted ? "✅" : "❌"}</td>
         <td class="mono small">${fehl}</td>
         <td>${row.last_season || 0}/${row.last_episode || 0}/${row.last_film || 0}</td>
       `;
@@ -177,27 +184,6 @@ dbSearch.addEventListener('keyup', (e) => { if (e.key === 'Enter') fetchDatabase
 dbComplete.addEventListener('change', fetchDatabase);
 dbSort.addEventListener('change', fetchDatabase);
 dbOrder.addEventListener('change', fetchDatabase);
-
-async function fetchStatus() {
-  try {
-    const s = await apiGet('/status');
-    downloadStatus.textContent = `Status: ${s.status}${s.mode ? ' • ' + s.mode : ''}`;
-    if (s.current_title) {
-      currentCard.innerHTML = `
-        <div class="card mb-3">
-          <div class="card-body">
-            <h5 class="card-title">${s.current_title}</h5>
-            <div class="small text-secondary">Index: ${s.current_index ?? '-'}</div>
-            <div class="mt-2 small">Gestartet: ${s.started_at ? new Date(s.started_at*1000).toLocaleString() : '-'}</div>
-          </div>
-        </div>`;
-    } else {
-      currentCard.innerHTML = '';
-    }
-  } catch(e) {
-    console.error(e);
-  }
-}
 
 /* start polling */
 fetchOverview();

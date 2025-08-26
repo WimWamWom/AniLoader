@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AniLoader.py by WimWamWom (angepasst)
+# AniLoader.py by WimWamWom
 import os
 import subprocess
 import time
@@ -57,9 +57,9 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT,
             url TEXT UNIQUE,
-            complete INTEGER DEFAULT 0,
-            deutsch_komplett INTEGER DEFAULT 0,
-            deleted INTEGER DEFAULT 0,
+            complete BOOLEAN DEFAULT 0,
+            deutsch_komplett BOOLEAN DEFAULT 0,
+            deleted BOOLEAN DEFAULT 0,
             fehlende_deutsch_folgen TEXT DEFAULT '[]',
             last_film INTEGER DEFAULT 0,
             last_episode INTEGER DEFAULT 0,
@@ -73,7 +73,7 @@ def init_db():
 def import_anime_txt():
     """Liest alle Links aus Download.txt und fügt sie ggf. in die Datenbank ein."""
     if not ANIME_TXT.exists():
-        log(f"[WARN] Download.txt nicht gefunden: {ANIME_TXT}")
+        log(f"[FEHLER] Download.txt nicht gefunden: {ANIME_TXT}")
         return
 
     with open(ANIME_TXT, "r", encoding="utf-8") as f:
@@ -182,7 +182,7 @@ def check_deutsch_komplett(anime_id):
     conn.close()
     fehlende = json.loads(row[0]) if row and row[0] else []
     if not fehlende:
-        update_anime(anime_id, deutsch_komplett=1)
+        update_anime(anime_id, deutsch_komplett=True)
         log(f"[INFO] Serien-ID {anime_id} komplett auf Deutsch markiert")
         return True
     return False
@@ -223,25 +223,17 @@ def get_series_title(url):
 def episode_already_downloaded(series_folder, season, episode):
     if not os.path.exists(series_folder):
         return False
-    if season > 0:
-        pattern = f"S{season:02d}E{episode:03d}"
-    else:
-        pattern = f"Film{episode:02d}"
+    pattern = f"S{season:02d}E{episode:03d}" if season > 0 else f"Film{episode:02d}"
     for file in Path(series_folder).rglob("*.mp4"):
         if pattern.lower() in file.name.lower():
             return True
     return False
 
 def delete_old_non_german_versions(series_folder, season, episode):
-    if isinstance(series_folder, str):
-        base = Path(series_folder)
-    else:
-        base = Path(DOWNLOAD_DIR) / series_folder
     pattern = f"S{season:02d}E{episode:03d}" if season > 0 else f"Film{episode:02d}"
-    for file in base.rglob("*.mp4"):
+    for file in Path(series_folder).rglob("*.mp4"):
         if pattern.lower() in file.name.lower():
-            # Lösche alle Nicht-German-Dub-Versionen (erkennbar an 'sub'/'english' im Dateinamen)
-            if "sub" in file.name.lower() or "english" in file.name.lower():
+            if "sub" in file.name.lower() or "dub" in file.name.lower():
                 try:
                     os.remove(file)
                     log(f"[DEL] Alte Version gelöscht: {file.name}")
@@ -249,51 +241,43 @@ def delete_old_non_german_versions(series_folder, season, episode):
                     log(f"[FEHLER] Konnte Datei nicht löschen: {file.name} -> {e}")
 
 def rename_downloaded_file(series_folder, season, episode, title, language):
-    # Suffix mapping: German Dub soll keine extra Kennzeichnung erhalten (präferiert),
-    # Subs und englische Tracks werden markiert
     lang_suffix = {
-        "German Dub": "",
+        "German Dub": False,
         "German Sub": "Sub",
         "English Dub": "English Dub",
         "English Sub": "English Sub"
     }.get(language, "")
 
-    base_folder = Path(DOWNLOAD_DIR) / series_folder
-    base_folder.mkdir(parents=True, exist_ok=True)
-
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
-        matching_files = [f for f in base_folder.rglob("*.mp4") if pattern.lower() in f.name.lower()]
+        matching_files = [f for f in Path(series_folder).rglob("*.mp4") if pattern.lower() in f.name.lower()]
         if not matching_files:
-            log(f"[WARN] Keine Datei gefunden für {pattern} im {base_folder}")
+            log(f"[WARN] Keine Datei gefunden für {pattern}")
             return False
         file_to_rename = matching_files[0]
-        dest_sub = f"Staffel {season}"
-        display_pattern = pattern
     else:
-        pattern = f"Film{episode:02d}"
-        matching_files = [f for f in base_folder.rglob("*.mp4") if pattern.lower() in f.name.lower() or f"movie{episode:03d}" in f.name.lower()]
+        pattern = f"Movie {episode:03d}"
+        matching_files = [f for f in Path(series_folder).rglob("*.mp4") if pattern.lower() in f.name.lower()]
         if not matching_files:
-            log(f"[WARN] Keine Datei gefunden für Film {episode} im {base_folder}")
+            log(f"[WARN] Keine Datei gefunden für Film {episode}")
             return False
         file_to_rename = matching_files[0]
-        dest_sub = "Filme"
-        display_pattern = f"Film{episode:02d}"
+        pattern = f"Film{episode:02d}"
 
     safe_title = sanitize_filename(title) if title else ""
-    new_name = f"{display_pattern}"
+    new_name = f"{pattern}"
     if safe_title:
         new_name += f" - {safe_title}"
     if lang_suffix:
         new_name += f" [{lang_suffix}]"
     new_name += ".mp4"
 
-    dest_folder = base_folder / dest_sub
+    dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
     dest_folder.mkdir(parents=True, exist_ok=True)
     new_path = dest_folder / new_name
 
     try:
-        shutil.move(str(file_to_rename), str(new_path))
+        shutil.move(file_to_rename, new_path)
         log(f"[OK] Umbenannt: {file_to_rename.name} -> {new_name}")
         return True
     except Exception as e:
@@ -335,10 +319,10 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             return "NO_STREAMS"
         elif result == "OK":
             title = get_episode_title(episode_url)
-            rename_downloaded_file(series_title, season, episode, title, lang)
+            rename_downloaded_file(series_folder, season, episode, title, lang)
             if lang == "German Dub":
                 german_available = True
-                delete_old_non_german_versions(series_folder=series_folder, season=season, episode=episode)
+                delete_old_non_german_versions(series_folder, season, episode)
             episode_downloaded = True
             log(f"[SUCCESS] {lang} erfolgreich geladen: {episode_url}")
             break
@@ -415,7 +399,7 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
 
         if consecutive_empty_seasons >= 2:
             log(f"[INFO] Keine weiteren Staffeln gefunden. '{series_title}' scheint abgeschlossen zu sein.")
-            update_anime(anime_id, complete=1)
+            update_anime(anime_id, complete=True)
             break
 
         season += 1
@@ -437,10 +421,7 @@ def deleted_check():
         complete_animes_in_db = c.fetchall()  # Liste von Tupeln: [(id, title), ...]
 
         # --- Alle Ordnernamen im Downloads-Verzeichnis lesen (erste Ebene) ---
-        local_animes = []
-        downloads_path = Path(DOWNLOAD_DIR)
-        if downloads_path.exists():
-            local_animes = [folder.name for folder in downloads_path.iterdir() if folder.is_dir()]
+        local_animes = [folder.name for folder in Path(DOWNLOAD_DIR).iterdir() if folder.is_dir()]
 
         log(f"[CHECK] Gefundene complete-Animes in DB: {len(complete_animes_in_db)}")
         log(f"[CHECK] Gefundene lokale Animes: {len(local_animes)}")
@@ -525,19 +506,14 @@ def run_mode(mode="default"):
                 verbleibend = fehlende.copy()
                 for url in fehlende:
                     match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
-                    if match:
-                        season = int(match.group(1))
-                        episode = int(match.group(2))
-                    else:
-                        m2 = re.search(r"/film-(\d+)", url)
-                        season = 0
-                        episode = int(m2.group(1)) if m2 else 1
+                    season = int(match.group(1)) if match else 0
+                    episode = int(match.group(2)) if match else int(re.search(r"/film-(\d+)", url).group(1))
                     result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
                     if result == "OK" and url in verbleibend:
                         verbleibend.remove(url)
                         update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
                         log(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
-                        delete_old_non_german_versions(series_folder=os.path.join(DOWNLOAD_DIR, series_title), season=season, episode=episode)
+                        delete_old_non_german_versions(series_folder=series_title, season=season, episode=episode)
                 check_deutsch_komplett(anime_id)
         elif mode == "new":
             log("=== Modus: Prüfe auf neue Episoden & Filme ===")
@@ -550,9 +526,9 @@ def run_mode(mode="default"):
                 anime_id = anime["id"]
                 base_url = anime["url"]
                 current_download["current_title"] = series_title
-                start_film = (anime.get("last_film") or 0) + 1
-                start_season = anime.get("last_season") or 1
-                start_episode = (anime.get("last_episode") or 0) + 1 if start_season > 0 else 1
+                start_film = anime["last_film"] + 1
+                start_season = anime["last_season"]
+                start_episode = anime["last_episode"] + 1 if start_season > 0 else 1
                 log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
                 download_films(series_title, base_url, anime_id, start_film=start_film)
                 download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
@@ -572,14 +548,14 @@ def run_mode(mode="default"):
                 anime_id = anime["id"]
                 base_url = anime["url"]
                 current_download["current_title"] = series_title
-                start_film = (anime.get("last_film") or 0) + 1
-                start_season = anime.get("last_season") or 1
-                start_episode = (anime.get("last_episode") or 0) + 1 if start_season > 0 else 1
+                start_film = anime["last_film"] + 1
+                start_season = anime["last_season"]
+                start_episode = anime["last_episode"] + 1 if start_season > 0 else 1
                 log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
                 download_films(series_title, base_url, anime_id, start_film=start_film)
                 download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
                 check_deutsch_komplett(anime_id)
-                update_anime(anime_id, complete=1)
+                update_anime(anime_id, complete=True)
                 log(f"[COMPLETE] Download abgeschlossen für: '{series_title}'")
         log("[INFO] Alle Aufgaben abgeschlossen.")
     except Exception as e:
@@ -641,7 +617,6 @@ def api_database():
     sql = "SELECT id, title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season FROM anime"
     params = []
     where_clauses = []
-
     if q:
         where_clauses.append("(title LIKE ? OR url LIKE ?)")
         params.extend([f"%{q}%", f"%{q}%"])
@@ -724,8 +699,9 @@ def index():
 if __name__ == "__main__":
     init_db()
     import_anime_txt()
-    Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    # prüfe beim Start, ob lokale Ordner fehlen und markiere diese als deleted
     deleted_check()
     log("[SYSTEM] AniLoader API starting...")
+    Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     # run Flask WITHOUT reloader so background threads survive page reloads
     app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)

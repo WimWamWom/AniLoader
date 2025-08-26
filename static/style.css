@@ -30,3 +30,6 @@ summary { cursor:pointer; }
 
 /* small adjustments */
 .container { max-width: 1200px; }
+
+.card-title { color: #dbe7ff; }
+.small.text-secondary { color: #9fb0ff; }
