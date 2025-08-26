@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Pfad zur Datenbankdatei
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "download.db"
+DB_PATH = BASE_DIR / "AniLoader.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)

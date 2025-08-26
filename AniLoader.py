@@ -17,9 +17,9 @@ from flask_cors import CORS
 
 # -------------------- Konfiguration --------------------
 BASE_DIR = Path(__file__).resolve().parent
-ANIME_TXT = BASE_DIR / "Download.txt"
+ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
-DB_PATH = BASE_DIR / "download.db"
+DB_PATH = BASE_DIR / "AniLoader.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 
 # -------------------- Logging-System --------------------
@@ -71,9 +71,9 @@ def init_db():
 
 # -------------------- Import / Insert --------------------
 def import_anime_txt():
-    """Liest alle Links aus Download.txt, fügt sie in die DB ein und leert die Datei anschließend."""
+    """Liest alle Links aus AniLoader.txt, fügt sie in die DB ein und leert die Datei anschließend."""
     if not ANIME_TXT.exists():
-        log(f"[WARN] Download.txt nicht gefunden: {ANIME_TXT}")
+        log(f"[WARN] AniLoader.txt nicht gefunden: {ANIME_TXT}")
         return
 
     # Datei auslesen
@@ -88,12 +88,12 @@ def import_anime_txt():
     conn.commit()
     conn.close()
 
-    # Download.txt leeren
+    # AniLoader.txt leeren
     try:
         with open(ANIME_TXT, "w", encoding="utf-8") as f:
             f.truncate(0)
     except Exception as e:
-        log(f"[ERROR] Konnte Download.txt nicht leeren: {e}")
+        log(f"[ERROR] Konnte AniLoader.txt nicht leeren: {e}")
 
 
 def insert_anime(url, title=None):

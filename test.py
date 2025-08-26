@@ -17,9 +17,9 @@ from flask_cors import CORS
 
 # -------------------- Konfiguration --------------------
 BASE_DIR = Path(__file__).resolve().parent
-ANIME_TXT = BASE_DIR / "Download.txt"
+ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
-DB_PATH = BASE_DIR / "download.db"
+DB_PATH = BASE_DIR / "AniLoader.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 
 # -------------------- Logging-System --------------------
@@ -71,9 +71,9 @@ def init_db():
 
 # -------------------- Import / Insert --------------------
 def import_anime_txt():
-    """Liest alle Links aus Download.txt und fügt sie ggf. in die Datenbank ein."""
+    """Liest alle Links aus AniLoader.txt und fügt sie ggf. in die Datenbank ein."""
     if not ANIME_TXT.exists():
-        log(f"[FEHLER] Download.txt nicht gefunden: {ANIME_TXT}")
+        log(f"[FEHLER] AniLoader.txt nicht gefunden: {ANIME_TXT}")
         return
 
     with open(ANIME_TXT, "r", encoding="utf-8") as f:

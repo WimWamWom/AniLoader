@@ -12,9 +12,9 @@ import shutil
 
 # -------------------- Konfiguration --------------------
 BASE_DIR = Path(__file__).resolve().parent
-ANIME_TXT = BASE_DIR / "Download.txt"
+ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
-DB_PATH = BASE_DIR / "download.db"
+DB_PATH = BASE_DIR / "AniLoader.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 
 # -------------------- Datenbankfunktionen --------------------
