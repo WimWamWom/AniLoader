@@ -24,7 +24,12 @@ summary { cursor:pointer; }
 .btn-success { background:#28c76f; border: none; }
 .btn-outline-light { color:#dbe7ff; border-color: rgba(219,231,255,0.08); }
 
-.table-dark { background:#0f1720; border:1px solid #1f2937; }
+
+.table-dark { background:#0f1720; border:1px solid #1f2937; border-collapse: collapse; }
+.table-dark th, .table-dark td {
+    border-right: 1px solid #1f2937;
+    border-left: 1px solid #1f2937;
+}
 .table th { color:#9fb0ff; }
 .table td { color:#dbe7ff; }
 
