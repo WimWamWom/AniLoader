@@ -1,3 +1,0 @@
-Überprüfen ob noch genügend speicher verfügbar ist.
-Web Interface, welches schönen Log anzeigt. Port 8081
-Testen
