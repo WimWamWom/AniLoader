@@ -602,4 +602,4 @@ if __name__ == "__main__":
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     log("[SYSTEM] AniLoader API starting...")
     # run Flask WITHOUT reloader so background threads survive page reloads
-    app.run(host="0.0.0.0", port=8081, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)

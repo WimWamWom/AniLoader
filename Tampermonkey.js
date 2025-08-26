@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
-// @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld.to und S.to.
+// @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
 // @match        https://aniworld.to/*
 // @match        https://s.to/*
@@ -12,6 +12,10 @@
 
 (function() {
     'use strict';
+
+    // 🌐 === SERVER IP / DOMAIN ===
+    const SERVER_URL = "http://localhost"; 
+
 
     function getAnimeBaseUrl() {
         const url = window.location.href;
@@ -59,11 +63,11 @@
     });
 
     exportButton.addEventListener("click", () => {
-        if(exportButton.disabled) return; // kein Klick wenn deaktiviert
+        if(exportButton.disabled) return;
 
         const animeUrl = getAnimeBaseUrl();
 
-        fetch("http://localhost:5000/export", {
+        fetch(`${SERVER_URL}:5050/export`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url: animeUrl })
@@ -73,7 +77,7 @@
             if(data.status === "ok") {
                 exportButton.innerText = "✅ Gedownloaded!";
                 exportButton.style.backgroundColor = "rgba(0,200,0,0.8)";
-                exportButton.disabled = true; // Button deaktivieren
+                exportButton.disabled = true; 
                 exportButton.style.cursor = "not-allowed";
             } else {
                 exportButton.innerText = "⚠ Fehler!";
@@ -88,13 +92,13 @@
     });
 
     const animeUrl = getAnimeBaseUrl();
-    fetch(`http://localhost:5000/check?url=${encodeURIComponent(animeUrl)}`)
+    fetch(`${SERVER_URL}:5050/check?url=${encodeURIComponent(animeUrl)}`)
         .then(response => response.json())
         .then(data => {
             if(data.exists) {
                 exportButton.innerText = "✅ Gedownloaded!";
                 exportButton.style.backgroundColor = "rgba(0,200,0,0.8)";
-                exportButton.disabled = true; // Button deaktivieren
+                exportButton.disabled = true; 
                 exportButton.style.cursor = "not-allowed";
             }
         })

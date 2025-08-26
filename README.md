@@ -4,20 +4,38 @@
 
 <ins>***Momentan noch in Arbeit.***</ins> </br>
 ***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
-Ein Python-Skript mit optionalem Webinterface zum automatischen Herunterladen von Anime von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) mit Fokus auf **deutsche Dub- oder Sub-Versionen**.  
-Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden**, benennt heruntergeladene Dateien automatisch sauber um und sortiert **Filme** und **Staffeln** nach dem Download in Unterordner.
+Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automatischen Download von Animes von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) ermöglicht. Der Schwerpunkt liegt dabei auf deutschen Dub-Versionen. Das Skript verwaltet eine **SQLite-Datenbank**, in der alle heruntergeladenen Inhalte gespeichert und **fehlende duetsche Episoden** automatisch erkannt werden. Heruntergeladene Dateien werden sauber umbenannt und übersichtlich nach **Staffeln, Episoden und Filmen sortiert**. Dadurch entsteht eine klar strukturierte Ordnerhierarchie, in der Serien und Filme leicht auffindbar sind. Zusätzlich bietet das Webinterface eine komfortable Möglichkeit, Downloads zu verwalten und den aktuellen Fortschritt einzusehen.
 
----
+
 
 ## Inhalt
 - [Funktion](#funktion)
 - [Installation](#installation)
+  - [1. Repository klonen](#1-repository-klonen)
+  - [2. Python-Abhängigkeiten installieren](#2-python-abhängigkeiten-installieren)
+  - [3. Download-Liste erstellen](#download-liste-erstellen)
 - [Nutzung](#nutzung)
+  - [AniLoader als lokales Programm](#aniloader-als-lokales-programm)
+    - [Alle Anime herunterladen](#alle-anime-herunterladen)
+    - [Nur fehlende deutsche Folgen herunterladen](#nur-fehlende-deutsche-folgen-herunterladen)
+    - [Neue Episoden prüfen und herunterladen](#neue-episoden-prüfen-und-herunterladen)
+  - [AniLoader mit Webinterface](#aniloader-mit-webinterface)
+    - [Starten](#starten)
+    - [Web-Interface](#web-interface)
+- [API](#api)
+  - [Start Download](#start-download)
+  - [Status](#status)
+  - [Logs](#logs)
+  - [Datenbank-Einträge](#datenbank-einträge-suchefiltersort)
+- [Tampermonkey](#tampermonkey)
 - [Hinweise](#hinweise)
+  - [Good to Know](#good-to-know)
+  - [Anpassung](#anpassung)
 - [Beispiele](#beispiele)
+- [Debugging & Troubleshooting](#debugging--troubleshooting-häufige-fehler)
 - [Lizenz](#lizenz)
 
----
+
 
 ## Funktion
 
@@ -39,7 +57,7 @@ Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden*
 - Option, nur **fehlende deutsche Folgen** (`german`) oder **neue Episoden** (`new`) zu prüfen
 - **Webinterface** zur Kontrolle des Downloads, Überwachung der Logs und Datenbankabfrage
 
----
+
 
 ## Dateistruktur
 
@@ -47,6 +65,11 @@ Das Skript verwaltet eine **SQLite-Datenbank**, überprüft **fehlende Episoden*
 AniLoader/
 ├─ Download.txt # Liste der Anime-URLs (eine pro Zeile)
 ├─ download.db # SQLite-Datenbank für Fortschritt und fehlende Folgen
+├─ downloader.py # Hauptskript
+├─ combined_web_downloader.py # Hauptskript mit Webinterface
+├─ templates/ # HTML-Templates für Webinterface
+├─ static/ # CSS/JS für Webinterface
+├─ README.md # README
 ├─ Downloads/ # Standard-Downloadordner
 │ ├─ Naruto/
 │ │ ├─ Filme/
@@ -58,11 +81,7 @@ AniLoader/
 │ │ ├─ Staffel 2/
 │ │ │ ├─ S02E001 - Titel [Sub].mp4
 │ │ │ └─ ...
-├─ downloader.py # Hauptskript
-├─ combined_web_downloader.py # Hauptskript mit Webinterface
-├─ templates/ # HTML-Templates für Webinterface
-├─ static/ # CSS/JS für Webinterface
-└─ README.md # README
+
 ```
 
 
@@ -77,7 +96,7 @@ AniLoader/
 git clone https://github.com/WimWamWom/AniLoader
 ```
 
-2. **Python-Abhängigkeiten installieren**
+### 2. **Python-Abhängigkeiten installieren**
 
 ```
 pip install requests beautifulsoup4 flask flask_cors aniworld
@@ -147,6 +166,85 @@ py AniLoader.py
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
+## API 
+
+### Start Download
+URL: /start_download </br>
+Method: GET oder POST </br>
+Query / JSON: mode = default | german | new </br>
+Beschreibung: startet den Hintergrund-Runner in einem der Modi. Der Endpoint startet die Hintergrund-Thread-Funktion run_mode(mode). </br>
+
+#### GET, Standardmodus:
+```
+curl "http://localhost:5050/start_download"
+```
+
+#### GET, German-Modus:
+```
+curl "http://localhost:5050/start_download?mode=german"
+```
+
+### Status
+
+URL: /status </br>
+Method: GET </br>
+Beschreibung: liefert den aktuellen Status (idle | running | finished), aktueller Modus, Index/Titel der Serie, Startzeit. </br>
+
+#### Aufruf
+```
+curl http://localhost:5050/status
+```
+
+#### Ausgabe
+```
+{"status":"running","mode":"new","current_index":1,"current_title":"Naruto","started_at":1600000000.0}
+```
+
+### Logs
+
+URL: /logs </br>
+Method: GET </br>
+Beschreibung: liefert die im Speicher gehaltenen Log-Zeilen als JSON-Array (letzte MAX_LOG_LINES). </br>
+```
+curl http://localhost:5050/logs
+```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+### Datenbank-Einträge (Suche/Filter/Sort)
+URL: `/database` </br>
+Method: GET </br>
+Query-Parameter:
+- q = Suchbegriff (match auf title oder url)
+- complete = 0 oder 1 (Filter)
+- sort_by = id | title | last_film | last_episode | last_season
+- order = asc | desc
+- limit = Zahl
+- offset = Zahl
+
+#### Beispiel Aufruf 
+```
+curl "http://localhost:5050/database?q=naruto&complete=0&sort_by=title&order=asc&limit=50"
+```
+#### Ausgabe
+```
+{id,title,url,complete,deutsch_komplett,fehlende,last_film,last_episode,last_season}
+```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Tampermonkey
+Benutzer-Script (JavaScript) fügt auf AniWorld / S.to einen Button hinzu. </br>
+Ändere im Tampermonkey-Script die Basis-URL für deinen Server (falls nicht http://localhost)</br>
+--> Wenn dein Flask auf einem anderen Rechner läuft, setze SERVER_URL auf http://IP: 
+```
+const SERVER_URL = "http://localhost";
+```
+Verhalten:
+- Beim Laden prüft das Script /check?url=… → wenn vorhanden, Button ist grün und deaktiviert.
+- Klick auf Button sendet POST /export mit JSON {url}.
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
 ## Hinweise
 ### Good to Know
 - Die URL-Struktur des Anime muss dem Format von AniWorld oder SerienStream entsprechen
@@ -160,6 +258,7 @@ Die wichtigsten Konfigurationen befinden sich am Anfang von `AniLoader.py`:
 - `DOWNLOAD_TXT`: Pfad zur Download-Textdatei
 - `LANGUAGES`: Reihenfolge und Sprachen, die beim Download versucht werden
 - `DB_PATH`: Speicherort der SQLite-Datenbank
+- 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Beispiele
@@ -194,20 +293,29 @@ https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
   - last_film (Integer)
   - last_episode (Integer)
 
-### Ausgabe in CMD 
-```
-========== Starte Download für: Naruto ==========
-[SKIP] Episode S01E001 bereits vorhanden.
-[OK] https://aniworld.to/serie/naruto/staffel-1/episode-2 (German Dub)
-Umbenannt in: S01E002 - Der Ninja-Test [Dub].mp4
-[OK] https://aniworld.to/serie/naruto/staffel-1/episode-3 (German Dub)
-Umbenannt in: S01E003 - Kampf der Klingen [Dub].mp4
-[WARN] German Sub nicht verfügbar → nächster Sprachversuch…
-[OK] https://aniworld.to/serie/naruto/staffel-1/episode-4 (English Sub)
-Umbenannt in: S01E004 - Freundschaft und Rivalen [Sub].mp4
-[NO_STREAMS] Episode S01E05: Kein Stream verfügbar.
-[INFO] Staffel 1 beendet nach 4 Episoden.
-```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Debugging & Troubleshooting (häufige Fehler)
+
+### Kein Download startet / aniworld: command not found
+aniworld nicht installiert oder nicht in PATH. Installiere / passe run_download an.
+
+### Download.txt wird nicht eingelesen
+Stelle sicher, dass Download.txt im selben Ordner wie combined_web_downloader.py liegt. Beim Start wird update_db() ausgeführt.
+
+### Keine Logs im UI
+/logs liefert die Log-Zeilen als JSON. Prüfe mit curl http://localhost:5050/logs. UI muss diese anzeigen.
+
+### Server wird beim Seiten-Reload neu gestartet
+Das Skript läuft als normaler Flask-Prozess. Wenn du im Entwickler-Modus (debug=True) startest, kann der Reloader Threads neu starten. In deinem Code ist debug=False, das ist gut — Threads überleben Seitenreloads nicht automatisch, aber hier ist der Server persistent.
+
+### Datenbank-Inkonsistenzen
+SQLite Datei download.db kannst du mit sqlite3 download.db öffnen. Backup machen bevor du Änderungen vornimmst.
+
+### Remote Zugriff / Firewall
+Standardmäßig host="0.0.0.0" heißt erreichbar von Außen. Setze Firewall/Router-Portforwarding wenn nötig. Achtung: unsicher, wenn öffentlich zugänglich — siehe Sicherheitsabschnitt.
+
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Lizenz
