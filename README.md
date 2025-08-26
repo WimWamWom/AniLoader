@@ -233,7 +233,7 @@ curl "http://localhost:5050/database?q=naruto&complete=0&sort_by=title&order=asc
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Tampermonkey
-Benutzer-Script (JavaScript) fügt auf AniWorld / S.to einen Button hinzu. </br>
+[Benutzer-Script](https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js) (JavaScript) fügt auf AniWorld / S.to einen Button hinzu. </br>
 Ändere im Tampermonkey-Script die Basis-URL für deinen Server (falls nicht `localhost`)</br>
 --> Wenn dein Flask auf einem anderen Rechner läuft, setze die SERVER_IP auf dessen `IP-Adresse`(Bsp.: 123.45.67): 
 ```
