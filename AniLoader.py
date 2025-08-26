@@ -566,9 +566,9 @@ def run_mode(mode="default"):
                 anime_id = anime["id"]
                 base_url = anime["url"]
                 current_download["current_title"] = series_title
-                start_film = (anime.get("last_film") or 0) + 1
+                start_film = (anime.get("last_film") or 1)
                 start_season = anime.get("last_season") or 1
-                start_episode = (anime.get("last_episode") or 0) if start_season > 0 else 1
+                start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
                 log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
                 download_films(series_title, base_url, anime_id, start_film=start_film)
                 download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
@@ -588,9 +588,9 @@ def run_mode(mode="default"):
                 anime_id = anime["id"]
                 base_url = anime["url"]
                 current_download["current_title"] = series_title
-                start_film = (anime.get("last_film") or 0) + 1
+                start_film = (anime.get("last_film") or 1)
                 start_season = anime.get("last_season") or 1
-                start_episode = (anime.get("last_episode") or 0) if start_season > 0 else 1
+                start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
                 log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
                 download_films(series_title, base_url, anime_id, start_film=start_film)
                 download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
