@@ -14,6 +14,8 @@ import shutil
 import threading
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
+import random
+
 
 # -------------------- Konfiguration --------------------
 BASE_DIR = Path(__file__).resolve().parent
@@ -21,6 +23,13 @@ ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
 DB_PATH = BASE_DIR / "AniLoader.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36 Edg/116.0.0.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 OPR/102.0.0.0"
+]
 
 # -------------------- Logging-System --------------------
 log_lines = []
@@ -198,12 +207,15 @@ def check_deutsch_komplett(anime_id):
     return False
 
 # -------------------- Hilfsfunktionen --------------------
+def get_headers():
+    return {"User-Agent": random.choice(USER_AGENTS)}
+
 def sanitize_filename(name):
     return re.sub(r'[<>:"/\\|?*]', ' ', name)
 
 def get_episode_title(url):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = get_headers()
         r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -219,7 +231,7 @@ def get_episode_title(url):
 
 def get_series_title(url):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = get_headers()
         r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -259,55 +271,47 @@ def delete_old_non_german_versions(series_folder, season, episode):
                     log(f"[FEHLER] Konnte Datei nicht löschen: {file.name} -> {e}")
 
 def rename_downloaded_file(series_folder, season, episode, title, language):
-    # Suffix mapping: German Dub soll keine extra Kennzeichnung erhalten (präferiert),
-    # Subs und englische Tracks werden markiert
     lang_suffix = {
-        "German Dub": "",
+        "German Dub": False,
         "German Sub": "Sub",
         "English Dub": "English Dub",
         "English Sub": "English Sub"
     }.get(language, "")
 
-    base_folder = Path(DOWNLOAD_DIR) / series_folder
-    base_folder.mkdir(parents=True, exist_ok=True)
-
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
-        matching_files = [f for f in base_folder.rglob("*.mp4") if pattern.lower() in f.name.lower()]
+        matching_files = [f for f in Path(series_folder).rglob("*.mp4") if pattern.lower() in f.name.lower()]
         if not matching_files:
-            log(f"[WARN] Keine Datei gefunden für {pattern} im {base_folder}")
+            print(f"[WARN] Keine Datei gefunden für {pattern}")
             return False
         file_to_rename = matching_files[0]
-        dest_sub = f"Staffel {season}"
-        display_pattern = pattern
     else:
-        pattern = f"Film{episode:02d}"
-        matching_files = [f for f in base_folder.rglob("*.mp4") if pattern.lower() in f.name.lower() or f"movie{episode:03d}" in f.name.lower()]
+        pattern = f"Movie {episode:03d}"
+        matching_files = [f for f in Path(series_folder).rglob("*.mp4") if pattern.lower() in f.name.lower()]
         if not matching_files:
-            log(f"[WARN] Keine Datei gefunden für Film {episode} im {base_folder}")
+            print(f"[WARN] Keine Datei gefunden für Film {episode}")
             return False
         file_to_rename = matching_files[0]
-        dest_sub = "Filme"
-        display_pattern = f"Film{episode:02d}"
+        pattern = f"Film{episode:02d}"
 
     safe_title = sanitize_filename(title) if title else ""
-    new_name = f"{display_pattern}"
+    new_name = f"{pattern}"
     if safe_title:
         new_name += f" - {safe_title}"
     if lang_suffix:
         new_name += f" [{lang_suffix}]"
     new_name += ".mp4"
 
-    dest_folder = base_folder / dest_sub
+    dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
     dest_folder.mkdir(parents=True, exist_ok=True)
     new_path = dest_folder / new_name
 
     try:
-        shutil.move(str(file_to_rename), str(new_path))
-        log(f"[OK] Umbenannt: {file_to_rename.name} -> {new_name}")
+        shutil.move(file_to_rename, new_path)
+        print(f"[OK] Umbenannt: {file_to_rename.name} -> {new_name}")
         return True
     except Exception as e:
-        log(f"[FEHLER] Umbenennen fehlgeschlagen: {e}")
+        print(f"[FEHLER] Umbenennen fehlgeschlagen: {e}")
         return False
 
 def run_download(cmd):

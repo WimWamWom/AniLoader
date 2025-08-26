@@ -169,7 +169,7 @@ def delete_old_non_german_versions(series_folder, season, episode):
 
 def rename_downloaded_file(series_folder, season, episode, title, language):
     lang_suffix = {
-        "German Dub": "Dub",
+        "German Dub": False,
         "German Sub": "Sub",
         "English Dub": "English Dub",
         "English Sub": "English Sub"
