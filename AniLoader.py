@@ -71,20 +71,30 @@ def init_db():
 
 # -------------------- Import / Insert --------------------
 def import_anime_txt():
-    """Liest alle Links aus Download.txt und fügt sie ggf. in die Datenbank ein."""
+    """Liest alle Links aus Download.txt, fügt sie in die DB ein und leert die Datei anschließend."""
     if not ANIME_TXT.exists():
         log(f"[WARN] Download.txt nicht gefunden: {ANIME_TXT}")
         return
 
+    # Datei auslesen
     with open(ANIME_TXT, "r", encoding="utf-8") as f:
         links = [line.strip() for line in f if line.strip()]
 
+    # Links in DB einfügen
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     for url in links:
         insert_anime(url=url)
     conn.commit()
     conn.close()
+
+    # Download.txt leeren
+    try:
+        with open(ANIME_TXT, "w", encoding="utf-8") as f:
+            f.truncate(0)
+    except Exception as e:
+        log(f"[ERROR] Konnte Download.txt nicht leeren: {e}")
+
 
 def insert_anime(url, title=None):
     """
