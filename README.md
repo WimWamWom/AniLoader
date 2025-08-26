@@ -40,8 +40,8 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
 ## Funktion
 
 ### Features
-- **Import von Anime/Serien-Links** aus einer Textdatei (`Download.txt`)
-- Verwaltung des Download-Status in einer SQLite-Datenbank (`download.db`)
+- **Import von Anime/Serien-Links** aus einer Textdatei (`AniLoader.txt`)
+- Verwaltung des Download-Status in einer SQLite-Datenbank (`AniLoader.db`)
 - **Priorisierung von Sprachen**:
   1. German Dub
   2. German Sub
@@ -63,8 +63,8 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
 
 ```
 AniLoader/
-├─ Download.txt # Liste der Anime-URLs (eine pro Zeile)
-├─ download.db # SQLite-Datenbank für Fortschritt und fehlende Folgen
+├─ AniLoader.txt # Liste der Anime-URLs (eine pro Zeile)
+├─ AniLoader.db # SQLite-Datenbank für Fortschritt und fehlende Folgen
 ├─ downloader.py # Hauptskript
 ├─ combined_web_downloader.py # Hauptskript mit Webinterface
 ├─ templates/ # HTML-Templates für Webinterface
@@ -105,7 +105,7 @@ pip install requests beautifulsoup4 flask flask_cors aniworld
 
 ### Download-Liste erstellen
 
-Die Datei `Download.txt` enthält die Links zu den Animes / Serien, z. B.:
+Die Datei `AniLoader.txt` enthält die Links zu den Animes / Serien, z. B.:
 
 ```
 https://aniworld.to/serie/naruto
@@ -274,7 +274,7 @@ S01E006 - Kampf der Klingen [Sub].mp4
 Film01 - Naruto Movie [Dub].mp4
 ```
 
-### Beispiel für die Eingabe der Link  (`Download.txt`)
+### Beispiel für die Eingabe der Link  (`AniLoader.txt`)
 ```
 https://aniworld.to/anime/stream/a-certain-magical-index
 https://s.to/serie/stream/family-guy
@@ -285,7 +285,7 @@ https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
 ```
 
 
-### Beispiel SQLite-Datenbank (`download.db`)
+### Beispiel SQLite-Datenbank (`AniLoader.db`)
 - wird automatisch erstellt, enthält pro Anime:
   - title
   - url
@@ -302,8 +302,8 @@ https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
 ### Kein Download startet / aniworld: command not found
 aniworld nicht installiert oder nicht in PATH. Installiere / passe run_download an.
 
-### Download.txt wird nicht eingelesen
-Stelle sicher, dass Download.txt im selben Ordner wie combined_web_downloader.py liegt. Beim Start wird update_db() ausgeführt.
+### AniLoader.txt wird nicht eingelesen
+Stelle sicher, dass AniLoader.txt im selben Ordner wie combined_web_downloader.py liegt. Beim Start wird update_db() ausgeführt.
 
 ### Keine Logs im UI
 /logs liefert die Log-Zeilen als JSON. Prüfe mit curl http://localhost:5050/logs. UI muss diese anzeigen.
@@ -312,7 +312,7 @@ Stelle sicher, dass Download.txt im selben Ordner wie combined_web_downloader.py
 Das Skript läuft als normaler Flask-Prozess. Wenn du im Entwickler-Modus (debug=True) startest, kann der Reloader Threads neu starten. In deinem Code ist debug=False, das ist gut — Threads überleben Seitenreloads nicht automatisch, aber hier ist der Server persistent.
 
 ### Datenbank-Inkonsistenzen
-SQLite Datei download.db kannst du mit sqlite3 download.db öffnen. Backup machen bevor du Änderungen vornimmst.
+SQLite Datei AniLoader.db kannst du mit sqlite3 AniLoader.db öffnen. Backup machen bevor du Änderungen vornimmst.
 
 ### Remote Zugriff / Firewall
 Standardmäßig host="0.0.0.0" heißt erreichbar von Außen. Setze Firewall/Router-Portforwarding wenn nötig. Achtung: unsicher, wenn öffentlich zugänglich — siehe Sicherheitsabschnitt.
