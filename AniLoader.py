@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# AniLoader.py by WimWamWom (angepasst)
+# AniLoader.py by WimWamWom
 import os
 import subprocess
 import time
