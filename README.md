@@ -149,14 +149,38 @@ py downloader.py new
 
 ### AniLoader mit Webinterface
 
-#### Starten 
-Starte das Programm mit 
+
+#### Starten (lokal, Entwicklung)
+Starte das Programm mit
 ```
 py AniLoader.py
 ```
+Das Webinterface ist dann erreichbar unter: [http://localhost:5050](http://localhost:5050)
 
-#### Web-Interface
-Öffne im Browser: [http://localhost:8081](http://localhost:8081)
+**Achtung:**
+Der eingebaute Flask-Server ist nur für Entwicklung und Tests gedacht. Er ist nicht für den produktiven Einsatz geeignet, da er keine Sicherheit gegen Angriffe bietet und bei hoher Last instabil werden kann.
+```
+python AniLoader.py
+```
+
+Das Webinterface ist dann erreichbar unter: [http://localhost:5050](http://localhost:5050)
+
+#### Produktion: Start mit WSGI-Server (empfohlen)
+Für den produktiven Einsatz solltest du einen WSGI-Server wie `waitress` verwenden (empfohlen für Windows):
+
+1. Installiere waitress:
+  ```
+  pip install waitress
+  ```
+2. Starte AniLoader mit waitress:
+  ```
+  python -m waitress --host=0.0.0.0 --port=5050 AniLoader:app
+  ```
+  (Das `:app` bezieht sich auf das Flask-App-Objekt in AniLoader.py)
+
+Das Webinterface ist dann wie gewohnt unter [http://localhost:5050](http://localhost:5050) erreichbar.
+
+Weitere Hinweise zu Sicherheit und Remote-Zugriff siehe Abschnitt "Debugging & Troubleshooting".
 
 ##### Features
 - Start/Stop von Downloads
