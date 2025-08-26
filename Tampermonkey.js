@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
-// @namespace    http://tampermonkey.net/
-// @version      1.8
+// @namespace    AniLoader
+// @version      1.0
 // @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
 // @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
+// @downloadURL  https://github.com/WimWamWom/AniLoader/blob/main/Tampermonkey.js
+// @updateURL    https://github.com/WimWamWom/AniLoader/blob/main/Tampermonkey.js
 // @match        https://aniworld.to/*
 // @match        https://s.to/*
 // @grant        none
@@ -14,7 +16,7 @@
     'use strict';
 
     // 🌐 === SERVER IP / DOMAIN ===
-    const SERVER_URL = "http://localhost"; 
+    const SERVER_IP = "localhost"; 
 
 
     function getAnimeBaseUrl() {
@@ -67,7 +69,7 @@
 
         const animeUrl = getAnimeBaseUrl();
 
-        fetch(`${SERVER_URL}:5050/export`, {
+        fetch(`http://${SERVER_IP}:5050/export`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url: animeUrl })
@@ -92,7 +94,7 @@
     });
 
     const animeUrl = getAnimeBaseUrl();
-    fetch(`${SERVER_URL}:5050/check?url=${encodeURIComponent(animeUrl)}`)
+    fetch(`http://${SERVER_IP}:5050/check?url=${encodeURIComponent(animeUrl)}`)
         .then(response => response.json())
         .then(data => {
             if(data.exists) {

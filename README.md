@@ -234,10 +234,12 @@ curl "http://localhost:5050/database?q=naruto&complete=0&sort_by=title&order=asc
 
 ## Tampermonkey
 Benutzer-Script (JavaScript) fügt auf AniWorld / S.to einen Button hinzu. </br>
-Ändere im Tampermonkey-Script die Basis-URL für deinen Server (falls nicht `http://localhost`)</br>
---> Wenn dein Flask auf einem anderen Rechner läuft, setze SERVER_URL auf `http://IP-Adresse`: 
+Ändere im Tampermonkey-Script die Basis-URL für deinen Server (falls nicht `localhost`)</br>
+--> Wenn dein Flask auf einem anderen Rechner läuft, setze die SERVER_IP auf dessen `IP-Adresse`(Bsp.: 123.45.67): 
 ```
-const SERVER_URL = "http://localhost";
+const SERVER_IP = "localhost";
+doer
+const SERVER_IP = "123.45.67";
 ```
 Verhalten:
 - Beim Laden prüft das Script /check?url=… → wenn vorhanden, Button ist grün und deaktiviert.
