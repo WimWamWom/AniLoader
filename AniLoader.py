@@ -263,7 +263,7 @@ def delete_old_non_german_versions(series_folder, season, episode):
     for file in base.rglob("*.mp4"):
         if pattern.lower() in file.name.lower():
             # Lösche alle Nicht-German-Dub-Versionen (erkennbar an 'sub'/'english' im Dateinamen)
-            if "sub" in file.name.lower() or "english" in file.name.lower():
+            if "sub" in file.name.lower() or "english dub" in file.name.lower() or "english sub" in file.name.lower():
                 try:
                     os.remove(file)
                     log(f"[DEL] Alte Version gelöscht: {file.name}")
@@ -293,6 +293,7 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
             return False
         file_to_rename = matching_files[0]
         pattern = f"Film{episode:02d}"
+
 
     safe_title = sanitize_filename(title) if title else ""
     new_name = f"{pattern}"
@@ -330,6 +331,7 @@ def run_download(cmd):
 
 # -------------------- Download-Funktionen --------------------
 def download_episode(series_title, episode_url, season, episode, anime_id, german_only=False):
+
     series_folder = os.path.join(DOWNLOAD_DIR, series_title)
     if not german_only:
         if episode_already_downloaded(series_folder, season, episode):
@@ -349,7 +351,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             return "NO_STREAMS"
         elif result == "OK":
             title = get_episode_title(episode_url)
-            rename_downloaded_file(series_title, season, episode, title, lang)
+            rename_downloaded_file(series_folder, season, episode, title, lang)
             if lang == "German Dub":
                 german_available = True
                 delete_old_non_german_versions(series_folder=series_folder, season=season, episode=episode)
