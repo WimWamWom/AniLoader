@@ -96,8 +96,10 @@ function renderOverview(items) {
 
 async function fetchOverview() {
   try {
+    // Get current status to determine which anime is currently downloading
+    const s = await apiGet('/status');
     const data = await apiGet('/database');
-    const items = data.map(it => ({
+    let items = data.map(it => ({
       id: it.id,
       title: it.title,
       url: it.url,
@@ -109,6 +111,21 @@ async function fetchOverview() {
       last_episode: it.last_episode || 0,
       last_film: it.last_film || 0
     }));
+
+    // If there's an active download, show only that anime in the overview.
+    // Match by title first, fall back to id or url if provided by the status.
+    if (s && (s.current_title || s.current_id || s.current_url)) {
+      const match = items.find(i =>
+        (s.current_title && i.title === s.current_title) ||
+        (s.current_id && i.id === s.current_id) ||
+        (s.current_url && i.url === s.current_url)
+      );
+      items = match ? [match] : [];
+    } else {
+      // No active download -> show nothing on the Download tab
+      items = [];
+    }
+
     renderOverview(items);
     lastUpdated.textContent = 'Stand: ' + new Date().toLocaleTimeString('de-DE');
   } catch(e) { console.error(e); }
