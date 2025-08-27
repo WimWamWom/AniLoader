@@ -147,25 +147,21 @@ py downloader.py new
 - Prüft bei jedem Anime nach neuen Filmen oder Staffeln ab der letzten heruntergeladenen Folge
 - Lädt neue Episoden herunter und aktualisiert die Datenbank
 
-### AniLoader mit Webinterface
+## AniLoader mit Webinterface
 
 
-#### Starten (lokal, Entwicklung)
+### Starten
+
+### Als Lokaler "Test"-Server
 Starte das Programm mit
 ```
 py AniLoader.py
 ```
-Das Webinterface ist dann erreichbar unter: [http://localhost:5050](http://localhost:5050)
-
 **Achtung:**
 Der eingebaute Flask-Server ist nur für Entwicklung und Tests gedacht. Er ist nicht für den produktiven Einsatz geeignet, da er keine Sicherheit gegen Angriffe bietet und bei hoher Last instabil werden kann.
-```
-python AniLoader.py
-```
 
-Das Webinterface ist dann erreichbar unter: [http://localhost:5050](http://localhost:5050)
+### Start mit WSGI-Server (empfohlen)
 
-#### Produktion: Start mit WSGI-Server (empfohlen)
 Für den produktiven Einsatz solltest du einen WSGI-Server wie `waitress` verwenden (empfohlen für Windows):
 
 1. Installiere waitress:
@@ -178,14 +174,19 @@ Für den produktiven Einsatz solltest du einen WSGI-Server wie `waitress` verwen
   ```
   (Das `:app` bezieht sich auf das Flask-App-Objekt in AniLoader.py)
 
-Das Webinterface ist dann wie gewohnt unter [http://localhost:5050](http://localhost:5050) erreichbar.
+
+## Web-Interface
+
+### Zugang
+Das Webinterface ist dann wie unter [http://localhost:5050](http://localhost:5050) erreichbar.
 
 Weitere Hinweise zu Sicherheit und Remote-Zugriff siehe Abschnitt "Debugging & Troubleshooting".
 
 ##### Features
-- Start/Stop von Downloads
+- Starten und Verfolgen von Downloads
 - Überwachung von Logs in Echtzeit
 - Datenbankeinträge anzeigen, filtern und sortieren
+- Endpunkt für Tampermonkey skript
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
