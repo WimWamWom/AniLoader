@@ -263,7 +263,7 @@ curl "http://localhost:5050/database?q=naruto&complete=0&sort_by=title&order=asc
 --> Wenn dein Flask auf einem anderen Rechner läuft, setze die SERVER_IP auf dessen `IP-Adresse`(Bsp.: 123.45.67): 
 ```
 const SERVER_IP = "localhost";
-doer
+oder
 const SERVER_IP = "123.45.67";
 ```
 Verhalten:
