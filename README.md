@@ -65,8 +65,8 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
 AniLoader/
 ├─ AniLoader.txt # Liste der Anime-URLs (eine pro Zeile)
 ├─ AniLoader.db # SQLite-Datenbank für Fortschritt und fehlende Folgen
-├─ downloader.py # Hauptskript
-├─ combined_web_downloader.py # Hauptskript mit Webinterface
+├─ downloader.py # Hauptskript ohne Webinterface
+├─ AniLoader.py # Hauptskript mit Webinterface
 ├─ templates/ # HTML-Templates für Webinterface
 ├─ static/ # CSS/JS für Webinterface
 ├─ README.md # README
