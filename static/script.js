@@ -121,7 +121,7 @@ async function fetchDatabase() {
     const complete = dbComplete.value; // jetzt enthält auch 'deleted'
     const sort_by = dbSort.value;
     const order = dbOrder.value;
-    const url = `/database?q=${q}&complete=${complete}&sort_by=${sort_by}&order=${order}&limit=200`;
+    const url = `/database?q=${q}&complete=${complete}&sort_by=${sort_by}&order=${order}`;
     const data = await apiGet(url);
     dbBody.innerHTML = '';
     data.forEach(row => {
