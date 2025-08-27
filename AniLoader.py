@@ -380,12 +380,6 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
                 conn.close()
             except:
                 pass
-
-    try:
-        check_deutsch_komplett(anime_id)
-    except Exception as e:
-        log(f"[ERROR] check_deutsch_komplett: {e}")
-
     return "OK" if episode_downloaded else "FAILED"
 
 def download_films(series_title, base_url, anime_id, german_only=False, start_film=1):
@@ -535,7 +529,6 @@ def run_mode(mode="default"):
                 fehlende = anime.get("fehlende_deutsch_folgen", [])
                 if not fehlende:
                     log(f"[GERMAN] '{series_title}': Keine neuen deutschen Folgen")
-                    check_deutsch_komplett(anime_id)
                     continue
                 log(f"[GERMAN] '{series_title}': {len(fehlende)} Folgen zu testen.")
                 verbleibend = fehlende.copy()
@@ -582,7 +575,6 @@ def run_mode(mode="default"):
                     continue
                 if anime["complete"]:
                     log(f"[SKIP] '{anime['title']}' bereits komplett.")
-                    check_deutsch_komplett(anime["id"])
                     continue
                 series_title = anime["title"] or get_series_title(anime["url"])
                 anime_id = anime["id"]
