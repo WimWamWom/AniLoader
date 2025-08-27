@@ -211,7 +211,7 @@ def get_headers():
     return {"User-Agent": random.choice(USER_AGENTS)}
 
 def sanitize_filename(name):
-    return re.sub(r'[<>:"/\\|?*]', ' ', name)
+    return re.sub(r'[<>:"/\\|?*]', '', name)
 
 def get_episode_title(url):
     try:
