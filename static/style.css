@@ -33,8 +33,22 @@ summary { cursor:pointer; }
 .table th { color:#9fb0ff; }
 .table td { color:#dbe7ff; }
 
+/* Keep specific table cells fixed-height and allow vertical scrolling while preserving table width */
+.cell-scroll {
+    display: block;
+    box-sizing: border-box;
+    width: 100%; /* keep the column width as defined by the table */
+    max-height: 3.2rem; /* fixed height so rows don't grow vertically */
+    overflow-y: auto; /* vertical scrolling when content exceeds the height */
+    overflow-x: hidden;
+    white-space: normal; /* allow wrapping inside the fixed-height box */
+    padding-right: .25rem;
+}
+.cell-scroll::-webkit-scrollbar { width: 8px; }
+.cell-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 4px; }
+
 /* small adjustments */
-.container { max-width: 1200px; }
+.container { max-width: 1250px; }
 
 .card-title { color: #dbe7ff; }
 .small.text-secondary { color: #9fb0ff; }

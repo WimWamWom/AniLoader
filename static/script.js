@@ -151,7 +151,7 @@ async function fetchDatabase() {
         <td>${row.complete ? "✅" : "❌"}</td>
         <td>${row.deutsch_komplett ? "✅" : "❌"}</td>
         <td>${row.deleted ? "✅" : "❌"}</td>
-        <td class="mono small">${fehl}</td>
+        <td class="mono small"><div class="cell-scroll">${fehl}</div></td>
         <td>${row.last_season || 0}/${row.last_episode || 0}/${row.last_film || 0}</td>
       `;
       dbBody.appendChild(tr);
