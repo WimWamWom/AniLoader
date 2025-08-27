@@ -48,7 +48,7 @@ summary { cursor:pointer; }
 .cell-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 4px; }
 
 /* small adjustments */
-.container { max-width: 1250px; }
+.container { max-width: 1400px; }
 
 .card-title { color: #dbe7ff; }
 .small.text-secondary { color: #9fb0ff; }
