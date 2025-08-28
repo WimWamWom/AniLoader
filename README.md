@@ -210,7 +210,7 @@ curl "http://localhost:5050/start_download?mode=german"
 ```
 #### GET, Überprüfe auf neue Episoden:
 ```
-curl "http://localhost:5050/new"
+curl "http://localhost:5050/start_download?new"
 ```
 Überprüft ob bei abgeschlossenen Animes neue Filme, Staffeln oder Episoden existieren
 
