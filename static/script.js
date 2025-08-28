@@ -14,6 +14,8 @@ const dbOrder = document.getElementById('db-order');
 const startDefault = document.getElementById('start-default');
 const startNew = document.getElementById('start-new');
 const startGerman = document.getElementById('start-german');
+const startMissing = document.getElementById('start-missing');
+
 
 const downloadStatus = document.getElementById('download-status');
 const currentCard = document.getElementById('current-card');
@@ -194,6 +196,7 @@ async function startDownload(mode) {
 startDefault.addEventListener('click', () => startDownload('default'));
 startNew.addEventListener('click', () => startDownload('new'));
 startGerman.addEventListener('click', () => startDownload('german'));
+startMissing.addEventListener('click', () => startDownload('check_missing'));
 refreshBtn.addEventListener('click', () => { fetchOverview(); fetchDatabase(); fetchStatus(); });
 clearFilter.addEventListener('click', () => { logFilter.value=''; });
 dbRefresh.addEventListener('click', fetchDatabase);
