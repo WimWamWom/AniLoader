@@ -196,7 +196,7 @@ async function startDownload(mode) {
 startDefault.addEventListener('click', () => startDownload('default'));
 startNew.addEventListener('click', () => startDownload('new'));
 startGerman.addEventListener('click', () => startDownload('german'));
-startMissing.addEventListener('click', () => startDownload('check_missing'));
+startMissing.addEventListener('click', () => startDownload('check-missing'));
 refreshBtn.addEventListener('click', () => { fetchOverview(); fetchDatabase(); fetchStatus(); });
 clearFilter.addEventListener('click', () => { logFilter.value=''; });
 dbRefresh.addEventListener('click', fetchDatabase);

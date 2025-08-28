@@ -221,10 +221,12 @@ def get_episode_title(url):
         soup = BeautifulSoup(r.text, "html.parser")
         german_title = soup.select_one("span.episodeGermanTitle")
         if german_title and german_title.text.strip():
-            return german_title.text.strip()
-        english_title = soup.select_one("small.episodeEnglishTitle")
+            title = sanitize_filename(german_title.text.strip())
+            return title
+        english_title = soup.select_one("small.episodeEnglishTitle") 
         if english_title and english_title.text.strip():
-            return english_title.text.strip()
+            title = sanitize_filename(english_title.text.strip())
+            return title
     except Exception as e:
         log(f"[FEHLER] Konnte Episodentitel nicht abrufen ({url}): {e}")
     return None
@@ -263,7 +265,7 @@ def delete_old_non_german_versions(series_folder, season, episode):
     for file in base.rglob("*.mp4"):
         if pattern.lower() in file.name.lower():
             # Lösche alle Nicht-German-Dub-Versionen (erkennbar an 'sub'/'english' im Dateinamen)
-            if "sub" in file.name.lower() or "english dub" in file.name.lower() or "english sub" in file.name.lower():
+            if "[sub]" in file.name.lower() or "[english dub]" in file.name.lower() or "[english sub]" in file.name.lower():
                 try:
                     os.remove(file)
                     log(f"[DEL] Alte Version gelöscht: {file.name}")
@@ -309,10 +311,10 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
 
     try:
         shutil.move(file_to_rename, new_path)
-        print(f"[OK] Umbenannt: {file_to_rename.name} -> {new_name}")
+        log(f"[OK] Umbenannt: {file_to_rename.name} -> {new_name}")
         return True
     except Exception as e:
-        print(f"[FEHLER] Umbenennen fehlgeschlagen: {e}")
+        log(f"[FEHLER] Umbenennen fehlgeschlagen: {e}")
         return False
 
 def run_download(cmd):
@@ -430,82 +432,7 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
 
         season += 1
         start_episode = 1
-def kontrolliere_heruntergeladene():
-    """
-    Prüft alle Anime, die entweder teilweise oder komplett heruntergeladen sind,
-    und versucht fehlende Filme oder Episoden erneut zu laden.
-    """
-    anime_list = load_anime()
-    for anime in anime_list:
-        # Deleted ignorieren
-        if anime.get("deleted"):
-            log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
-            continue
 
-        # Nur Anime berücksichtigen, die bereits Downloads haben oder als komplett markiert sind
-        if anime["last_film"] == 0 and anime["last_season"] == 0 and anime["last_episode"] == 0 and not anime["complete"]:
-            continue
-
-        series_title = anime["title"] or get_series_title(anime["url"])
-        base_url = anime["url"]
-        anime_id = anime["id"]
-
-        log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
-
-        # Alle Filme von 1 bis last_film prüfen
-        film_num = 1
-        while True:
-            film_url = f"{base_url}/filme/film-{film_num}"
-            if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), 0, film_num):
-                log(f"[OK] Film {film_num} bereits vorhanden.")
-            else:
-                log(f"[MISSING] Film {film_num} fehlt -> erneuter Versuch")
-                result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
-                if result == "NO_STREAMS":
-                    break  # Keine weiteren Filme vorhanden
-            film_num += 1
-
-        # Alle Episoden in allen Staffeln prüfen
-        season = 1
-        consecutive_empty_seasons = 0
-        while True:
-            episode = 1
-            found_episode = False
-            while True:
-                episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
-                if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), season, episode):
-                    log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
-                    episode += 1
-                    continue
-
-                log(f"[MISSING] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
-                result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
-
-                if result == "NO_STREAMS":
-                    if episode == 1:
-                        # Staffel existiert nicht -> Abbruchkandidat
-                        break
-                    else:
-                        log(f"[INFO] Staffel {season} abgeschlossen bei Episode {episode-1}")
-                        break
-                else:
-                    found_episode = True
-                    episode += 1
-
-            if not found_episode:
-                consecutive_empty_seasons += 1
-            else:
-                consecutive_empty_seasons = 0
-
-            if consecutive_empty_seasons >= 2:
-                log(f"[CHECK-MISSING] '{series_title}' hat keine weiteren Staffeln.")
-                break
-
-            season += 1
-
-        # Finaler Statuscheck
-        check_deutsch_komplett(anime_id)
-        log(f"[CHECK-MISSING] Kontrolle für '{series_title}' abgeschlossen.")
 
 # -------------------- deleted_check --------------------
 def deleted_check():
@@ -643,9 +570,83 @@ def run_mode(mode="default"):
                 download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
                 check_deutsch_komplett(anime_id)
 
-        if mode == "check_missing":
+        elif mode == "check-missing":
             log("=== Modus: Prüfe auf fehlende Episoden & Filme ===")
-            kontrolliere_heruntergeladene()
+            """
+            Prüft alle Anime, die entweder teilweise oder komplett heruntergeladen sind,
+            und versucht fehlende Filme oder Episoden erneut zu laden.
+            """
+            anime_list = load_anime()
+            for anime in anime_list:
+                # Deleted ignorieren
+                if anime.get("deleted"):
+                    log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
+                    continue
+
+                # Nur Anime berücksichtigen, die bereits Downloads haben oder als komplett markiert sind
+                if anime["last_film"] == 0 and anime["last_season"] == 0 and anime["last_episode"] == 0 and not anime["complete"]:
+                    continue
+
+                series_title = anime["title"] or get_series_title(anime["url"])
+                base_url = anime["url"]
+                anime_id = anime["id"]
+
+                log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
+
+                # Alle Filme von 1 bis last_film prüfen
+                film_num = 1
+                while True:
+                    film_url = f"{base_url}/filme/film-{film_num}"
+                    if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), 0, film_num):
+                        log(f"[OK] Film {film_num} bereits vorhanden.")
+                    else:
+                        log(f"[MISSING] Film {film_num} fehlt -> erneuter Versuch")
+                        result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
+                        if result == "NO_STREAMS":
+                            break  # Keine weiteren Filme vorhanden
+                    film_num += 1
+
+                # Alle Episoden in allen Staffeln prüfen
+                season = 1
+                consecutive_empty_seasons = 0
+                while True:
+                    episode = 1
+                    found_episode = False
+                    while True:
+                        episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
+                        if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), season, episode):
+                            log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
+                            episode += 1
+                            continue
+
+                        log(f"[MISSING] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
+                        result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
+
+                        if result == "NO_STREAMS":
+                            if episode == 1:
+                                # Staffel existiert nicht -> Abbruchkandidat
+                                break
+                            else:
+                                log(f"[INFO] Staffel {season} abgeschlossen bei Episode {episode-1}")
+                                break
+                        else:
+                            found_episode = True
+                            episode += 1
+
+                    if not found_episode:
+                        consecutive_empty_seasons += 1
+                    else:
+                        consecutive_empty_seasons = 0
+
+                    if consecutive_empty_seasons >= 2:
+                        log(f"[CHECK-MISSING] '{series_title}' hat keine weiteren Staffeln.")
+                        break
+
+                    season += 1
+
+                # Finaler Statuscheck
+                check_deutsch_komplett(anime_id)
+                log(f"[CHECK-MISSING] Kontrolle für '{series_title}' abgeschlossen.")
 
         else:
             log("=== Modus: Standard  ===")
@@ -685,7 +686,7 @@ def run_mode(mode="default"):
 def api_start_download():
     body = request.get_json(silent=True) or {}
     mode = request.args.get("mode") or body.get("mode") or "default"
-    if mode not in ("default", "german", "new"):
+    if mode not in ("default", "german", "new", "check-missing"):
         return jsonify({"status": "error", "msg": "Ungültiger Mode"}), 400
     with download_lock:
         if current_download["status"] == "running":
@@ -703,16 +704,7 @@ def api_status():
 @app.route("/logs")
 def api_logs():
     with log_lock:
-        return jsonify(list(log_lines))
-    
-@app.route("/check_missing", methods=["POST", "GET"])
-def api_check_missing():
-    with download_lock:
-        if current_download["status"] == "running":
-            return jsonify({"status": "already_running"}), 409
-        thread = threading.Thread(target=run_mode, args=("check_missing",), daemon=True)
-        thread.start()
-    return jsonify({"status": "started", "mode": "check_missing"})
+        return jsonify(list(log_lines)) 
 
 @app.route("/database")
 def api_database():
