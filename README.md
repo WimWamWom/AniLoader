@@ -208,6 +208,17 @@ curl "http://localhost:5050/start_download"
 ```
 curl "http://localhost:5050/start_download?mode=german"
 ```
+#### GET, Überprüfe auf neue Episoden:
+```
+curl "http://localhost:5050/new"
+```
+Überprüft ob bei abgeschlossenen Animes neue Filme, Staffeln oder Episoden existieren
+
+#### GET, Überprüfe auf fehlende Episoden:
+```
+curl "http://localhost:5050/check_missing"
+```
+Überprüft ob bei angefangenen Animes ob der Download alle Folgen geladen hat, oder ob welche nicht heruntergeladen wurden.
 
 ### Status
 
