@@ -318,7 +318,7 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
 def run_download(cmd):
     """Startet externes CLI-Tool (aniworld) und interpretiert Ausgabe"""
     try:
-        process = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        process = subprocess.run(cmd, capture_output=True, text=True)
         out = (process.stdout or "") + (process.stderr or "")
         if "No streams available for episode" in out:
             return "NO_STREAMS"
