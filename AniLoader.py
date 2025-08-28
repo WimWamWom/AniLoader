@@ -358,7 +358,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
                 german_available = True
                 delete_old_non_german_versions(series_folder=series_folder, season=season, episode=episode)
             episode_downloaded = True
-            log(f"[SUCCESS] {lang} erfolgreich geladen: {episode_url}")
+            log(f"[OK] {lang} erfolgreich geladen: {episode_url}")
             break
         elif result == "LANGUAGE_ERROR":
             log(f"[INFO] Sprache {lang} nicht gefunden für {episode_url}, prüfe nächste Sprache.")
@@ -404,7 +404,7 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
     while True:
         episode = start_episode
         found_episode_in_season = False
-        log(f"[CHECK] Prüfe Staffel {season} von '{series_title}'")
+        log(f"[DOWNLOAD] Prüfe Staffel {season} von '{series_title}'")
         while True:
             episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
             result = download_episode(series_title, episode_url, season, episode, anime_id, german_only)
@@ -482,7 +482,7 @@ def deleted_check():
         conn.commit()
         conn.close()
 
-        log(f"[RESULT] Gelöschte Animes: {deleted_anime}")
+        log(f"[INFO] Gelöschte Animes: {deleted_anime}")
 
         return deleted_anime
 
@@ -600,7 +600,7 @@ def run_mode(mode="default"):
                     if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), 0, film_num):
                         log(f"[OK] Film {film_num} bereits vorhanden.")
                     else:
-                        log(f"[MISSING] Film {film_num} fehlt -> erneuter Versuch")
+                        log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
                         result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
                         if result == "NO_STREAMS":
                             break  # Keine weiteren Filme vorhanden
@@ -619,7 +619,7 @@ def run_mode(mode="default"):
                             episode += 1
                             continue
 
-                        log(f"[MISSING] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
+                        log(f"[INFO] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
                         result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
 
                         if result == "NO_STREAMS":
@@ -670,7 +670,7 @@ def run_mode(mode="default"):
                 download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
                 check_deutsch_komplett(anime_id)
                 update_anime(anime_id, complete=1)
-                log(f"[COMPLETE] Download abgeschlossen für: '{series_title}'")
+                log(f"[OK] Download abgeschlossen für: '{series_title}'")
         log("[INFO] Alle Aufgaben abgeschlossen.")
     except Exception as e:
         log(f"[ERROR] Unhandled exception in run_mode: {e}")
