@@ -210,8 +210,25 @@ def check_deutsch_komplett(anime_id):
 def get_headers():
     return {"User-Agent": random.choice(USER_AGENTS)}
 
-def sanitize_filename(name):
-    return re.sub(r'[<>:"/\\|?*]', '', name)
+def sanitize_title(name: str) -> str:
+    name = re.sub(r'[<>:"/\\|?*]', '', name)
+    name = re.sub(r'\.', '#', name)
+    return name
+
+def sanitize_filename(name: str) -> str:
+    name = re.sub(r'[<>:"/\\|?*]', '', name)
+    return name
+
+def freier_speicher_mb(pfad: str) -> float:
+    """Gibt den verfügbaren Speicherplatz des angegebenen Pfads in MB zurück."""
+    try:
+        gesamt, belegt, frei = shutil.disk_usage(pfad)
+        return round(frei / (1024 ** 3), 1)
+    except FileNotFoundError:
+        raise ValueError(f"Pfad nicht gefunden: {pfad}")
+    except PermissionError:
+        raise PermissionError(f"Zugriff verweigert auf: {pfad}")
+
 
 def get_episode_title(url):
     try:
@@ -239,7 +256,7 @@ def get_series_title(url):
         soup = BeautifulSoup(r.text, "html.parser")
         title = soup.select_one("div.series-title h1 span")
         if title and title.text.strip():
-            return sanitize_filename(title.text.strip())
+            return sanitize_title(title.text.strip())
     except Exception as e:
         log(f"[FEHLER] Konnte Serien-Titel nicht abrufen ({url}): {e}")
     return None
@@ -297,7 +314,7 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
         pattern = f"Film{episode:02d}"
 
 
-    safe_title = sanitize_filename(title) if title else ""
+    safe_title = sanitize_title(title) if title else ""
     new_name = f"{pattern}"
     if safe_title:
         new_name += f" - {safe_title}"
@@ -334,6 +351,10 @@ def run_download(cmd):
 # -------------------- Download-Funktionen --------------------
 def download_episode(series_title, episode_url, season, episode, anime_id, german_only=False):
 
+    if freier_speicher_mb(DOWNLOAD_DIR) < 2.0:
+        log(f"[ERROR] Weniger als 2GB freier Speicherplatz im Download-Ordner ({DOWNLOAD_DIR}) - Abbruch")
+        return "FAILED"
+    
     series_folder = os.path.join(DOWNLOAD_DIR, series_title)
     if not german_only:
         if episode_already_downloaded(series_folder, season, episode):
@@ -356,7 +377,8 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             rename_downloaded_file(series_folder, season, episode, title, lang)
             if lang == "German Dub":
                 german_available = True
-                delete_old_non_german_versions(series_folder=series_folder, season=season, episode=episode)
+                if german_only == True:
+                    delete_old_non_german_versions(series_folder=series_folder, season=season, episode=episode)
             episode_downloaded = True
             log(f"[OK] {lang} erfolgreich geladen: {episode_url}")
             break
