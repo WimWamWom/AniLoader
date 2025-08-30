@@ -23,6 +23,7 @@ ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
 DB_PATH = BASE_DIR / "AniLoader.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
+MAX_PATH = 260
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
@@ -215,7 +216,39 @@ def sanitize_title(name: str) -> str:
     name = re.sub(r'\.', '#', name)
     return name
 
-def sanitize_filename(name: str) -> str:
+def check_length(dest_folder: Path, base_name: str, title: str, lang_suffix: str, extension: str = ".mp4") -> str:
+    """
+    Kürzt den Titel, falls der komplette Pfad sonst die Windows MAX_PATH-Grenze überschreiten würde.
+    Berücksichtigt den Sprach-Suffix!
+    """
+    # Finaler Dateiname
+    simulated_name = f"{base_name}"
+    if title:
+        simulated_name += f" - {title}"
+    if lang_suffix:
+        simulated_name += f" {lang_suffix}"
+    simulated_name += extension
+
+    full_path = dest_folder / simulated_name
+
+    # Prüfen, ob alles okay ist
+    if len(str(full_path)) <= MAX_PATH:
+        return title
+
+    # Berechne erlaubte Titel-Länge dynamisch
+    reserved = len(str(dest_folder)) + len(base_name) + len(extension) + len(lang_suffix) + 10
+    max_title_length = MAX_PATH - reserved
+    if max_title_length < 0:
+        max_title_length = 0
+
+    shortened_title = title[:max_title_length]
+
+    if shortened_title != title:
+        log(f"[INFO] Titel gekürzt: '{title}' -> '{shortened_title}'")
+
+    return shortened_title
+
+def sanitize_episode_title(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*]', '', name)
     return name
 
@@ -238,11 +271,11 @@ def get_episode_title(url):
         soup = BeautifulSoup(r.text, "html.parser")
         german_title = soup.select_one("span.episodeGermanTitle")
         if german_title and german_title.text.strip():
-            title = sanitize_filename(german_title.text.strip())
+            title = sanitize_episode_title(german_title.text.strip())
             return title
         english_title = soup.select_one("small.episodeEnglishTitle") 
         if english_title and english_title.text.strip():
-            title = sanitize_filename(english_title.text.strip())
+            title = sanitize_episode_title(english_title.text.strip())
             return title
     except Exception as e:
         log(f"[FEHLER] Konnte Episodentitel nicht abrufen ({url}): {e}")
@@ -281,7 +314,6 @@ def delete_old_non_german_versions(series_folder, season, episode):
     pattern = f"S{season:02d}E{episode:03d}" if season > 0 else f"Film{episode:02d}"
     for file in base.rglob("*.mp4"):
         if pattern.lower() in file.name.lower():
-            # Lösche alle Nicht-German-Dub-Versionen (erkennbar an 'sub'/'english' im Dateinamen)
             if "[sub]" in file.name.lower() or "[english dub]" in file.name.lower() or "[english sub]" in file.name.lower():
                 try:
                     os.remove(file)
@@ -292,9 +324,9 @@ def delete_old_non_german_versions(series_folder, season, episode):
 def rename_downloaded_file(series_folder, season, episode, title, language):
     lang_suffix = {
         "German Dub": False,
-        "German Sub": "Sub",
-        "English Dub": "English Dub",
-        "English Sub": "English Sub"
+        "German Sub": "[Sub]",
+        "English Dub": "[English Dub]",
+        "English Sub": "[English Sub]"
     }.get(language, "")
 
     if season > 0:
@@ -313,17 +345,20 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
         file_to_rename = matching_files[0]
         pattern = f"Film{episode:02d}"
 
+    safe_title = sanitize_episode_title(title) if title else ""
 
-    safe_title = sanitize_title(title) if title else ""
+    dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
+    dest_folder.mkdir(parents=True, exist_ok=True)
+
+    safe_title = check_length(dest_folder, pattern, safe_title, lang_suffix)
+
     new_name = f"{pattern}"
     if safe_title:
         new_name += f" - {safe_title}"
     if lang_suffix:
-        new_name += f" [{lang_suffix}]"
+        new_name += f" {lang_suffix}"
     new_name += ".mp4"
 
-    dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
-    dest_folder.mkdir(parents=True, exist_ok=True)
     new_path = dest_folder / new_name
 
     try:
@@ -837,7 +872,7 @@ if __name__ == "__main__":
     init_db()
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
-    deleted_check()
+    # deleted_check()
     log("[SYSTEM] AniLoader API starting...")
     # run Flask WITHOUT reloader so background threads survive page reloads
     app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)
