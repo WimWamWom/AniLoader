@@ -19,8 +19,10 @@ const stopRun = document.getElementById('stop-run');
 
 
 const downloadStatus = document.getElementById('download-status');
-const currentCard = document.getElementById('current-card');
+// removed current card; info now shown in overview card
 const logCount = document.getElementById('log-count');
+// Cache for per-season counts to avoid flicker while updating
+const countsCache = {};
 
 function setStartButtonsDisabled(disabled) {
   [startDefault, startNew, startGerman, startMissing].forEach(btn => {
@@ -59,18 +61,7 @@ async function fetchStatus() {
   // Disable start buttons while running
   setStartButtonsDisabled(status === 'running');
   setStopButtonEnabled(status === 'running' || status === 'stopping');
-    if (s.current_title) {
-      currentCard.innerHTML = `
-        <div class="card mb-3">
-          <div class="card-body">
-            <h5 class="card-title">${s.current_title}</h5>
-            <div class="small text-secondary">Index: ${s.current_index ?? '-'}</div>
-            <div class="mt-2 small">Gestartet: ${s.started_at ? new Date(s.started_at*1000).toLocaleString() : '-'}</div>
-          </div>
-        </div>`;
-    } else {
-      currentCard.innerHTML = '';
-    }
+  // no separate current card anymore
   } catch(e) {
     console.error(e);
   }
@@ -83,16 +74,22 @@ function renderOverview(items) {
     const seasons = item.last_season || 0;
     const episodes = item.last_episode || 0;
     const films = item.last_film || 0;
-    const pct = episodes ? 100 : 0;
-    const card = document.createElement('div');
+  // Show simple running indicator instead of a progress bar
+  const isRunning = (window.__status_status === 'running');
+  const card = document.createElement('div');
     card.className = 'col-12';
-    card.innerHTML = `
+    // Include current run meta (index + started_at) if a download is active and matches this item
+    const startedAt = window.__status_started_at ? new Date(window.__status_started_at*1000).toLocaleString() : null;
+    const idxInfo = (typeof window.__status_current_index === 'number') ? `Index: ${window.__status_current_index}` : '';
+  const countsText = countsCache[item.id] || '';
+  card.innerHTML = `
       <div class="card">
         <div class="card-body">
           <div class="d-flex justify-content-between">
             <div>
               <h5 class="card-title mb-0">${item.title || '(kein Titel)'}</h5>
-              <div class="small text-secondary">ID: ${item.id} • ${item.url}</div>
+              <div class="small text-secondary">ID: ${item.id} • ${item.url ? `<a href="${item.url}" target="_blank" rel="noreferrer">${item.url}</a>` : ''}</div>
+              ${(startedAt || idxInfo) ? `<div class="small mt-1 text-secondary">${idxInfo}${(idxInfo && startedAt) ? ' • ' : ''}${startedAt ? 'Gestartet: ' + startedAt : ''}</div>` : ''}
             </div>
             <div class="text-end">
               ${item.complete ? '<span class="badge text-bg-success">Komplett</span>' : '<span class="badge text-bg-warning">Läuft</span>'}
@@ -105,12 +102,31 @@ function renderOverview(items) {
               <div>Staffeln: <strong>${seasons}</strong> • Episoden: <strong>${episodes}</strong></div>
               <div>Filme: <strong>${films}</strong></div>
             </div>
-            <div class="progress"><div class="progress-bar" role="progressbar" style="width:${pct}%;"></div></div>
+      ${isRunning ? '<div class="small mt-2 text-secondary">Lädt runter.</div>' : ''}
+      <div class="small mt-2 text-secondary" id="counts-${item.id}">${countsText}</div>
           </div>
         </div>
       </div>
     `;
     overviewEl.appendChild(card);
+
+    // Load per-season counts for this series
+    (async () => {
+      try {
+        const counts = await apiGet(`/counts?id=${encodeURIComponent(item.id)}`);
+        const tgt = document.getElementById(`counts-${item.id}`);
+        if (!counts || !counts.per_season) return; // keep old
+        const entries = Object.keys(counts.per_season).sort((a,b)=>Number(a)-Number(b)).map(s => `S${String(s).padStart(2,'0')}: ${counts.per_season[s]} Ep.`);
+        const filmsTxt = typeof counts.films === 'number' && counts.films > 0 ? ` • Filme: ${counts.films}` : '';
+        const txt = entries.length ? `Geladen pro Staffel: ${entries.join(' | ')}${filmsTxt}` : (filmsTxt ? `Geladen pro Staffel: -${filmsTxt}` : '');
+        if (txt) {
+          countsCache[item.id] = txt;
+          if (tgt) tgt.textContent = txt;
+        }
+      } catch (e) {
+        // keep existing text; do not overwrite
+      }
+    })();
   });
 }
 
@@ -118,6 +134,10 @@ async function fetchOverview() {
   try {
     // Get current status to determine which anime is currently downloading
     const s = await apiGet('/status');
+  // cache some status meta for renderOverview
+  window.__status_started_at = s.started_at || null;
+  window.__status_current_index = (typeof s.current_index === 'number') ? s.current_index : null;
+  window.__status_status = s.status || null;
     const data = await apiGet('/database');
     let items = data.map(it => ({
       id: it.id,

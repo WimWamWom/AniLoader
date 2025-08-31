@@ -4,7 +4,7 @@
 
 <ins>***Momentan noch in Arbeit. Bereits Funktionsfähig***</ins> </br>
 ***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
-Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automatischen Download von Animes von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) ermöglicht. Der Schwerpunkt liegt dabei auf deutschen Dub-Versionen. Das Skript verwaltet eine **SQLite-Datenbank**, in der alle heruntergeladenen Inhalte gespeichert und **fehlende duetsche Episoden** automatisch erkannt werden. Heruntergeladene Dateien werden sauber umbenannt und übersichtlich nach **Staffeln, Episoden und Filmen sortiert**. Dadurch entsteht eine klar strukturierte Ordnerhierarchie, in der Serien und Filme leicht auffindbar sind. Zusätzlich bietet das Webinterface eine komfortable Möglichkeit, Downloads zu verwalten und den aktuellen Fortschritt einzusehen.
+Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automatischen Download von Animes von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) ermöglicht. Der Schwerpunkt liegt dabei auf deutschen Dub-Versionen. Das Skript verwaltet eine **SQLite-Datenbank**, in der alle heruntergeladenen Inhalte gespeichert und **fehlende deutsche Episoden** automatisch erkannt werden. Heruntergeladene Dateien werden sauber umbenannt und übersichtlich nach **Staffeln, Episoden und Filmen sortiert**. Dadurch entsteht eine klar strukturierte Ordnerhierarchie, in der Serien und Filme leicht auffindbar sind. Zusätzlich bietet das Webinterface eine komfortable Möglichkeit, Downloads zu verwalten und den aktuellen Fortschritt einzusehen.
 
 
 
@@ -56,6 +56,12 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
   - Staffeln → `Staffel 1`, `Staffel 2`, …
 - Option, nur **fehlende deutsche Folgen** (`german`) oder **neue Episoden** (`new`) zu prüfen
 - **Webinterface** zur Kontrolle des Downloads, Überwachung der Logs und Datenbankabfrage
+  - Start-Buttons sind während eines laufenden Durchlaufs deaktiviert
+  - Roter Stop-Button zum Abbrechen ohne „Komplett“-Markierung
+  - Fortschrittskarte mit klickbarem Serienlink und Startzeit/Index
+  - Anzeige „Geladen pro Staffel … • Filme: N“ aus dem Dateisystem
+  - Speicheranzeige mit automatischer Einheit (TB/GB/MB)
+  - Sanfte Aktualisierung: vorhandene Werte bleiben sichtbar bis neue Daten ankommen
 
 
 
@@ -210,21 +216,21 @@ curl "http://localhost:5050/start_download?mode=german"
 ```
 #### GET, Überprüfe auf neue Episoden:
 ```
-curl "http://localhost:5050/start_download?new"
+curl "http://localhost:5050/start_download?mode=new"
 ```
 Überprüft ob bei abgeschlossenen Animes neue Filme, Staffeln oder Episoden existieren
 
 #### GET, Überprüfe auf fehlende Episoden:
 ```
-curl "http://localhost:5050/check_missing"
+curl "http://localhost:5050/start_download?mode=check-missing"
 ```
-Überprüft ob bei angefangenen Animes ob der Download alle Folgen geladen hat, oder ob welche nicht heruntergeladen wurden.
+Überprüft bei angefangenen Animes, ob alle Folgen geladen wurden, und lädt fehlende nach.
 
 ### Status
 
 URL: /status </br>
 Method: GET </br>
-Beschreibung: liefert den aktuellen Status (idle | running | finished), aktueller Modus, Index/Titel der Serie, Startzeit. </br>
+Beschreibung: liefert den aktuellen Status (idle | running | stopping | finished | kein-speicher), aktueller Modus, Index/Titel der Serie, Startzeit. </br>
 
 #### Aufruf
 ```
@@ -236,7 +242,45 @@ curl http://localhost:5050/status
 {"status":"running","mode":"new","current_index":1,"current_title":"Naruto","started_at":1600000000.0}
 ```
 
+### Stop
+
+URL: /stop </br>
+Method: POST </br>
+Beschreibung: bricht den aktuellen Durchlauf kooperativ ab. Der laufende Download-Prozess wird beendet; Anime werden dabei nicht fälschlich als „komplett“ markiert. </br>
+
+```
+curl -X POST http://localhost:5050/stop
+```
+
 ### Logs
+### Disk
+
+URL: /disk </br>
+Method: GET </br>
+Beschreibung: freier Speicher als Zahl in GB (Frontend zeigt TB/GB/MB an). </br>
+```
+{"free_gb": 512.34}
+```
+
+### Config
+
+URL: /config </br>
+Method: GET | POST </br>
+Beschreibung: holt/setzt Sprachenreihenfolge und Mindestfreispeicher. </br>
+
+GET
+```
+curl http://localhost:5050/config
+```
+Antwort
+```
+{"languages":["German Dub","German Sub","English Dub","English Sub"],"min_free_gb":128}
+```
+
+POST
+```
+curl -X POST http://localhost:5050/config -H "Content-Type: application/json" -d '{"languages":["German Dub","German Sub"],"min_free_gb":256}'
+```
 
 URL: /logs </br>
 Method: GET </br>
@@ -253,6 +297,7 @@ Method: GET </br>
 Query-Parameter:
 - q = Suchbegriff (match auf title oder url)
 - complete = 0 oder 1 (Filter)
+- deleted = 0 oder 1 (Filter)
 - sort_by = id | title | last_film | last_episode | last_season
 - order = asc | desc
 - limit = Zahl
@@ -266,6 +311,36 @@ curl "http://localhost:5050/database?q=naruto&complete=0&sort_by=title&order=asc
 ```
 {id,title,url,complete,deutsch_komplett,fehlende,last_film,last_episode,last_season}
 ```
+
+### Counts (Staffel-/Film-Zählung)
+
+URL: /counts </br>
+Method: GET </br>
+Beschreibung: zählt pro Staffel Episoden und Filme aus dem Dateisystem. </br>
+Parameter: `id` (DB id) oder `title` (Serienordner unter Downloads). </br>
+
+Beispiel
+```
+curl "http://localhost:5050/counts?id=42"
+```
+Antwort
+```
+{"per_season":{"1":12,"2":12},"total_seasons":2,"total_episodes":24,"films":1,"title":"Naruto"}
+```
+
+### Export
+
+URL: /export </br>
+Method: POST </br>
+Beschreibung: fügt eine URL zur Datenbank hinzu (für Tampermonkey). </br>
+Body: `{ "url": "https://…" }`
+
+### Check
+
+URL: /check </br>
+Method: GET </br>
+Beschreibung: prüft, ob eine URL bereits existiert (und nicht gelöscht ist). </br>
+Query: `url=https://…`
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Tampermonkey
@@ -339,7 +414,7 @@ https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
 aniworld nicht installiert oder nicht in PATH. Installiere / passe run_download an.
 
 ### AniLoader.txt wird nicht eingelesen
-Stelle sicher, dass AniLoader.txt im selben Ordner wie combined_web_downloader.py liegt. Beim Start wird update_db() ausgeführt.
+Stelle sicher, dass AniLoader.txt im selben Ordner wie AniLoader.py liegt. Beim Start wird die Datenbank aktualisiert.
 
 ### Keine Logs im UI
 /logs liefert die Log-Zeilen als JSON. Prüfe mit curl http://localhost:5050/logs. UI muss diese anzeigen.

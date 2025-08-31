@@ -1047,6 +1047,70 @@ def api_database():
         })
     return jsonify(db_data)
 
+@app.route("/counts")
+def api_counts():
+    """
+    Liefert Zählwerte für eine Serie aus dem Dateisystem:
+      - per_season: { "1": epCount, ... }
+      - total_seasons, total_episodes, films
+    Parameter: id (DB id) oder title (Serien-Titel, Ordnername unter Downloads)
+    """
+    try:
+        anime_id = request.args.get("id")
+        title = request.args.get("title")
+        series_title = None
+        if anime_id and anime_id.isdigit():
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("SELECT title FROM anime WHERE id = ?", (int(anime_id),))
+                row = c.fetchone()
+                if row and row[0]:
+                    series_title = row[0]
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        if not series_title:
+            series_title = title
+        if not series_title:
+            return jsonify({
+                'per_season': {},
+                'total_seasons': 0,
+                'total_episodes': 0,
+                'films': 0
+            })
+
+        base = Path(DOWNLOAD_DIR) / series_title
+        per_season = {}
+        total_eps = 0
+        films = 0
+        if base.exists() and base.is_dir():
+            # Filme zählen
+            filme_dir = base / 'Filme'
+            if filme_dir.exists() and filme_dir.is_dir():
+                films = sum(1 for f in filme_dir.glob('*.mp4'))
+            # Staffeln zählen
+            for d in base.iterdir():
+                if d.is_dir():
+                    m = re.match(r'^Staffel\s+(\d+)$', d.name, re.IGNORECASE)
+                    if m:
+                        s = m.group(1)
+                        cnt = sum(1 for f in d.glob('*.mp4'))
+                        per_season[s] = cnt
+                        total_eps += cnt
+        return jsonify({
+            'per_season': per_season,
+            'total_seasons': len(per_season),
+            'total_episodes': total_eps,
+            'films': films,
+            'title': series_title
+        })
+    except Exception as e:
+        log(f"[ERROR] api_counts: {e}")
+        return jsonify({'error': str(e), 'per_season': {}, 'total_seasons': 0, 'total_episodes': 0, 'films': 0}), 500
+
 @app.route("/export", methods=["POST"])
 def api_export():
     data = request.get_json() or {}
