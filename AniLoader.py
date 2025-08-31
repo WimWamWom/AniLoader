@@ -918,11 +918,13 @@ def api_database():
       q=search string
       complete=0|1
       deleted=0|1
+            deutsch=0|1 (filter on deutsch_komplett)
       sort_by, order, limit, offset
     """
     q = request.args.get("q")
     complete = request.args.get("complete")
     deleted = request.args.get("deleted")
+    deutsch = request.args.get("deutsch")
     sort_by = request.args.get("sort_by", "id")
     order = request.args.get("order", "asc").lower()
     limit = request.args.get("limit")
@@ -946,6 +948,9 @@ def api_database():
     if deleted in ("0", "1"):
         where_clauses.append("deleted = ?")
         params.append(int(deleted))
+    if deutsch in ("0", "1"):
+        where_clauses.append("deutsch_komplett = ?")
+        params.append(int(deutsch))
 
     if where_clauses:
         sql += " WHERE " + " AND ".join(where_clauses)

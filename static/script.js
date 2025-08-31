@@ -8,6 +8,7 @@ const dbBody = document.getElementById('db-table-body');
 const dbRefresh = document.getElementById('db-refresh');
 const dbSearch = document.getElementById('db-search');
 const dbComplete = document.getElementById('db-complete');
+const dbDeutsch = document.getElementById('db-deutsch');
 const dbSort = document.getElementById('db-sort');
 const dbOrder = document.getElementById('db-order');
 
@@ -282,9 +283,10 @@ async function fetchDatabase() {
   try {
     const q = encodeURIComponent(dbSearch.value.trim());
     const complete = dbComplete.value; // jetzt enthält auch 'deleted'
+  const deutsch = dbDeutsch ? dbDeutsch.value : '';
     const sort_by = dbSort.value;
     const order = dbOrder.value;
-    const url = `/database?q=${q}&complete=${complete}&sort_by=${sort_by}&order=${order}`;
+  const url = `/database?q=${q}&complete=${complete}&sort_by=${sort_by}&order=${order}${deutsch !== '' ? `&deutsch=${deutsch}` : ''}`;
     const data = await apiGet(url);
     dbBody.innerHTML = '';
     data.forEach(row => {
@@ -382,6 +384,7 @@ clearFilter.addEventListener('click', () => { logFilter.value=''; });
 dbRefresh.addEventListener('click', fetchDatabase);
 dbSearch.addEventListener('keyup', (e) => { if (e.key === 'Enter') fetchDatabase(); });
 dbComplete.addEventListener('change', fetchDatabase);
+dbDeutsch?.addEventListener('change', fetchDatabase);
 dbSort.addEventListener('change', fetchDatabase);
 dbOrder.addEventListener('change', fetchDatabase);
 
@@ -391,8 +394,8 @@ fetchDatabase();
 fetchStatus();
 fetchLogs();
 fetchDisk();
-setInterval(fetchOverview, 4000);
-setInterval(fetchDatabase, 6000);
-setInterval(fetchStatus, 2000);
-setInterval(fetchLogs, 1000);
-setInterval(fetchDisk, 5000);
+setInterval(fetchOverview, 60000);
+setInterval(fetchDatabase, 60000);
+setInterval(fetchStatus, 60000);
+setInterval(fetchLogs, 60000);
+setInterval(fetchDisk, 60000);
