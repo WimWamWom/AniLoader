@@ -397,5 +397,5 @@ fetchDisk();
 setInterval(fetchOverview, 60000);
 setInterval(fetchDatabase, 60000);
 setInterval(fetchStatus, 60000);
-setInterval(fetchLogs, 60000);
+setInterval(fetchLogs, 10000);
 setInterval(fetchDisk, 60000);
