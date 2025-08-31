@@ -156,15 +156,39 @@ function renderLangList(langs) {
   langList.innerHTML = '';
   langs.forEach((l, idx) => {
     const li = document.createElement('li');
-    li.className = 'list-group-item';
+    li.className = 'list-group-item d-flex align-items-center justify-content-between';
     li.draggable = true;
     li.dataset.index = idx;
-    li.textContent = l;
+    // number badge + label
+    const left = document.createElement('div');
+    left.className = 'd-flex align-items-center gap-2';
+    const num = document.createElement('span');
+    num.className = 'badge rounded-pill text-bg-secondary';
+    num.textContent = (idx + 1) + '.';
+    const label = document.createElement('span');
+    label.className = 'lang-label';
+    label.textContent = l;
+    left.appendChild(num);
+    left.appendChild(label);
+    const dragHint = document.createElement('span');
+    dragHint.className = 'small text-secondary';
+    dragHint.textContent = '⠿';
+    li.appendChild(left);
+    li.appendChild(dragHint);
+
     li.addEventListener('dragstart', onDragStart);
     li.addEventListener('dragover', onDragOver);
     li.addEventListener('drop', onDrop);
     li.addEventListener('dragend', onDragEnd);
     langList.appendChild(li);
+  });
+  renumberLangItems();
+}
+
+function renumberLangItems() {
+  Array.from(langList.children).forEach((li, i) => {
+    const num = li.querySelector('.badge');
+    if (num) num.textContent = (i + 1) + '.';
   });
 }
 
@@ -192,12 +216,16 @@ function onDrop(e) {
       langList.insertBefore(dragSrc, target);
     }
   }
+  renumberLangItems();
 }
 
 function onDragEnd() { dragSrc = null; }
 
 async function saveConfig() {
-  const langs = Array.from(langList.children).map(li => li.textContent.trim());
+  const langs = Array.from(langList.children).map(li => {
+    const label = li.querySelector('.lang-label');
+    return (label ? label.textContent : li.textContent).trim();
+  });
   const min_free_gb = parseFloat(minFreeInput.value) || 0;
   try {
     await apiPost('/config', { languages: langs, min_free_gb });
