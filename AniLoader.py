@@ -22,8 +22,37 @@ BASE_DIR = Path(__file__).resolve().parent
 ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
 DB_PATH = BASE_DIR / "AniLoader.db"
+CONFIG_PATH = BASE_DIR / "config.json"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
+MIN_FREE_GB = 2.0
 MAX_PATH = 260
+
+
+def load_config():
+    global LANGUAGES, MIN_FREE_GB
+    try:
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                LANGUAGES = cfg.get('languages', LANGUAGES)
+                MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
+                log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB}")
+        else:
+            save_config()  # create default config
+    except Exception as e:
+        log(f"[CONFIG-ERROR] load_config: {e}")
+
+
+def save_config():
+    try:
+        cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB}
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        log(f"[CONFIG] gespeichert")
+        return True
+    except Exception as e:
+        log(f"[CONFIG-ERROR] save_config: {e}")
+        return False
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
@@ -385,10 +414,22 @@ def run_download(cmd):
 
 # -------------------- Download-Funktionen --------------------
 def download_episode(series_title, episode_url, season, episode, anime_id, german_only=False):
-
-    if freier_speicher_mb(DOWNLOAD_DIR) < 2.0:
-        log(f"[ERROR] Weniger als 2GB freier Speicherplatz im Download-Ordner ({DOWNLOAD_DIR}) - Abbruch")
+    # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
+    try:
+        free_gb = freier_speicher_mb(DOWNLOAD_DIR)
+    except Exception as e:
+        log(f"[ERROR] Konnte freien Speicher nicht ermitteln: {e}")
         return "FAILED"
+
+    if free_gb < MIN_FREE_GB:
+        log(f"[ERROR] Zu wenig freier Speicher ({free_gb} GB < {MIN_FREE_GB} GB) im Download-Ordner ({DOWNLOAD_DIR}) - Abbruch")
+        # Status global setzen, damit Web-UI es anzeigen kann
+        try:
+            with download_lock:
+                current_download["status"] = "kein-speicher"
+        except Exception:
+            pass
+        return "NO_SPACE"
     
     series_folder = os.path.join(DOWNLOAD_DIR, series_title)
     if not german_only:
@@ -429,9 +470,17 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             row = c.fetchone()
             fehlende = json.loads(row[0]) if row and row[0] else []
             if episode_url not in fehlende:
-                fehlende.append(episode_url)
-                update_anime(anime_id, fehlende_deutsch_folgen=fehlende)
-                log(f"[INFO] Episode zu fehlende_deutsch_folgen hinzugefügt: {episode_url}")
+                # Nur in DB schreiben, wenn noch genug Speicher zur Verfügung steht
+                try:
+                    free_after_gb = freier_speicher_mb(DOWNLOAD_DIR)
+                except Exception:
+                    free_after_gb = 0
+                if free_after_gb >= MIN_FREE_GB:
+                    fehlende.append(episode_url)
+                    update_anime(anime_id, fehlende_deutsch_folgen=fehlende)
+                    log(f"[INFO] Episode zu fehlende_deutsch_folgen hinzugefügt: {episode_url}")
+                else:
+                    log(f"[WARN] DB nicht aktualisiert wegen zu wenig Speicher: {episode_url}")
         except Exception as e:
             log(f"[DB-ERROR] beim Aktualisieren fehlende_deutsch_folgen: {e}")
         finally:
@@ -447,6 +496,9 @@ def download_films(series_title, base_url, anime_id, german_only=False, start_fi
     while True:
         film_url = f"{base_url}/filme/film-{film_num}"
         result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only)
+        if result == "NO_SPACE":
+            log(f"[ERROR] Abbruch aller Film-Downloads wegen fehlendem Speicher.")
+            return "NO_SPACE"
         if result in ["NO_STREAMS", "FAILED"]:
             log(f"[INFO] Keine weiteren Filme gefunden bei Film {film_num}.")
             break
@@ -465,6 +517,9 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
         while True:
             episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
             result = download_episode(series_title, episode_url, season, episode, anime_id, german_only)
+            if result == "NO_SPACE":
+                log(f"[ERROR] Abbruch aller Staffel-Downloads wegen fehlendem Speicher.")
+                return "NO_SPACE"
             if result in ["NO_STREAMS", "FAILED"]:
                 if episode == start_episode:
                     log(f"[INFO] Keine Episoden gefunden in Staffel {season}.")
@@ -623,8 +678,14 @@ def run_mode(mode="default"):
                 start_season = anime.get("last_season") or 1
                 start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
                 log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
-                download_films(series_title, base_url, anime_id, start_film=start_film)
-                download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
+                r = download_films(series_title, base_url, anime_id, start_film=start_film)
+                if r == "NO_SPACE":
+                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
+                    return
+                r2 = download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
+                if r2 == "NO_SPACE":
+                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
+                    return
                 check_deutsch_komplett(anime_id)
 
         elif mode == "check-missing":
@@ -662,9 +723,6 @@ def run_mode(mode="default"):
                         if result == "NO_STREAMS":
                             break  # Keine weiteren Filme vorhanden
                     film_num += 1
-
-                # Alle Episoden in allen Staffeln prüfen
-                season = 1
                 consecutive_empty_seasons = 0
                 while True:
                     episode = 1
@@ -684,7 +742,7 @@ def run_mode(mode="default"):
                                 # Staffel existiert nicht -> Abbruchkandidat
                                 break
                             else:
-                                log(f"[INFO] Staffel {season} abgeschlossen bei Episode {episode-1}")
+                                log(f"[INFO] Staffel {season} beendet nach {episode-1} Episoden.")
                                 break
                         else:
                             found_episode = True
@@ -723,8 +781,14 @@ def run_mode(mode="default"):
                 start_season = anime.get("last_season") or 1
                 start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
                 log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
-                download_films(series_title, base_url, anime_id, start_film=start_film)
-                download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
+                r = download_films(series_title, base_url, anime_id, start_film=start_film)
+                if r == "NO_SPACE":
+                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
+                    return
+                r2 = download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
+                if r2 == "NO_SPACE":
+                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
+                    return
                 check_deutsch_komplett(anime_id)
                 update_anime(anime_id, complete=1)
                 log(f"[OK] Download abgeschlossen für: '{series_title}'")
@@ -732,11 +796,20 @@ def run_mode(mode="default"):
     except Exception as e:
         log(f"[ERROR] Unhandled exception in run_mode: {e}")
     finally:
-        current_download.update({
-            "status": "finished",
-            "current_index": None,
-            "current_title": None
-        })
+        # Wenn der Status bereits auf 'kein-speicher' gesetzt wurde, nicht überschreiben.
+        with download_lock:
+            if current_download.get("status") != "kein-speicher":
+                current_download.update({
+                    "status": "finished",
+                    "current_index": None,
+                    "current_title": None
+                })
+            else:
+                # Nur laufende Details zurücksetzen, Status bleibt 'kein-speicher'
+                current_download.update({
+                    "current_index": None,
+                    "current_title": None
+                })
 
 # -------------------- API Endpoints --------------------
 @app.route("/start_download", methods=["POST", "GET"])
@@ -757,6 +830,48 @@ def api_status():
     with download_lock:
         data = dict(current_download)
     return jsonify(data)
+
+
+@app.route("/config", methods=["GET", "POST"])
+def api_config():
+    global LANGUAGES, MIN_FREE_GB
+    if request.method == 'GET':
+        try:
+            cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB}
+            return jsonify(cfg)
+        except Exception as e:
+            log(f"[ERROR] api_config GET: {e}")
+            return jsonify({'error': 'failed'}), 500
+
+    # POST -> save
+    data = request.get_json() or {}
+    langs = data.get('languages')
+    min_free = data.get('min_free_gb')
+    changed = False
+    try:
+        if isinstance(langs, list) and langs:
+            LANGUAGES = list(langs)
+            changed = True
+        if min_free is not None:
+            MIN_FREE_GB = float(min_free)
+            changed = True
+        if changed:
+            save_config()
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        log(f"[ERROR] api_config POST: {e}")
+        return jsonify({'status': 'failed', 'error': str(e)}), 400
+
+
+
+@app.route('/disk')
+def api_disk():
+    try:
+        free_gb = freier_speicher_mb(DOWNLOAD_DIR)
+        return jsonify({'free_gb': free_gb})
+    except Exception as e:
+        log(f"[ERROR] api_disk: {e}")
+        return jsonify({'free_gb': None, 'error': str(e)}), 500
 
 @app.route("/logs")
 def api_logs():
@@ -869,10 +984,11 @@ def index():
 
 # -------------------- Entrypoint --------------------
 if __name__ == "__main__":
+    load_config()
     init_db()
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
-    # deleted_check()
+    deleted_check()
     log("[SYSTEM] AniLoader API starting...")
     # run Flask WITHOUT reloader so background threads survive page reloads
     app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)

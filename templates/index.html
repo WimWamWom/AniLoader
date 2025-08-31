@@ -36,6 +36,9 @@
     <li class="nav-item" role="presentation">
       <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab">📜 Live-Log</button>
     </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="settings-tab" data-bs-toggle="tab" data-bs-target="#settings" type="button" role="tab">⚙️ Einstellungen</button>
+    </li>
   </ul>
 
   <div class="tab-content pt-3">
@@ -50,6 +53,7 @@
         </div>
         <div class="col-md-4 text-md-end">
           <span id="download-status" class="small text-secondary">Status: idle</span>
+          <span id="disk-free" class="small text-secondary ms-3">Freier Speicher: - GB</span>
         </div>
       </div>
 
@@ -119,6 +123,29 @@
         <div class="ms-auto small text-secondary">Zeilen: <span id="log-count">0</span></div>
       </div>
       <div id="logBox" class="log-box mono">Noch keine Logs...</div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-pane fade" id="settings" role="tabpanel" aria-labelledby="settings-tab">
+      <div class="row g-2 mb-2">
+        <div class="col-md-6">
+          <h6>Sprache Reihenfolge (Drag & Drop)</h6>
+          <ul id="lang-list" class="list-group">
+            <!-- languages inserted by JS -->
+          </ul>
+        </div>
+        <div class="col-md-6">
+          <h6>Speicher Schwelle</h6>
+          <div class="input-group mb-3">
+            <input id="min-free" type="number" step="0.1" class="form-control" />
+            <span class="input-group-text">GB</span>
+          </div>
+          <div>
+            <button id="save-config" class="btn btn-primary">Speichern</button>
+            <button id="reset-config" class="btn btn-outline-secondary">Zurücksetzen</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>

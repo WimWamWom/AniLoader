@@ -40,7 +40,12 @@ async function apiPost(path, body) {
 async function fetchStatus() {
   try {
     const s = await apiGet('/status');
-    downloadStatus.textContent = `Status: ${s.status}${s.mode ? ' • ' + s.mode : ''}`;
+    const status = s.status || 'idle';
+    if (status === 'kein-speicher') {
+      downloadStatus.innerHTML = `Status: <span class="badge text-bg-danger">Kein Speicher</span>${s.mode ? ' • ' + s.mode : ''}`;
+    } else {
+      downloadStatus.textContent = `Status: ${status}${s.mode ? ' • ' + s.mode : ''}`;
+    }
     if (s.current_title) {
       currentCard.innerHTML = `
         <div class="card mb-3">
@@ -133,6 +138,83 @@ async function fetchOverview() {
   } catch(e) { console.error(e); }
 }
 
+/* ---------- Settings (config) ---------- */
+const langList = document.getElementById('lang-list');
+const minFreeInput = document.getElementById('min-free');
+const saveConfigBtn = document.getElementById('save-config');
+const resetConfigBtn = document.getElementById('reset-config');
+
+async function fetchConfig() {
+  try {
+    const cfg = await apiGet('/config');
+    renderLangList(cfg.languages || []);
+    minFreeInput.value = cfg.min_free_gb ?? '';
+  } catch(e) { console.error('fetchConfig', e); }
+}
+
+function renderLangList(langs) {
+  langList.innerHTML = '';
+  langs.forEach((l, idx) => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    li.draggable = true;
+    li.dataset.index = idx;
+    li.textContent = l;
+    li.addEventListener('dragstart', onDragStart);
+    li.addEventListener('dragover', onDragOver);
+    li.addEventListener('drop', onDrop);
+    li.addEventListener('dragend', onDragEnd);
+    langList.appendChild(li);
+  });
+}
+
+let dragSrc = null;
+function onDragStart(e) {
+  dragSrc = e.currentTarget;
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  const target = e.currentTarget;
+  if (dragSrc && target !== dragSrc) {
+    const nodes = Array.from(langList.children);
+    const srcIndex = nodes.indexOf(dragSrc);
+    const tgtIndex = nodes.indexOf(target);
+    if (srcIndex < tgtIndex) {
+      langList.insertBefore(dragSrc, target.nextSibling);
+    } else {
+      langList.insertBefore(dragSrc, target);
+    }
+  }
+}
+
+function onDragEnd() { dragSrc = null; }
+
+async function saveConfig() {
+  const langs = Array.from(langList.children).map(li => li.textContent.trim());
+  const min_free_gb = parseFloat(minFreeInput.value) || 0;
+  try {
+    await apiPost('/config', { languages: langs, min_free_gb });
+    alert('Einstellungen gespeichert');
+  } catch(e) { alert('Speichern fehlgeschlagen'); console.error(e); }
+}
+
+function resetConfig() {
+  fetchConfig();
+}
+
+saveConfigBtn?.addEventListener('click', saveConfig);
+resetConfigBtn?.addEventListener('click', resetConfig);
+
+// load config initially
+fetchConfig();
+
 // Datenbank-Filter mit Deleted
 async function fetchDatabase() {
   try {
@@ -182,6 +264,22 @@ async function fetchLogs() {
   } catch(e) {}
 }
 
+async function fetchDisk() {
+  try {
+    const data = await apiGet('/disk');
+    const el = document.getElementById('disk-free');
+    if (!el) return;
+    if (data && typeof data.free_gb === 'number') {
+      el.textContent = `Freier Speicher: ${data.free_gb} GB`;
+    } else if (data && data.free_gb === null) {
+      el.textContent = `Freier Speicher: n/a`;
+    }
+  } catch(e) {
+    console.error('fetchDisk', e);
+  }
+}
+
+
 async function startDownload(mode) {
   try {
     await apiPost(`/start_download`, { mode });
@@ -210,7 +308,9 @@ fetchOverview();
 fetchDatabase();
 fetchStatus();
 fetchLogs();
+fetchDisk();
 setInterval(fetchOverview, 4000);
 setInterval(fetchDatabase, 6000);
 setInterval(fetchStatus, 2000);
 setInterval(fetchLogs, 1000);
+setInterval(fetchDisk, 5000);
