@@ -399,10 +399,39 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
         return False
 
 def run_download(cmd):
-    """Startet externes CLI-Tool (aniworld) und interpretiert Ausgabe"""
+    """Startet externes CLI-Tool (aniworld) und interpretiert Ausgabe; kann abgebrochen werden."""
+    global current_proc
     try:
-        process = subprocess.run(cmd, capture_output=True, text=True)
-        out = (process.stdout or "") + (process.stderr or "")
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        with current_proc_lock:
+            current_proc = process
+        stopped = False
+        while True:
+            try:
+                process.wait(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if download_stop_event.is_set():
+                    stopped = True
+                    try:
+                        process.terminate()
+                        time.sleep(1)
+                        if process.poll() is None:
+                            process.kill()
+                    except Exception:
+                        pass
+                    break
+        out = ""
+        try:
+            outs, _ = process.communicate(timeout=1)
+            out = outs or ""
+        except Exception:
+            pass
+        finally:
+            with current_proc_lock:
+                current_proc = None
+        if stopped or download_stop_event.is_set():
+            return "STOPPED"
         if "No streams available for episode" in out:
             return "NO_STREAMS"
         if "No provider found for language" in out:
@@ -414,6 +443,8 @@ def run_download(cmd):
 
 # -------------------- Download-Funktionen --------------------
 def download_episode(series_title, episode_url, season, episode, anime_id, german_only=False):
+    if download_stop_event.is_set():
+        return "STOPPED"
     # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
     try:
         free_gb = freier_speicher_mb(DOWNLOAD_DIR)
@@ -442,9 +473,14 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     german_available = False
 
     for lang in langs_to_try:
+        if download_stop_event.is_set():
+            return "STOPPED"
         log(f"[DOWNLOAD] Versuche {lang} -> {episode_url}")
         cmd = ["aniworld", "--language", lang, "-o", str(DOWNLOAD_DIR), "--episode", episode_url]
         result = run_download(cmd)
+        if result == "STOPPED":
+            log("[INFO] Download abgebrochen.")
+            return "STOPPED"
         if result == "NO_STREAMS":
             log(f"[INFO] Kein Stream verfügbar: {episode_url} -> Abbruch")
             return "NO_STREAMS"
@@ -494,8 +530,12 @@ def download_films(series_title, base_url, anime_id, german_only=False, start_fi
     film_num = start_film
     log(f"[INFO] Starte Filmprüfung ab Film {start_film}")
     while True:
+        if download_stop_event.is_set():
+            return "STOPPED"
         film_url = f"{base_url}/filme/film-{film_num}"
         result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only)
+        if result == "STOPPED":
+            return "STOPPED"
         if result == "NO_SPACE":
             log(f"[ERROR] Abbruch aller Film-Downloads wegen fehlendem Speicher.")
             return "NO_SPACE"
@@ -511,12 +551,18 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
     consecutive_empty_seasons = 0
 
     while True:
+        if download_stop_event.is_set():
+            return "STOPPED"
         episode = start_episode
         found_episode_in_season = False
         log(f"[DOWNLOAD] Prüfe Staffel {season} von '{series_title}'")
         while True:
+            if download_stop_event.is_set():
+                return "STOPPED"
             episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
             result = download_episode(series_title, episode_url, season, episode, anime_id, german_only)
+            if result == "STOPPED":
+                return "STOPPED"
             if result == "NO_SPACE":
                 log(f"[ERROR] Abbruch aller Staffel-Downloads wegen fehlendem Speicher.")
                 return "NO_SPACE"
@@ -539,7 +585,6 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
 
         if consecutive_empty_seasons >= 2:
             log(f"[INFO] Keine weiteren Staffeln gefunden. '{series_title}' scheint abgeschlossen zu sein.")
-            update_anime(anime_id, complete=1)
             break
 
         season += 1
@@ -611,6 +656,9 @@ current_download = {
     "started_at": None
 }
 download_lock = threading.Lock()
+download_stop_event = threading.Event()
+current_proc = None
+current_proc_lock = threading.Lock()
 
 def run_mode(mode="default"):
     global current_download
@@ -625,6 +673,7 @@ def run_mode(mode="default"):
             "current_title": None,
             "started_at": time.time()
         })
+    download_stop_event.clear()
     try:
         init_db()
         # lade Anime inkl. 'deleted' flag
@@ -633,6 +682,9 @@ def run_mode(mode="default"):
         if mode == "german":
             log("=== Modus: Prüfe auf neue deutsche Synchro ===")
             for idx, anime in enumerate(anime_list):
+                if download_stop_event.is_set():
+                    log("[INFO] Abbruch angefordert.")
+                    return
                 current_download["current_index"] = idx
                 # Überspringen wenn als deleted markiert
                 if anime.get("deleted"):
@@ -657,6 +709,9 @@ def run_mode(mode="default"):
                         season = 0
                         episode = int(m2.group(1)) if m2 else 1
                     result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
+                    if result == "STOPPED":
+                        log("[INFO] Lauf gestoppt (german mode).")
+                        return
                     if result == "OK" and url in verbleibend:
                         verbleibend.remove(url)
                         update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
@@ -666,6 +721,9 @@ def run_mode(mode="default"):
         elif mode == "new":
             log("=== Modus: Prüfe auf neue Episoden & Filme ===")
             for idx, anime in enumerate(anime_list):
+                if download_stop_event.is_set():
+                    log("[INFO] Abbruch angefordert.")
+                    return
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
                     log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
@@ -679,10 +737,16 @@ def run_mode(mode="default"):
                 start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
                 log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
                 r = download_films(series_title, base_url, anime_id, start_film=start_film)
+                if r == "STOPPED":
+                    log("[INFO] Lauf gestoppt (new mode).")
+                    return
                 if r == "NO_SPACE":
                     log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
                     return
                 r2 = download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
+                if r2 == "STOPPED":
+                    log("[INFO] Lauf gestoppt (new mode).")
+                    return
                 if r2 == "NO_SPACE":
                     log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
                     return
@@ -696,6 +760,9 @@ def run_mode(mode="default"):
             """
             anime_list = load_anime()
             for anime in anime_list:
+                if download_stop_event.is_set():
+                    log("[INFO] Abbruch angefordert.")
+                    return
                 # Deleted ignorieren
                 if anime.get("deleted"):
                     log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
@@ -766,6 +833,9 @@ def run_mode(mode="default"):
         else:
             log("=== Modus: Standard  ===")
             for idx, anime in enumerate(anime_list):
+                if download_stop_event.is_set():
+                    log("[INFO] Abbruch angefordert.")
+                    return
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
                     log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
@@ -782,10 +852,16 @@ def run_mode(mode="default"):
                 start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
                 log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
                 r = download_films(series_title, base_url, anime_id, start_film=start_film)
+                if r == "STOPPED":
+                    log("[INFO] Lauf gestoppt (default mode).")
+                    return
                 if r == "NO_SPACE":
                     log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
                     return
                 r2 = download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
+                if r2 == "STOPPED":
+                    log("[INFO] Lauf gestoppt (default mode).")
+                    return
                 if r2 == "NO_SPACE":
                     log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
                     return
@@ -810,6 +886,7 @@ def run_mode(mode="default"):
                     "current_index": None,
                     "current_title": None
                 })
+    download_stop_event.clear()
 
 # -------------------- API Endpoints --------------------
 @app.route("/start_download", methods=["POST", "GET"])
@@ -821,8 +898,9 @@ def api_start_download():
     with download_lock:
         if current_download["status"] == "running":
             return jsonify({"status": "already_running"}), 409
-        thread = threading.Thread(target=run_mode, args=(mode,), daemon=True)
-        thread.start()
+    download_stop_event.clear()
+    thread = threading.Thread(target=run_mode, args=(mode,), daemon=True)
+    thread.start()
     return jsonify({"status": "started", "mode": mode})
 
 @app.route("/status")
@@ -830,6 +908,26 @@ def api_status():
     with download_lock:
         data = dict(current_download)
     return jsonify(data)
+
+@app.route("/stop", methods=["POST"]) 
+def api_stop():
+    # Markiere Abbruch und versuche laufenden Prozess zu beenden
+    with download_lock:
+        if current_download["status"] != "running":
+            return jsonify({"status": "not_running"}), 200
+        current_download["status"] = "stopping"
+    download_stop_event.set()
+    try:
+        with current_proc_lock:
+            proc = current_proc
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+    except Exception as e:
+        log(f"[ERROR] api_stop terminate: {e}")
+    return jsonify({"status": "stopping"})
 
 
 @app.route("/config", methods=["GET", "POST"])

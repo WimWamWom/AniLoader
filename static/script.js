@@ -15,11 +15,21 @@ const startDefault = document.getElementById('start-default');
 const startNew = document.getElementById('start-new');
 const startGerman = document.getElementById('start-german');
 const startMissing = document.getElementById('start-missing');
+const stopRun = document.getElementById('stop-run');
 
 
 const downloadStatus = document.getElementById('download-status');
 const currentCard = document.getElementById('current-card');
 const logCount = document.getElementById('log-count');
+
+function setStartButtonsDisabled(disabled) {
+  [startDefault, startNew, startGerman, startMissing].forEach(btn => {
+    if (btn) btn.disabled = !!disabled;
+  });
+}
+function setStopButtonEnabled(enabled) {
+  if (stopRun) stopRun.disabled = !enabled;
+}
 
 async function apiGet(path) {
   const res = await fetch(path);
@@ -46,6 +56,9 @@ async function fetchStatus() {
     } else {
       downloadStatus.textContent = `Status: ${status}${s.mode ? ' • ' + s.mode : ''}`;
     }
+  // Disable start buttons while running
+  setStartButtonsDisabled(status === 'running');
+  setStopButtonEnabled(status === 'running' || status === 'stopping');
     if (s.current_title) {
       currentCard.innerHTML = `
         <div class="card mb-3">
@@ -298,7 +311,19 @@ async function fetchDisk() {
     const el = document.getElementById('disk-free');
     if (!el) return;
     if (data && typeof data.free_gb === 'number') {
-      el.textContent = `Freier Speicher: ${data.free_gb} GB`;
+      // Backend returns GB as number; convert to appropriate unit
+      const gb = data.free_gb;
+      let value = gb;
+      let unit = 'GB';
+      if (gb >= 1024) {
+        value = (gb / 1024);
+        unit = 'TB';
+      } else if (gb < 1) {
+        value = (gb * 1024);
+        unit = 'MB';
+      }
+      const shown = (unit === 'MB') ? Math.round(value) : (Math.round(value * 10) / 10);
+      el.textContent = `Freier Speicher: ${shown} ${unit}`;
     } else if (data && data.free_gb === null) {
       el.textContent = `Freier Speicher: n/a`;
     }
@@ -310,11 +335,27 @@ async function fetchDisk() {
 
 async function startDownload(mode) {
   try {
+  // immediately disable to prevent double click until status polling updates
+  setStartButtonsDisabled(true);
     await apiPost(`/start_download`, { mode });
     downloadStatus.textContent = `Status: starting (${mode})`;
+    setStopButtonEnabled(true);
   } catch(e) {
     console.error(e);
     downloadStatus.textContent = `Status: error`;
+  setStartButtonsDisabled(false);
+    setStopButtonEnabled(false);
+  }
+}
+
+async function stopDownload() {
+  try {
+    await apiPost('/stop', {});
+    downloadStatus.textContent = 'Status: stopping';
+    setStartButtonsDisabled(true);
+    setStopButtonEnabled(true);
+  } catch(e) {
+    console.error(e);
   }
 }
 
@@ -323,6 +364,7 @@ startDefault.addEventListener('click', () => startDownload('default'));
 startNew.addEventListener('click', () => startDownload('new'));
 startGerman.addEventListener('click', () => startDownload('german'));
 startMissing.addEventListener('click', () => startDownload('check-missing'));
+stopRun.addEventListener('click', stopDownload);
 refreshBtn.addEventListener('click', () => { fetchOverview(); fetchDatabase(); fetchStatus(); });
 clearFilter.addEventListener('click', () => { logFilter.value=''; });
 dbRefresh.addEventListener('click', fetchDatabase);
