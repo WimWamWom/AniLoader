@@ -230,7 +230,7 @@ curl "http://localhost:5050/start_download?mode=check-missing"
 
 URL: /status </br>
 Method: GET </br>
-Beschreibung: liefert den aktuellen Status (idle | running | stopping | finished | kein-speicher), aktueller Modus, Index/Titel der Serie, Startzeit. </br>
+Beschreibung: liefert den aktuellen Status (idle | running | finished | kein-speicher), aktueller Modus, Index/Titel der Serie, Startzeit. </br>
 
 #### Aufruf
 ```
@@ -242,15 +242,7 @@ curl http://localhost:5050/status
 {"status":"running","mode":"new","current_index":1,"current_title":"Naruto","started_at":1600000000.0}
 ```
 
-### Stop
 
-URL: /stop </br>
-Method: POST </br>
-Beschreibung: bricht den aktuellen Durchlauf kooperativ ab. Der laufende Download-Prozess wird beendet; Anime werden dabei nicht fälschlich als „komplett“ markiert. </br>
-
-```
-curl -X POST http://localhost:5050/stop
-```
 
 ### Logs
 ### Disk

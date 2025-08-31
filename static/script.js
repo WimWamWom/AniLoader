@@ -15,7 +15,6 @@ const startDefault = document.getElementById('start-default');
 const startNew = document.getElementById('start-new');
 const startGerman = document.getElementById('start-german');
 const startMissing = document.getElementById('start-missing');
-const stopRun = document.getElementById('stop-run');
 
 
 const downloadStatus = document.getElementById('download-status');
@@ -29,9 +28,7 @@ function setStartButtonsDisabled(disabled) {
     if (btn) btn.disabled = !!disabled;
   });
 }
-function setStopButtonEnabled(enabled) {
-  if (stopRun) stopRun.disabled = !enabled;
-}
+// stop button removed
 
 async function apiGet(path) {
   const res = await fetch(path);
@@ -60,7 +57,6 @@ async function fetchStatus() {
     }
   // Disable start buttons while running
   setStartButtonsDisabled(status === 'running');
-  setStopButtonEnabled(status === 'running' || status === 'stopping');
   // no separate current card anymore
   } catch(e) {
     console.error(e);
@@ -74,8 +70,11 @@ function renderOverview(items) {
     const seasons = item.last_season || 0;
     const episodes = item.last_episode || 0;
     const films = item.last_film || 0;
-  // Show simple running indicator instead of a progress bar
+  // Show current item while running
   const isRunning = (window.__status_status === 'running');
+  const curSeason = window.__status_current_season;
+  const curEpisode = window.__status_current_episode;
+  const curIsFilm = window.__status_current_is_film;
   const card = document.createElement('div');
     card.className = 'col-12';
     // Include current run meta (index + started_at) if a download is active and matches this item
@@ -98,11 +97,9 @@ function renderOverview(items) {
             </div>
           </div>
           <div class="mt-3">
-            <div class="d-flex justify-content-between small mb-1">
-              <div>Staffeln: <strong>${seasons}</strong> • Episoden: <strong>${episodes}</strong></div>
-              <div>Filme: <strong>${films}</strong></div>
-            </div>
-      ${isRunning ? '<div class="small mt-2 text-secondary">Lädt runter.</div>' : ''}
+            ${isRunning
+              ? `<div class="fw-bold">Lädt runter: ${curIsFilm ? `Film ${curEpisode}` : `Staffel ${curSeason} • Episode ${curEpisode}`}</div>`
+              : `<div class=\"d-flex justify-content-between small mb-1\">\n                <div>Staffeln: <strong>${seasons}</strong> • Episoden: <strong>${episodes}</strong></div>\n                <div>Filme: <strong>${films}</strong></div>\n              </div>`}
       <div class="small mt-2 text-secondary" id="counts-${item.id}">${countsText}</div>
           </div>
         </div>
@@ -137,7 +134,11 @@ async function fetchOverview() {
   // cache some status meta for renderOverview
   window.__status_started_at = s.started_at || null;
   window.__status_current_index = (typeof s.current_index === 'number') ? s.current_index : null;
+  window.__status_current_title = s.current_title || null;
   window.__status_status = s.status || null;
+  window.__status_current_season = (typeof s.current_season === 'number' || typeof s.current_season === 'string') ? s.current_season : null;
+  window.__status_current_episode = (typeof s.current_episode === 'number' || typeof s.current_episode === 'string') ? s.current_episode : null;
+  window.__status_current_is_film = !!s.current_is_film;
     const data = await apiGet('/database');
     let items = data.map(it => ({
       id: it.id,
@@ -359,32 +360,23 @@ async function startDownload(mode) {
   setStartButtonsDisabled(true);
     await apiPost(`/start_download`, { mode });
     downloadStatus.textContent = `Status: starting (${mode})`;
-    setStopButtonEnabled(true);
+    
   } catch(e) {
     console.error(e);
     downloadStatus.textContent = `Status: error`;
   setStartButtonsDisabled(false);
-    setStopButtonEnabled(false);
+    
   }
 }
 
-async function stopDownload() {
-  try {
-    await apiPost('/stop', {});
-    downloadStatus.textContent = 'Status: stopping';
-    setStartButtonsDisabled(true);
-    setStopButtonEnabled(true);
-  } catch(e) {
-    console.error(e);
-  }
-}
+// stop removed
 
 /* Event listeners */
 startDefault.addEventListener('click', () => startDownload('default'));
 startNew.addEventListener('click', () => startDownload('new'));
 startGerman.addEventListener('click', () => startDownload('german'));
 startMissing.addEventListener('click', () => startDownload('check-missing'));
-stopRun.addEventListener('click', stopDownload);
+// no stop button
 refreshBtn.addEventListener('click', () => { fetchOverview(); fetchDatabase(); fetchStatus(); });
 clearFilter.addEventListener('click', () => { logFilter.value=''; });
 dbRefresh.addEventListener('click', fetchDatabase);
