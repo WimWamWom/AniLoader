@@ -1,5 +1,7 @@
 const overviewEl = document.getElementById('overviewContainer');
 const logBox = document.getElementById('logBox');
+const autoScrollChk = document.getElementById('autoScroll');
+const copyLogsBtn = document.getElementById('copyLogs');
 const lastUpdated = document.getElementById('lastUpdated');
 const refreshBtn = document.getElementById('refreshBtn');
 const logFilter = document.getElementById('logFilter');
@@ -322,8 +324,47 @@ async function fetchLogs() {
     }
     if (lines.join('\n') === lastLogs.join('\n')) return;
     lastLogs = lines;
-    logBox.textContent = lines.join('\n') || 'Noch keine Logs...';
-    logBox.scrollTop = logBox.scrollHeight;
+    // Build colorized log lines with [TAG] badges
+    const frag = document.createDocumentFragment();
+    if (lines.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'log-line';
+      empty.textContent = 'Noch keine Logs...';
+      frag.appendChild(empty);
+    } else {
+    for (const ln of lines) {
+        const row = document.createElement('div');
+        row.className = 'log-line';
+        const m = ln.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
+        if (m) {
+          const tag = m[1].trim();
+          const rest = m[2] || '';
+          const tagSpan = document.createElement('span');
+      // Map tag variants to canonical categories for consistent colors
+      const up = tag.toUpperCase();
+      let category = 'INFO';
+      if (up.includes('ERROR') || up.includes('FEHLER')) category = 'ERROR';
+      else if (up.includes('WARN')) category = 'WARN';
+      else if (up.includes('OK') || up.includes('SUCCESS')) category = 'OK';
+      else if (up.includes('DB')) category = 'DB';
+      else if (up.includes('CONFIG')) category = 'CONFIG';
+      else if (up.includes('SYSTEM')) category = 'SYSTEM';
+      else if (up.includes('DEL')) category = 'WARN';
+      tagSpan.className = 'log-tag tag-' + category;
+          tagSpan.textContent = tag;
+          row.appendChild(tagSpan);
+          row.appendChild(document.createTextNode(rest));
+        } else {
+          row.textContent = ln;
+        }
+        frag.appendChild(row);
+      }
+    }
+    logBox.innerHTML = '';
+    logBox.appendChild(frag);
+    if (!autoScrollChk || autoScrollChk.checked) {
+      logBox.scrollTop = logBox.scrollHeight;
+    }
     logCount.textContent = lines.length;
   } catch(e) {}
 }
@@ -397,5 +438,15 @@ fetchDisk();
 setInterval(fetchOverview, 60000);
 setInterval(fetchDatabase, 60000);
 setInterval(fetchStatus, 60000);
-setInterval(fetchLogs, 10000);
+setInterval(fetchLogs, 60000);
 setInterval(fetchDisk, 60000);
+
+// Logs toolbar actions
+copyLogsBtn?.addEventListener('click', async () => {
+  try {
+    const text = Array.isArray(lastLogs) && lastLogs.length ? lastLogs.join('\n') : (logBox.textContent || '');
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    console.error('copy logs failed', e);
+  }
+});

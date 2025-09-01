@@ -4,14 +4,14 @@ body { background:#0b0e13; color:#ddd; font-family: Inter, system-ui, -apple-sys
 .badge-lang { font-size: .75rem; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
 .log-box {
-    background:#000;
-    color:#ddd;
+    background:#0b0e13;
+    color:#e6eef8;
     border-radius:.75rem;
     padding:1rem;
     max-height:70vh;
     overflow:auto;
     white-space:pre-wrap;
-    border:1px solid #222;
+    border:1px solid #1f2937;
 }
 .sticky-toolbar { position: sticky; top: 0; z-index: 100; background: rgba(11,14,19,.85); backdrop-filter: blur(6px); }
 .progress { height:.5rem; }
@@ -52,3 +52,17 @@ summary { cursor:pointer; }
 
 .card-title { color: #dbe7ff; }
 .small.text-secondary { color: #9fb0ff; }
+
+/* Log severity badges */
+.log-line { white-space: pre-wrap; margin: 0; line-height: 1.35; }
+.log-tag { display: inline-block; padding: 0 .45rem; margin-right: .5rem; border-radius: .4rem; font-size: .75rem; font-weight: 600; }
+.tag-INFO { background: rgba(99, 179, 237, .18); color: #63b3ed; border: 1px solid rgba(99, 179, 237, .28); }
+.tag-WARN { background: rgba(255, 184, 107, .18); color: #ffb86b; border: 1px solid rgba(255, 184, 107, .28); }
+.tag-ERROR, .tag-FEHLER { background: rgba(255, 99, 99, .18); color: #ff6b6b; border: 1px solid rgba(255, 99, 99, .28); }
+.tag-OK { background: rgba(76, 217, 149, .18); color: #4cd995; border: 1px solid rgba(76, 217, 149, .28); }
+.tag-DB { background: rgba(142, 124, 195, .18); color: #bda8ff; border: 1px solid rgba(142, 124, 195, .28); }
+.tag-CONFIG { background: rgba(159, 176, 255, .18); color: #9fb0ff; border: 1px solid rgba(159, 176, 255, .28); }
+.tag-SYSTEM { background: rgba(120, 202, 140, .18); color: #78ca8c; border: 1px solid rgba(120, 202, 140, .28); }
+
+/* Logs toolbar tweaks */
+#copyLogs { white-space: nowrap; }

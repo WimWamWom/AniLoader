@@ -18,6 +18,18 @@
     // 🌐 === SERVER IP / DOMAIN ===
     const SERVER_IP = "localhost"; 
 
+    async function apiGet(path) {
+        const res = await fetch(`http://${SERVER_IP}:5050${path}`);
+        if (!res.ok) throw new Error('API ' + res.status);
+        return res.json();
+    }
+    async function apiPost(path, body) {
+        const res = await fetch(`http://${SERVER_IP}:5050${path}`, {
+            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body||{})
+        });
+        if (!res.ok) throw new Error('API ' + res.status);
+        return res.json();
+    }
 
     function getAnimeBaseUrl() {
         const url = window.location.href;
@@ -64,47 +76,83 @@
         if(!exportButton.disabled) exportButton.style.backgroundColor = "rgba(99,124,249,1)";
     });
 
-    exportButton.addEventListener("click", () => {
-        if(exportButton.disabled) return;
-
+    // Compute and set button state based on DB + status
+    async function refreshButton() {
         const animeUrl = getAnimeBaseUrl();
+        let entry = null;
+        try {
+            const db = await apiGet(`/database?q=${encodeURIComponent(animeUrl)}`);
+            entry = Array.isArray(db) ? db.find(r => r.url === animeUrl) : null;
+        } catch(e) { /* ignore */ }
+        let status = null;
+        try { status = await apiGet('/status'); } catch(e) { /* ignore */ }
+        const running = status && status.status === 'running';
+        const currentTitle = status && status.current_title;
 
-        fetch(`http://${SERVER_IP}:5050/export`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: animeUrl })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if(data.status === "ok") {
-                exportButton.innerText = "✅ Gedownloaded!";
-                exportButton.style.backgroundColor = "rgba(0,200,0,0.8)";
-                exportButton.disabled = true; 
-                exportButton.style.cursor = "not-allowed";
-            } else {
-                exportButton.innerText = "⚠ Fehler!";
-                exportButton.style.backgroundColor = "rgba(200,0,0,0.8)";
+        // Decide label/style
+        let label = '📤 Downloaden';
+        let bg = 'rgba(99,124,249,1)'; // primary
+        let disabled = false;
+
+        if (!entry || entry.deleted) {
+            // not in DB or deleted -> offer Downloaden
+            label = '📤 Downloaden';
+            bg = 'rgba(99,124,249,1)';
+            disabled = false;
+        } else if (entry.complete) {
+            // complete -> Gedownloaded
+            label = '✅ Gedownloaded';
+            bg = 'rgba(0,200,0,0.8)';
+            disabled = true;
+        } else if (running && currentTitle && entry.title === currentTitle) {
+            // currently downloading this title
+            label = '⬇️ Downloaded';
+            bg = 'rgba(255,184,107,0.9)'; // warning
+            disabled = true;
+        } else {
+            // in DB but not complete and not currently downloading
+            label = '📄 In der Liste';
+            bg = 'rgba(108,117,125,0.9)'; // secondary
+            disabled = false; // can start if not running
+        }
+
+        exportButton.innerText = label;
+        exportButton.style.backgroundColor = bg;
+        exportButton.disabled = !!disabled;
+        exportButton.style.cursor = disabled ? 'not-allowed' : 'pointer';
+    }
+
+    // Click -> ensure in DB if needed, then start download if not running
+    exportButton.addEventListener("click", async () => {
+        if (exportButton.disabled) return;
+        const animeUrl = getAnimeBaseUrl();
+        try {
+            // Check DB state
+            const db = await apiGet(`/database?q=${encodeURIComponent(animeUrl)}`);
+            let entry = Array.isArray(db) ? db.find(r => r.url === animeUrl) : null;
+            if (!entry || entry.deleted) {
+                // add/reactivate
+                const res = await apiPost('/export', { url: animeUrl });
+                if (!(res && res.status === 'ok')) throw new Error('Export failed');
             }
-        })
-        .catch(err => {
-            console.error(err);
+            // Check if a download is already running
+            const s = await apiGet('/status');
+            const running = s && s.status === 'running';
+            if (!running) {
+                await apiPost('/start_download', { mode: 'default' });
+            }
+            // reflect state
+            await refreshButton();
+        } catch (e) {
+            console.error(e);
             exportButton.innerText = "⚠ Fehler!";
             exportButton.style.backgroundColor = "rgba(200,0,0,0.8)";
-        });
+        }
     });
 
-    const animeUrl = getAnimeBaseUrl();
-    fetch(`http://${SERVER_IP}:5050/check?url=${encodeURIComponent(animeUrl)}`)
-        .then(response => response.json())
-        .then(data => {
-            if(data.exists) {
-                exportButton.innerText = "✅ Gedownloaded!";
-                exportButton.style.backgroundColor = "rgba(0,200,0,0.8)";
-                exportButton.disabled = true; 
-                exportButton.style.cursor = "not-allowed";
-            }
-        })
-        .catch(err => console.error(err));
+    // Initial state & periodic refresh
+    refreshButton();
+    setInterval(refreshButton, 15000);
 
     buttonWrapper.appendChild(exportButton);
     streamContainer.insertAdjacentElement("afterend", buttonWrapper);
