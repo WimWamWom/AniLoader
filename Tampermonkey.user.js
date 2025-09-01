@@ -110,10 +110,10 @@
             bg = 'rgba(255,184,107,0.9)'; // warning
             disabled = true;
         } else {
-            // in DB but not complete and not currently downloading
+            // in DB but not complete and not currently downloading -> disabled per requirement
             label = '📄 In der Liste';
             bg = 'rgba(108,117,125,0.9)'; // secondary
-            disabled = false; // can start if not running
+            disabled = true;
         }
 
         exportButton.innerText = label;
