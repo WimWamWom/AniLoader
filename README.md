@@ -1,5 +1,7 @@
 <a id="readme-top"></a>
 
+[English README](README_en.md) — English translation of this README
+
 # AniLoader
 
 <ins>***Momentan noch in Arbeit. Bereits Funktionsfähig***</ins> </br>
