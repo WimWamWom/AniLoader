@@ -178,6 +178,7 @@ async function fetchOverview() {
 /* ---------- Settings (config) ---------- */
 const langList = document.getElementById('lang-list');
 const minFreeInput = document.getElementById('min-free');
+const autostartSelect = document.getElementById('autostart-mode');
 const saveConfigBtn = document.getElementById('save-config');
 const resetConfigBtn = document.getElementById('reset-config');
 
@@ -186,6 +187,7 @@ async function fetchConfig() {
     const cfg = await apiGet('/config');
     renderLangList(cfg.languages || []);
     minFreeInput.value = cfg.min_free_gb ?? '';
+  if (autostartSelect) autostartSelect.value = (cfg.autostart_mode ?? '') || '';
   } catch(e) { console.error('fetchConfig', e); }
 }
 
@@ -264,8 +266,9 @@ async function saveConfig() {
     return (label ? label.textContent : li.textContent).trim();
   });
   const min_free_gb = parseFloat(minFreeInput.value) || 0;
+  const autostart_mode = autostartSelect ? (autostartSelect.value || null) : null;
   try {
-    await apiPost('/config', { languages: langs, min_free_gb });
+    await apiPost('/config', { languages: langs, min_free_gb, autostart_mode });
     alert('Einstellungen gespeichert');
   } catch(e) { alert('Speichern fehlgeschlagen'); console.error(e); }
 }
@@ -447,11 +450,20 @@ fetchDatabase();
 fetchStatus();
 fetchLogs();
 fetchDisk();
-setInterval(fetchOverview, 60000);
-setInterval(fetchDatabase, 60000);
-setInterval(fetchStatus, 60000);
-setInterval(fetchLogs, 60000);
-setInterval(fetchDisk, 60000);
+// Staggered polling: each runs every 60s, with 25ms offsets between starts
+const INTERVAL_MS = 60000;
+const STAGGER_MS = 1000; // 25 milliseconds
+function scheduleStaggered(fn, offsetMs) {
+  setTimeout(() => {
+    try { fn(); } catch(e) { console.error(e); }
+    setInterval(fn, INTERVAL_MS);
+  }, offsetMs);
+}
+scheduleStaggered(fetchOverview, 0);
+scheduleStaggered(fetchDatabase, STAGGER_MS);
+scheduleStaggered(fetchStatus, STAGGER_MS * 2);
+scheduleStaggered(fetchLogs, STAGGER_MS * 3);
+scheduleStaggered(fetchDisk, STAGGER_MS * 4);
 
 // Logs toolbar actions
 copyLogsBtn?.addEventListener('click', async () => {

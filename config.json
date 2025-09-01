@@ -5,5 +5,6 @@
     "English Dub",
     "English Sub"
   ],
-  "min_free_gb": 2.0
+  "min_free_gb": 2.0,
+  "autostart_mode": "default"
 }

@@ -138,23 +138,46 @@
 
     <!-- Settings Tab -->
     <div class="tab-pane fade" id="settings" role="tabpanel" aria-labelledby="settings-tab">
-      <div class="row g-2 mb-2">
+      <div class="row g-3 mb-2">
         <div class="col-md-6">
-          <h6>Sprachreihenfolge (Drag & Drop)</h6>
-          <div class="text-secondary small mb-2">1 = höchste Priorität, danach 2, 3, 4 …</div>
-          <ul id="lang-list" class="list-group">
-            <!-- languages inserted by JS -->
-          </ul>
+          <div class="card h-100">
+            <div class="card-body">
+              <h6 class="card-title">Sprachreihenfolge (Drag &amp; Drop)</h6>
+              <p class="text-secondary small mb-3">1 = höchste Priorität, danach 2, 3, 4 …</p>
+              <ul id="lang-list" class="list-group">
+                <!-- languages inserted by JS -->
+              </ul>
+            </div>
+          </div>
         </div>
         <div class="col-md-6">
-          <h6>Speicher Schwelle</h6>
-          <div class="input-group mb-3">
-            <input id="min-free" type="number" step="0.1" class="form-control" />
-            <span class="input-group-text">GB</span>
-          </div>
-          <div>
-            <button id="save-config" class="btn btn-primary">Speichern</button>
-            <button id="reset-config" class="btn btn-outline-secondary">Zurücksetzen</button>
+          <div class="card h-100">
+            <div class="card-body">
+              <h6 class="card-title">Systemeinstellungen</h6>
+              <div class="mb-3">
+                <label for="min-free" class="form-label small">Speicher-Schwelle</label>
+                <div class="input-group">
+                  <input id="min-free" type="number" step="0.1" class="form-control" />
+                  <span class="input-group-text">GB</span>
+                </div>
+                <div class="form-text">Downloads stoppen, wenn weniger freier Speicher verfügbar ist.</div>
+              </div>
+              <div class="mb-2">
+                <label for="autostart-mode" class="form-label small">Autostart-Modus</label>
+                <select id="autostart-mode" class="form-select">
+                  <option value="">Keiner</option>
+                  <option value="default">Standard</option>
+                  <option value="german">German</option>
+                  <option value="new">Neue Episoden</option>
+                  <option value="check-missing">Fehlende Episoden</option>
+                </select>
+                <div class="form-text">Wird beim Serverstart automatisch ausgeführt (optional).</div>
+              </div>
+            </div>
+            <div class="card-footer text-end">
+              <button id="save-config" class="btn btn-primary">Speichern</button>
+              <button id="reset-config" class="btn btn-outline-secondary">Zurücksetzen</button>
+            </div>
           </div>
         </div>
       </div>

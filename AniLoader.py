@@ -26,17 +26,19 @@ CONFIG_PATH = BASE_DIR / "config.json"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 MIN_FREE_GB = 2.0
 MAX_PATH = 260
+AUTOSTART_MODE = None  # 'default'|'german'|'new'|'check-missing' or None
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE
     try:
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
                 LANGUAGES = cfg.get('languages', LANGUAGES)
                 MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
-                log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB}")
+                AUTOSTART_MODE = cfg.get('autostart_mode') or None
+                log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB} autostart_mode={AUTOSTART_MODE}")
         else:
             save_config()  # create default config
     except Exception as e:
@@ -45,7 +47,7 @@ def load_config():
 
 def save_config():
     try:
-        cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB}
+        cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB, 'autostart_mode': AUTOSTART_MODE}
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
         log(f"[CONFIG] gespeichert")
@@ -282,7 +284,7 @@ def sanitize_episode_title(name: str) -> str:
     return name
 
 def freier_speicher_mb(pfad: str) -> float:
-    """Gibt den verfügbaren Speicherplatz des angegebenen Pfads in MB zurück."""
+    """Gibt den verfügbaren Speicherplatz des angegebenen Pfads in GB zurück."""
     try:
         gesamt, belegt, frei = shutil.disk_usage(pfad)
         return round(frei / (1024 ** 3), 1)
@@ -351,8 +353,9 @@ def delete_old_non_german_versions(series_folder, season, episode):
                     log(f"[FEHLER] Konnte Datei nicht löschen: {file.name} -> {e}")
 
 def rename_downloaded_file(series_folder, season, episode, title, language):
+    # Always use a string suffix to avoid len() TypeError in check_length
     lang_suffix = {
-        "German Dub": False,
+        "German Dub": "",
         "German Sub": "[Sub]",
         "English Dub": "[English Dub]",
         "English Sub": "[English Sub]"
@@ -745,6 +748,8 @@ def run_mode(mode="default"):
                         if result == "NO_STREAMS":
                             break  # Keine weiteren Filme vorhanden
                     film_num += 1
+                # Start mit Staffel 1 und zähle leere Staffeln
+                season = 1
                 consecutive_empty_seasons = 0
                 while True:
                     episode = 1
@@ -867,10 +872,10 @@ def api_status():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE
     if request.method == 'GET':
         try:
-            cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB}
+            cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB, 'autostart_mode': AUTOSTART_MODE}
             return jsonify(cfg)
         except Exception as e:
             log(f"[ERROR] api_config GET: {e}")
@@ -880,6 +885,7 @@ def api_config():
     data = request.get_json() or {}
     langs = data.get('languages')
     min_free = data.get('min_free_gb')
+    autostart = data.get('autostart_mode')
     changed = False
     try:
         if isinstance(langs, list) and langs:
@@ -888,6 +894,13 @@ def api_config():
         if min_free is not None:
             MIN_FREE_GB = float(min_free)
             changed = True
+        if autostart is not None:
+            allowed = {None, '', 'default', 'german', 'new', 'check-missing'}
+            if autostart in allowed:
+                AUTOSTART_MODE = (autostart or None)
+                changed = True
+            else:
+                return jsonify({'status': 'failed', 'error': 'invalid autostart_mode'}), 400
         if changed:
             save_config()
         return jsonify({'status': 'ok'})
@@ -1076,7 +1089,10 @@ def api_check():
         log(f"[ERROR] api_check: {e}")
         exists = False
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     return jsonify({"exists": exists})
 
@@ -1092,6 +1108,16 @@ def AniLoader():
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     deleted_check()
     log("[SYSTEM] AniLoader API starting...")
+    # Autostart-Modus, falls in der Config gesetzt
+    try:
+        if AUTOSTART_MODE in ("default", "german", "new", "check-missing"):
+            with download_lock:
+                already = (current_download.get("status") == "running")
+            if not already:
+                threading.Thread(target=run_mode, args=(AUTOSTART_MODE,), daemon=True).start()
+                log(f"[SYSTEM] Autostart gestartet: {AUTOSTART_MODE}")
+    except Exception as e:
+        log(f"[CONFIG-ERROR] Autostart fehlgeschlagen: {e}")
 
 AniLoader()
 
