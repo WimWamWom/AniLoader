@@ -8,8 +8,6 @@
 ***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
 Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automatischen Download von Animes von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) ermöglicht. Der Schwerpunkt liegt dabei auf deutschen Dub-Versionen. Das Skript verwaltet eine **SQLite-Datenbank**, in der alle heruntergeladenen Inhalte gespeichert und **fehlende deutsche Episoden** automatisch erkannt werden. Heruntergeladene Dateien werden sauber umbenannt und übersichtlich nach **Staffeln, Episoden und Filmen sortiert**. Dadurch entsteht eine klar strukturierte Ordnerhierarchie, in der Serien und Filme leicht auffindbar sind. Zusätzlich bietet das Webinterface eine komfortable Möglichkeit, Downloads zu verwalten und den aktuellen Fortschritt einzusehen.
 
-
-
 ## Inhalt
 
 - [Funktion](#funktion)
@@ -38,8 +36,6 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
 - [Debugging & Troubleshooting](#debugging--troubleshooting)
 - [Lizenz](#lizenz)
 
-
-
 ## Funktion
 
 ### Features
@@ -65,8 +61,6 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
   - Anzeige „Geladen pro Staffel … • Filme: N“ aus dem Dateisystem
   - Speicheranzeige mit automatischer Einheit (TB/GB/MB)
   - Sanfte Aktualisierung: vorhandene Werte bleiben sichtbar bis neue Daten ankommen
-
-
 
 ## Dateistruktur
 
@@ -96,8 +90,6 @@ AniLoader/
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 ## Installation
 
 ### 1. Repository klonen
@@ -108,8 +100,8 @@ git clone https://github.com/WimWamWom/AniLoader
 ### 2. **Python-Abhängigkeiten installieren**
 
 ```
-pip install requests beautifulsoup4 flask flask_cors aniworld
- ```
+pip install requests beautifulsoup4 flask flask_cors aniworld waitress
+```
 
 
 ### Download-Liste erstellen
@@ -384,7 +376,6 @@ Verhalten:
 Die wichtigsten Konfigurationen befinden sich am Anfang von `AniLoader.py`:
 - `DOWNLOAD_DIR`: Ordner für die Downloads
 - `DOWNLOAD_TXT`: Pfad zur Download-Textdatei
-- `LANGUAGES`: Reihenfolge und Sprachen, die beim Download versucht werden
 - `DB_PATH`: Speicherort der SQLite-Datenbank
 - 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -449,5 +440,5 @@ Standardmäßig host="0.0.0.0" heißt erreichbar von Außen. Setze Firewall/Rout
 ## Lizenz
 
 Dieses Projekt ist unter der [MIT-Lizenz](https://github.com/WimWamWom/AniLoader/blob/main/LICENSE) lizenziert. </br>
-Genauer Informatoinen stehen in der LICENSE-Datei.
+Genauer Informatioen stehen in der LICENSE-Datei.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

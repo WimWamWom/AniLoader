@@ -380,7 +380,6 @@ Behavior:
 The most important configuration options are at the top of `AniLoader.py`:
 - `DOWNLOAD_DIR`: folder for downloads
 - `DOWNLOAD_TXT`: path to the download text file
-- `LANGUAGES`: order and languages to try when downloading
 - `DB_PATH`: location of the SQLite database
 - 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
