@@ -571,7 +571,7 @@ def deleted_check():
 
         # --- IDs + Titel aller als 'complete' markierten Animes holen ---
         c.execute("SELECT id, title FROM anime WHERE complete = 1")
-        complete_animes_in_db = c.fetchall()  # Liste von Tupeln: [(id, title), ...]
+        complete_animes_in_db = c.fetchall() # Liste von Tupeln: [(id, title), ...]
 
         # --- Alle Ordnernamen im Downloads-Verzeichnis lesen (erste Ebene) ---
         local_animes = []
@@ -1085,12 +1085,15 @@ def index():
     return render_template("index.html")
 
 # -------------------- Entrypoint --------------------
-if __name__ == "__main__":
+def AniLoader():
     load_config()
     init_db()
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     deleted_check()
     log("[SYSTEM] AniLoader API starting...")
-    # run Flask WITHOUT reloader so background threads survive page reloads
+
+AniLoader()
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)
