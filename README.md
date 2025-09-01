@@ -125,35 +125,55 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 
 ## Nutzung
 
-### AniLoader als lokales Programm
+### `downloader.py` (CLI — kein Webinterface)
 
-#### Alle Anime herunterladen
+`downloader.py` ist die schlanke, rein CLI-basierte Variante ohne Webserver. Sie bietet die gleichen Kernfunktionen wie `AniLoader.py` zur Verwaltung von Downloads, zur Pflege der SQLite-Datenbank und zur Erkennung fehlender deutscher Folgen.
+
+Aufrufmuster:
+
+```
+py downloader.py [mode]
+```
+
+Verfügbare Modi (argument `mode`):
+
+- `default` (kein Argument):
+  - Voller Durchlauf: prüft Filme und Staffeln, lädt fehlende Episoden/Filme in der Prioritätsreihenfolge der Sprachen und markiert Serien als komplett, wenn keine weiteren Staffeln gefunden werden.
+  - Aktualisiert `last_film`, `last_season`, `last_episode` in der DB und setzt `complete=True` wenn Serie abgeschlossen.
+
+- `german`:
+  - Versucht ausschließlich, für Einträge in `fehlende_deutsch_folgen` die deutsche (German Dub) Version nachzuladen.
+  - Wird eine deutschsprachige Version gefunden, wird der Eintrag aus `fehlende_deutsch_folgen` entfernt.
+
+- `new`:
+  - Prüft pro Serie auf neue Filme und Staffeln ab den in der DB gespeicherten `last_*`-Werten und lädt neue Inhalte nach.
+
+- `check-missing`:
+  - Wiederholte Prüfung auf fehlende Dateien: versucht zuerst die URLs in `fehlende_deutsch_folgen` erneut (German-only),
+    anschließend prüft es die Dateisystem-Einträge bis zu den gespeicherten `last_film` / `last_season` / `last_episode`-Werten und startet Nachdownloads für fehlende Dateien.
+
+Wichtige Konfigurationspunkte:
+
+- `AniLoader.txt`: Liste der Serien-URLs (eine URL pro Zeile) — wird beim Start importiert und danach leer gemacht.
+- `config.json` (wird automatisch erstellt, falls nicht vorhanden):
+  - `languages`: Reihenfolge der Sprachen, die versucht werden (Standard: `["German Dub","German Sub","English Dub","English Sub"]`).
+  - `min_free_gb`: minimaler freier Festplattenspeicher (in GB), unter dem Downloads abgebrochen werden (Standard: `2.0`).
+
+Beispiele:
 
 ```
 py downloader.py
-```
-
-- Lädt alle Filme und Staffeln herunter
-- Aktualisiert die SQLite-Datenbank und markiert abgeschlossene Anime
-- Sortiert die Dateien automatisch in Unterordner
-
-#### Nur fehlende deutsche Folgen herunterladen
-
-```
 py downloader.py german
-```
-
-- Prüft nur Anime mit fehlenden deutschen Folgen (`fehlende_deutsch_folgen`) und lädt diese herunter
-- Löscht automatisch folgen welche nun Syncro haben
-
-#### Neue Episoden prüfen und herunterladen
-
-```
 py downloader.py new
+py downloader.py check-missing
 ```
 
-- Prüft bei jedem Anime nach neuen Filmen oder Staffeln ab der letzten heruntergeladenen Folge
-- Lädt neue Episoden herunter und aktualisiert die Datenbank
+Hinweise:
+
+- Das CLI ruft extern das Tool `aniworld` auf. Stelle sicher, dass `aniworld` im PATH verfügbar ist.
+- `Downloads/` wird automatisch angelegt, falls nicht vorhanden.
+- Bei sehr großen Serien kann `check-missing` viele Download-Versuche auslösen; passe `min_free_gb` entsprechend an.
+
 
 ## AniLoader mit Webinterface
 

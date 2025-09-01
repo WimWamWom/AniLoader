@@ -3,6 +3,8 @@
 import os
 import subprocess
 import time
+import random
+import threading
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
@@ -18,6 +20,8 @@ ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
 DB_PATH = BASE_DIR / "AniLoader.db"
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
+CONFIG_PATH = BASE_DIR / "config.json"
+MIN_FREE_GB = 2.0
 
 # -------------------- Datenbankfunktionen --------------------
 def init_db():
@@ -30,12 +34,21 @@ def init_db():
             url TEXT UNIQUE,
             complete BOOLEAN DEFAULT 0,
             deutsch_komplett BOOLEAN DEFAULT 0,
+            deleted INTEGER DEFAULT 0,
             fehlende_deutsch_folgen TEXT DEFAULT '[]',
             last_film INTEGER DEFAULT 0,
             last_episode INTEGER DEFAULT 0,
             last_season INTEGER DEFAULT 0
         )
     """)
+    # Ensure 'deleted' column exists for older DBs
+    c.execute("PRAGMA table_info(anime)")
+    cols = [r[1] for r in c.fetchall()]
+    if 'deleted' not in cols:
+        try:
+            c.execute("ALTER TABLE anime ADD COLUMN deleted INTEGER DEFAULT 0")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
@@ -137,6 +150,38 @@ def get_episode_title(url):
         print(f"[FEHLER] Konnte Episodentitel nicht abrufen ({url}): {e}")
     return None
 
+def load_config():
+    global LANGUAGES, MIN_FREE_GB
+    try:
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                LANGUAGES = cfg.get('languages', LANGUAGES)
+                MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
+        else:
+            save_config()
+    except Exception as e:
+        print(f"[CONFIG-ERROR] {e}")
+
+def save_config():
+    try:
+        cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB}
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+def freier_speicher_mb(pfad: str) -> float:
+    """Gibt den verfügbaren Speicherplatz des angegebenen Pfads in GB zurück."""
+    try:
+        gesamt, belegt, frei = shutil.disk_usage(pfad)
+        return round(frei / (1024 ** 3), 1)
+    except FileNotFoundError:
+        raise ValueError(f"Pfad nicht gefunden: {pfad}")
+    except PermissionError:
+        raise PermissionError(f"Zugriff verweigert auf: {pfad}")
+
 def get_series_title(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -229,6 +274,16 @@ def run_download(cmd):
 # -------------------- Downloadfunktionen --------------------
 def download_episode(series_title, episode_url, season, episode, anime_id, german_only=False):
     series_folder = os.path.join(DOWNLOAD_DIR, series_title)
+    # Prüfe freien Speicher vor jedem Download
+    try:
+        free_gb = freier_speicher_mb(DOWNLOAD_DIR)
+    except Exception as e:
+        print(f"[ERROR] Konnte freien Speicher nicht ermitteln: {e}")
+        return "FAILED"
+
+    if free_gb < MIN_FREE_GB:
+        print(f"[ERROR] Zu wenig freier Speicher ({free_gb} GB < {MIN_FREE_GB} GB) - Abbruch")
+        return "NO_SPACE"
     if german_only == False:
         if episode_already_downloaded(series_folder, season, episode):
             print(f"[SKIP] Episode bereits vorhanden: {series_title} - " + (f"S{season}E{episode}" if season > 0 else f"Film {episode}"))
@@ -273,6 +328,40 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     check_deutsch_komplett(anime_id)
 
     return "OK" if episode_downloaded else "FAILED"
+
+def deleted_check():
+    """
+    Prüft, welche Animes in der DB als complete markiert sind,
+    aber nicht mehr im Downloads-Ordner existieren.
+    Setzt diese Animes anschließend auf Initialwerte zurück und markiert deleted = 1.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+
+        c.execute("SELECT id, title FROM anime WHERE complete = 1")
+        complete_animes_in_db = c.fetchall()
+
+        downloads_path = Path(DOWNLOAD_DIR)
+        local_animes = []
+        if downloads_path.exists():
+            local_animes = [folder.name for folder in downloads_path.iterdir() if folder.is_dir()]
+
+        deleted_anime = []
+        for anime_id, anime_title in complete_animes_in_db:
+            if anime_title not in local_animes:
+                deleted_anime.append(anime_title)
+                # reset fields
+                c.execute("UPDATE anime SET deleted = 1, complete = 0, last_film = 0, last_episode = 0, last_season = 0 WHERE id = ?", (anime_id,))
+
+        conn.commit()
+        conn.close()
+        if deleted_anime:
+            print(f"[INFO] Gelöschte Animes: {deleted_anime}")
+        return deleted_anime
+    except Exception as e:
+        print(f"[ERROR] deleted_check: {e}")
+        return []
 
 def download_films(series_title, base_url, anime_id, german_only=False, start_film=1):
     film_num = start_film
@@ -330,8 +419,14 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
 
 # -------------------- Hauptprogramm --------------------
 def main():
+    # load config and ensure DB + folders exist
+    load_config()
     init_db()
     import_anime_txt()
+    Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    # Detect deleted series in filesystem and mark in DB
+    deleted_check()
+
     anime_list = load_anime()
 
     mode = str(sys.argv[1].lower() if len(sys.argv) > 1 else "default")
@@ -375,6 +470,48 @@ def main():
             download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
             check_deutsch_komplett(anime_id)
 
+    elif mode == "check-missing":
+        print("\n=== Modus: Prüfe auf fehlende Episoden & Filme ===")
+        for anime in anime_list:
+            series_title = anime["title"] or get_series_title(anime["url"])
+            anime_id = anime["id"]
+            base_url = anime["url"]
+            # First re-try any entries in fehlende_deutsch_folgen (german-only)
+            fehlende = anime.get("fehlende_deutsch_folgen", []) or []
+            if fehlende:
+                print(f"[MISSING] '{series_title}': {len(fehlende)} fehlende deutsche Folgen werden geprüft.")
+                verbleibend = fehlende.copy()
+                for url in fehlende:
+                    match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
+                    season = int(match.group(1)) if match else 0
+                    episode = int(match.group(2)) if match else int(re.search(r"/film-(\d+)", url).group(1))
+                    result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
+                    if result == "OK" and url in verbleibend:
+                        verbleibend.remove(url)
+                        update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
+                        print(f"[MISSING] '{url}' jetzt auf deutsch vorhanden.")
+            # Next, check files up to last known indices and try to restore missing files
+            series_folder = os.path.join(DOWNLOAD_DIR, series_title)
+            # Films
+            last_film = anime.get("last_film", 0) or 0
+            for fnum in range(1, last_film + 1):
+                if not episode_already_downloaded(series_folder, 0, fnum):
+                    print(f"[MISSING] Film {fnum} fehlt, versuche Download...")
+                    download_episode(series_title, f"{base_url}/filme/film-{fnum}", 0, fnum, anime_id)
+                    time.sleep(1)
+            # Seasons
+            last_season = anime.get("last_season", 0) or 0
+            last_episode = anime.get("last_episode", 0) or 0
+            for s in range(1, max(1, last_season) + 1):
+                # Conservative approach: check episodes 1..last_episode for each season,
+                # preferring to re-download anything missing up to the recorded last_episode.
+                for e in range(1, last_episode + 1):
+                    if not episode_already_downloaded(series_folder, s, e):
+                        print(f"[MISSING] S{s}E{e} fehlt, versuche Download...")
+                        download_episode(series_title, f"{base_url}/staffel-{s}/episode-{e}", s, e, anime_id)
+                        time.sleep(1)
+            check_deutsch_komplett(anime_id)
+
     else:
         print("\n=== Modus: Standard  ===")
         for anime in anime_list:
@@ -394,7 +531,7 @@ def main():
             check_deutsch_komplett(anime_id)
             update_anime(anime_id, complete=True)
             print(f"[COMPLETE] Download abgeschlossen für: '{series_title}'")
-    print("\n[FERTIG] Alle Aufgaben abgeschlossen, drücke eine beliebige Taste zum Beenden.")
+    input("\n[FERTIG] Alle Aufgaben abgeschlossen, drücke eine beliebige Taste zum Beenden.")
 
 if __name__ == "__main__":
     main()

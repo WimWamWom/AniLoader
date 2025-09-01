@@ -123,35 +123,54 @@ Each URL must be on its own line and should point to the series page, not a spec
 
 ## Usage
 
-### AniLoader as a local program
+### `downloader.py` (CLI — no web interface)
 
-#### Download everything
+`downloader.py` is the lightweight CLI-only variant without the web server. It provides the same core functionality as `AniLoader.py` for managing downloads, maintaining the SQLite database, and detecting missing German episodes.
+
+Invocation:
+
+```
+py downloader.py [mode]
+```
+
+Available modes (argument `mode`):
+
+- `default` (no argument):
+  - Full run: checks movies and seasons, downloads missing episodes/movies using the configured language priority, and marks series as complete when no further seasons are found.
+  - Updates `last_film`, `last_season`, `last_episode` in the DB and sets `complete=True` when a series is finished.
+
+- `german`:
+  - Attempts to download only German Dub versions for entries listed in `fehlende_deutsch_folgen`.
+  - When a German version is found, the URL is removed from `fehlende_deutsch_folgen`.
+
+- `new`:
+  - Checks each series for new movies or seasons starting from the stored `last_*` values and downloads any new content.
+
+- `check-missing`:
+  - Re-checks for missing files: first retries URLs stored in `fehlende_deutsch_folgen` (German-only), then scans the filesystem up to the recorded `last_film` / `last_season` / `last_episode` values and attempts to re-download missing files.
+
+Important configuration points:
+
+- `AniLoader.txt`: series URLs (one URL per line) — imported on start and cleared afterwards.
+- `config.json` (auto-created if missing):
+  - `languages`: list of languages to try in order (default: `["German Dub","German Sub","English Dub","English Sub"]`).
+  - `min_free_gb`: minimum free disk space (in GB) below which downloads are aborted (default: `2.0`).
+
+Examples:
 
 ```
 py downloader.py
-```
-
-- Downloads all movies and seasons
-- Updates the SQLite database and marks completed anime
-- Automatically sorts files into folders
-
-#### Only download missing German episodes
-
-```
 py downloader.py german
-```
-
-- Checks only anime with missing German episodes (`fehlende_deutsch_folgen`) and downloads them
-- Automatically removes episodes that now have dubs
-
-#### Check and download new episodes
-
-```
 py downloader.py new
+py downloader.py check-missing
 ```
 
-- Checks each anime for new movies or seasons after the last downloaded episode
-- Downloads new episodes and updates the database
+Notes:
+
+- The CLI calls the external `aniworld` tool. Ensure `aniworld` is available in your PATH.
+- `Downloads/` is created automatically if it doesn't exist.
+- `check-missing` can trigger many download attempts for large libraries; adjust `min_free_gb` as needed.
+
 
 ## AniLoader with Web Interface
 
