@@ -11,6 +11,7 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
 
 
 ## Inhalt
+
 - [Funktion](#funktion)
 - [Installation](#installation)
   - [1. Repository klonen](#1-repository-klonen)
@@ -28,13 +29,13 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
   - [Start Download](#start-download)
   - [Status](#status)
   - [Logs](#logs)
-  - [Datenbank-Einträge](#datenbank-einträge-suchefiltersort)
+  - [Datenbank-Einträge](#datenbank-einträge)
 - [Tampermonkey](#tampermonkey)
 - [Hinweise](#hinweise)
   - [Good to Know](#good-to-know)
   - [Anpassung](#anpassung)
 - [Beispiele](#beispiele)
-- [Debugging & Troubleshooting](#debugging--troubleshooting-häufige-fehler)
+- [Debugging & Troubleshooting](#debugging--troubleshooting)
 - [Lizenz](#lizenz)
 
 
@@ -125,7 +126,7 @@ Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Ani
 
 ## Nutzung
 
-### `downloader.py` (CLI — kein Webinterface)
+### AniLoader als lokales Programm
 
 `downloader.py` ist die schlanke, rein CLI-basierte Variante ohne Webserver. Sie bietet die gleichen Kernfunktionen wie `AniLoader.py` zur Verwaltung von Downloads, zur Pflege der SQLite-Datenbank und zur Erkennung fehlender deutscher Folgen.
 
@@ -305,7 +306,7 @@ curl http://localhost:5050/logs
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-### Datenbank-Einträge (Suche/Filter/Sort)
+### Datenbank-Einträge
 URL: `/database` </br>
 Method: GET </br>
 Query-Parameter:
@@ -422,7 +423,7 @@ https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Debugging & Troubleshooting (häufige Fehler)
+## Debugging & Troubleshooting
 
 ### Kein Download startet / aniworld: command not found
 aniworld nicht installiert oder nicht in PATH. Installiere / passe run_download an.

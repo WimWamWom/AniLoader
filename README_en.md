@@ -10,6 +10,7 @@ This project is a Python script with an optional web interface that automates do
 
 
 ## Contents
+
 - [Function](#function)
 - [Installation](#installation)
   - [1. Clone repository](#1-clone-repository)
@@ -27,13 +28,13 @@ This project is a Python script with an optional web interface that automates do
   - [Start Download](#start-download)
   - [Status](#status)
   - [Logs](#logs)
-  - [Database entries](#database-entries-searchfiltersort)
+  - [Database entries](#database-entries)
 - [Tampermonkey](#tampermonkey)
 - [Notes](#notes)
   - [Good to Know](#good-to-know)
   - [Customization](#customization)
 - [Examples](#examples)
-- [Debugging & Troubleshooting](#debugging--troubleshooting-common-errors)
+- [Debugging & Troubleshooting](#debugging--troubleshooting)
 - [License](#license)
 
 
@@ -123,7 +124,7 @@ Each URL must be on its own line and should point to the series page, not a spec
 
 ## Usage
 
-### `downloader.py` (CLI — no web interface)
+### AniLoader as a local program
 
 `downloader.py` is the lightweight CLI-only variant without the web server. It provides the same core functionality as `AniLoader.py` for managing downloads, maintaining the SQLite database, and detecting missing German episodes.
 
@@ -301,7 +302,7 @@ curl http://localhost:5050/logs
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-### Database entries (Search/Filter/Sort)
+### Database entries
 URL: `/database`  
 Method: GET  
 Query parameters:
@@ -418,7 +419,7 @@ https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Debugging & Troubleshooting (common errors)
+## Debugging & Troubleshooting
 
 ### No download starts / aniworld: command not found
 aniworld not installed or not in PATH. Install it or adjust run_download.
