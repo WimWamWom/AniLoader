@@ -332,33 +332,45 @@ async function fetchLogs() {
       empty.textContent = 'Noch keine Logs...';
       frag.appendChild(empty);
     } else {
-    for (const ln of lines) {
+      lines.forEach((ln, idx) => {
         const row = document.createElement('div');
-        row.className = 'log-line';
+        // Default category INFO
+        let category = 'INFO';
+        let text = ln;
+        let tagText = null;
         const m = ln.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
         if (m) {
-          const tag = m[1].trim();
-          const rest = m[2] || '';
-          const tagSpan = document.createElement('span');
-      // Map tag variants to canonical categories for consistent colors
-      const up = tag.toUpperCase();
-      let category = 'INFO';
-      if (up.includes('ERROR') || up.includes('FEHLER')) category = 'ERROR';
-      else if (up.includes('WARN')) category = 'WARN';
-      else if (up.includes('OK') || up.includes('SUCCESS')) category = 'OK';
-      else if (up.includes('DB')) category = 'DB';
-      else if (up.includes('CONFIG')) category = 'CONFIG';
-      else if (up.includes('SYSTEM')) category = 'SYSTEM';
-      else if (up.includes('DEL')) category = 'WARN';
-      tagSpan.className = 'log-tag tag-' + category;
-          tagSpan.textContent = tag;
-          row.appendChild(tagSpan);
-          row.appendChild(document.createTextNode(rest));
-        } else {
-          row.textContent = ln;
+          tagText = m[1].trim();
+          text = m[2] || '';
+          const up = tagText.toUpperCase();
+          if (up.includes('ERROR') || up.includes('FEHLER')) category = 'ERROR';
+          else if (up.includes('WARN')) category = 'WARN';
+          else if (up.includes('OK') || up.includes('SUCCESS')) category = 'OK';
+          else if (up.includes('DB')) category = 'DB';
+          else if (up.includes('CONFIG')) category = 'CONFIG';
+          else if (up.includes('SYSTEM')) category = 'SYSTEM';
+          else if (up.includes('DEL')) category = 'WARN';
         }
+        row.className = 'log-line sev-' + category;
+        // line number
+        const lnSpan = document.createElement('span');
+        lnSpan.className = 'log-ln';
+        lnSpan.textContent = String(idx + 1);
+        row.appendChild(lnSpan);
+        // tag
+        if (tagText) {
+          const tagSpan = document.createElement('span');
+          tagSpan.className = 'log-tag tag-' + category;
+          tagSpan.textContent = tagText;
+          row.appendChild(tagSpan);
+        }
+        // text
+        const textSpan = document.createElement('span');
+        textSpan.className = 'log-text';
+        textSpan.textContent = text || (tagText ? '' : ln);
+        row.appendChild(textSpan);
         frag.appendChild(row);
-      }
+      });
     }
     logBox.innerHTML = '';
     logBox.appendChild(frag);
