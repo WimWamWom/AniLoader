@@ -450,9 +450,9 @@ fetchDatabase();
 fetchStatus();
 fetchLogs();
 fetchDisk();
-// Staggered polling: each runs every 60s, with 25ms offsets between starts
+// Staggered polling: each runs every 60s, with 2s offsets between starts
 const INTERVAL_MS = 60000;
-const STAGGER_MS = 1000; // 25 milliseconds
+const STAGGER_MS = 2000; // 2 seconds
 function scheduleStaggered(fn, offsetMs) {
   setTimeout(() => {
     try { fn(); } catch(e) { console.error(e); }
