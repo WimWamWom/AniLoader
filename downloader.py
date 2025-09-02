@@ -41,8 +41,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT,
             url TEXT UNIQUE,
-            complete BOOLEAN DEFAULT 0,
-            deutsch_komplett BOOLEAN DEFAULT 0,
+            complete INTEGER DEFAULT 0,
+            deutsch_komplett INTEGER DEFAULT 0,
             deleted INTEGER DEFAULT 0,
             fehlende_deutsch_folgen TEXT DEFAULT '[]',
             last_film INTEGER DEFAULT 0,
@@ -50,14 +50,27 @@ def init_db():
             last_season INTEGER DEFAULT 0
         )
     """)
-    # Ensure 'deleted' column exists for older DBs
-    c.execute("PRAGMA table_info(anime)")
-    cols = [r[1] for r in c.fetchall()]
-    if 'deleted' not in cols:
-        try:
-            c.execute("ALTER TABLE anime ADD COLUMN deleted INTEGER DEFAULT 0")
-        except Exception:
-            pass
+
+    # Recalculate IDs to ensure they are sequential
+    c.execute("CREATE TEMPORARY TABLE anime_backup AS SELECT * FROM anime;")
+    c.execute("DROP TABLE anime;")
+    c.execute("""
+        CREATE TABLE anime (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            url TEXT UNIQUE,
+            complete INTEGER DEFAULT 0,
+            deutsch_komplett INTEGER DEFAULT 0,
+            deleted INTEGER DEFAULT 0,
+            fehlende_deutsch_folgen TEXT DEFAULT '[]',
+            last_film INTEGER DEFAULT 0,
+            last_episode INTEGER DEFAULT 0,
+            last_season INTEGER DEFAULT 0
+        )
+    """)
+    c.execute("INSERT INTO anime (title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season) SELECT title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season FROM anime_backup;")
+    c.execute("DROP TABLE anime_backup;")
+
     conn.commit()
     conn.close()
 
