@@ -21,8 +21,31 @@ import random
 BASE_DIR = Path(__file__).resolve().parent
 ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
-DB_PATH = BASE_DIR / "AniLoader.db"
-CONFIG_PATH = BASE_DIR / "config.json"
+
+# Define paths for the data folder
+data_folder = os.path.join(os.path.dirname(__file__), 'data')
+config_path = os.path.join(data_folder, 'config.json')
+db_path = os.path.join(data_folder, 'AniLoader.db')
+log_path = os.path.join(data_folder, 'last_run.log')
+
+# Ensure the data folder exists
+os.makedirs(data_folder, exist_ok=True)
+
+# Function to save the last log
+def save_last_log(log_content):
+    with open(log_path, 'w') as log_file:
+        log_file.write(log_content)
+
+# Function to read the last log
+def read_last_log():
+    if os.path.exists(log_path):
+        with open(log_path, 'r') as log_file:
+            return log_file.read()
+    return "No previous log available."
+
+CONFIG_PATH = Path(config_path)
+DB_PATH = Path(db_path)
+
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 MIN_FREE_GB = 2.0
 MAX_PATH = 260

@@ -18,10 +18,19 @@ import shutil
 BASE_DIR = Path(__file__).resolve().parent
 ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DOWNLOAD_DIR = BASE_DIR / "Downloads"
-DB_PATH = BASE_DIR / "AniLoader.db"
+data_folder = os.path.join(os.path.dirname(__file__), 'data')
+config_path = os.path.join(data_folder, 'config.json')
+db_path = os.path.join(data_folder, 'AniLoader.db')
+log_path = os.path.join(data_folder, 'last_run.log')
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
-CONFIG_PATH = BASE_DIR / "config.json"
 MIN_FREE_GB = 2.0
+
+# Ensure the data folder exists
+os.makedirs(data_folder, exist_ok=True)
+
+# Update existing paths
+CONFIG_PATH = Path(config_path)
+DB_PATH = Path(db_path)
 
 # -------------------- Datenbankfunktionen --------------------
 def init_db():
