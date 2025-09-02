@@ -26,6 +26,10 @@ const logCount = document.getElementById('log-count');
 // Cache for per-season counts to avoid flicker while updating
 const countsCache = {};
 
+// Queue elements
+const queueBody = document.getElementById('queue-body');
+const queueClearBtn = document.getElementById('queue-clear');
+
 function setStartButtonsDisabled(disabled) {
   [startDefault, startNew, startGerman, startMissing].forEach(btn => {
     if (btn) btn.disabled = !!disabled;
@@ -175,6 +179,49 @@ async function fetchOverview() {
   } catch(e) { console.error(e); }
 }
 
+/* ---------- Queue ---------- */
+async function fetchQueue() {
+  try {
+    const list = await apiGet('/queue');
+    if (!Array.isArray(list)) return;
+    queueBody.innerHTML = '';
+    list.forEach((q, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${idx + 1}</td><td>${q.anime_id ?? ''}</td><td>${q.title || ''}</td><td><button class="btn btn-sm btn-outline-danger" data-qid="${q.id}">Entfernen</button></td>`;
+      queueBody.appendChild(tr);
+    });
+    // attach remove handlers
+    queueBody.querySelectorAll('button[data-qid]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const qid = e.currentTarget.getAttribute('data-qid');
+        if (!qid) return;
+        await queueRemove(qid);
+      });
+    });
+  } catch (e) { console.error('fetchQueue', e); }
+}
+
+async function queueAdd(animeId) {
+  try {
+    await apiPost('/queue', { anime_id: animeId });
+    await fetchQueue();
+  } catch (e) { console.error('queueAdd', e); }
+}
+
+async function queueClear() {
+  try {
+    await fetch('/queue', { method: 'DELETE' });
+    await fetchQueue();
+  } catch (e) { console.error('queueClear', e); }
+}
+
+async function queueRemove(queueId) {
+  try {
+    await fetch(`/queue?id=${encodeURIComponent(queueId)}`, { method: 'DELETE' });
+    await fetchQueue();
+  } catch (e) { console.error('queueRemove', e); }
+}
+
 /* ---------- Settings (config) ---------- */
 const langList = document.getElementById('lang-list');
 const minFreeInput = document.getElementById('min-free');
@@ -306,8 +353,16 @@ async function fetchDatabase() {
         <td>${row.deleted ? "✅" : "❌"}</td>
         <td class="mono small"><div class="cell-scroll">${fehl}</div></td>
         <td>${row.last_season || 0}/${row.last_episode || 0}/${row.last_film || 0}</td>
+        <td><button class="btn btn-sm btn-outline-primary" data-queue-id="${row.id}">Als nächstes</button></td>
       `;
       dbBody.appendChild(tr);
+    });
+    // attach queue buttons
+    dbBody.querySelectorAll('button[data-queue-id]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = Number(e.currentTarget.getAttribute('data-queue-id'));
+        if (id) queueAdd(id);
+      });
     });
   } catch(e) { console.error(e); }
 }
@@ -450,6 +505,7 @@ fetchDatabase();
 fetchStatus();
 fetchLogs();
 fetchDisk();
+fetchQueue();
 // Staggered polling: each runs every 60s, with 2s offsets between starts
 const INTERVAL_MS = 60000;
 const STAGGER_MS = 2000; // 2 seconds
@@ -464,6 +520,7 @@ scheduleStaggered(fetchDatabase, STAGGER_MS);
 scheduleStaggered(fetchStatus, STAGGER_MS * 2);
 scheduleStaggered(fetchLogs, STAGGER_MS * 3);
 scheduleStaggered(fetchDisk, STAGGER_MS * 4);
+scheduleStaggered(fetchQueue, STAGGER_MS * 5);
 
 // Logs toolbar actions
 copyLogsBtn?.addEventListener('click', async () => {
@@ -474,3 +531,5 @@ copyLogsBtn?.addEventListener('click', async () => {
     console.error('copy logs failed', e);
   }
 });
+
+queueClearBtn?.addEventListener('click', queueClear);

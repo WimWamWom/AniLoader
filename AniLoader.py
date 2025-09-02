@@ -131,6 +131,18 @@ def init_db():
         )
     """)
 
+    # Queue-Tabelle für "Als nächstes downloaden"
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            anime_id INTEGER,
+            anime_url TEXT UNIQUE,
+            added_at INTEGER DEFAULT (strftime('%s','now'))
+        )
+        """
+    )
+
     # Recalculate IDs to ensure they are sequential
     c.execute("CREATE TEMPORARY TABLE anime_backup AS SELECT * FROM anime;")
     c.execute("DROP TABLE anime;")
@@ -268,6 +280,88 @@ def load_anime():
         }
         anime_list.append(entry)
     return anime_list
+
+def queue_add(anime_id: int) -> bool:
+    """Fügt eine Anime-ID zur Warteschlange hinzu (einzigartig)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        # ensure anime exists
+        c.execute("SELECT id, url FROM anime WHERE id = ?", (anime_id,))
+        row = c.fetchone()
+        if not row:
+            return False
+        _, aurl = row
+        # insert ignore-like behavior
+        try:
+            c.execute("INSERT OR IGNORE INTO queue (anime_id, anime_url) VALUES (?, ?)", (anime_id, aurl))
+            conn.commit()
+        finally:
+            conn.close()
+        return True
+    except Exception as e:
+        log(f"[DB-ERROR] queue_add: {e}")
+        return False
+
+def queue_list():
+    """Gibt die Queue als Liste von Dicts mit id, anime_id, title zurück (sortiert)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT q.id, a.id as anime_id, a.title
+            FROM queue q
+            LEFT JOIN anime a ON a.url = q.anime_url
+            ORDER BY q.added_at ASC, q.id ASC
+            """
+        )
+        rows = c.fetchall()
+        conn.close()
+        return [{"id": r[0], "anime_id": r[1], "title": r[2]} for r in rows]
+    except Exception as e:
+        log(f"[DB-ERROR] queue_list: {e}")
+        return []
+
+def queue_clear():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM queue")
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        log(f"[DB-ERROR] queue_clear: {e}")
+        return False
+
+def queue_pop_next():
+    """Entnimmt das erste Queue-Element und gibt anime_id zurück, sonst None."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT id, anime_url FROM queue ORDER BY added_at ASC, id ASC LIMIT 1")
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return None
+        qid, aurl = row
+        c.execute("DELETE FROM queue WHERE id = ?", (qid,))
+        conn.commit()
+        conn.close()
+        # map url to current anime id (IDs could be recalculated in init_db)
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("SELECT id FROM anime WHERE url = ?", (aurl,))
+            r2 = c.fetchone()
+            conn.close()
+            return r2[0] if r2 else None
+        except Exception:
+            return None
+    except Exception as e:
+        log(f"[DB-ERROR] queue_pop_next: {e}")
+        return None
 
 def check_deutsch_komplett(anime_id):
     conn = sqlite3.connect(DB_PATH)
@@ -695,10 +789,21 @@ def run_mode(mode="default"):
         init_db()
         # lade Anime inkl. 'deleted' flag
         anime_list = load_anime()
+        # Prüfe Queue und bilde Prioritätenliste
+        queued = queue_list()
+        queued_ids = [q['anime_id'] for q in queued]
+        priority_map = {aid: idx for idx, aid in enumerate(queued_ids)}
+        if queued_ids:
+            log(f"[QUEUE] {len(queued_ids)} Einträge werden priorisiert verarbeitet.")
         log(f"[INFO] Gewählter Modus: {mode}")
         if mode == "german":
             log("=== Modus: Prüfe auf neue deutsche Synchro ===")
-            for idx, anime in enumerate(anime_list):
+            # Wenn Queue vorhanden, nur diese Anime in dieser Reihenfolge verarbeiten
+            work_list = anime_list
+            if queued_ids:
+                work_list = [a for a in anime_list if a['id'] in queued_ids]
+                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
+            for idx, anime in enumerate(work_list):
                 current_download["current_index"] = idx
                 # Überspringen wenn als deleted markiert
                 if anime.get("deleted"):
@@ -732,7 +837,11 @@ def run_mode(mode="default"):
                 check_deutsch_komplett(anime_id)
         elif mode == "new":
             log("=== Modus: Prüfe auf neue Episoden & Filme ===")
-            for idx, anime in enumerate(anime_list):
+            work_list = anime_list
+            if queued_ids:
+                work_list = [a for a in anime_list if a['id'] in queued_ids]
+                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
+            for idx, anime in enumerate(work_list):
                 
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
@@ -763,7 +872,11 @@ def run_mode(mode="default"):
             und versucht fehlende Filme oder Episoden erneut zu laden.
             """
             anime_list = load_anime()
-            for anime in anime_list:
+            work_list = anime_list
+            if queued_ids:
+                work_list = [a for a in anime_list if a['id'] in queued_ids]
+                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
+            for anime in work_list:
                 
                 # Deleted ignorieren
                 if anime.get("deleted"):
@@ -836,7 +949,11 @@ def run_mode(mode="default"):
 
         else:
             log("=== Modus: Standard  ===")
-            for idx, anime in enumerate(anime_list):
+            work_list = anime_list
+            if queued_ids:
+                work_list = [a for a in anime_list if a['id'] in queued_ids]
+                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
+            for idx, anime in enumerate(work_list):
                 
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
@@ -864,6 +981,22 @@ def run_mode(mode="default"):
                 check_deutsch_komplett(anime_id)
                 update_anime(anime_id, complete=1)
                 log(f"[OK] Download abgeschlossen für: '{series_title}'")
+        # Falls wir ausschließlich Queue-Items verarbeitet haben, leeren wir die verarbeiteten aus der Queue
+        if queued_ids:
+            # alle abgearbeitet -> Queue bereinigen (Pop pro Eintrag)
+            # Wir löschen alle IDs, die in queued_ids enthalten waren
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute(
+                    f"DELETE FROM queue WHERE anime_id IN ({','.join(['?']*len(queued_ids))})",
+                    queued_ids
+                )
+                conn.commit()
+                conn.close()
+                log("[QUEUE] Verarbeitete Einträge aus der Warteschlange entfernt.")
+            except Exception as e:
+                log(f"[DB-ERROR] queue cleanup: {e}")
         log("[INFO] Alle Aufgaben abgeschlossen.")
     except Exception as e:
         log(f"[ERROR] Unhandled exception in run_mode: {e}")
@@ -951,6 +1084,59 @@ def api_config():
     except Exception as e:
         log(f"[ERROR] api_config POST: {e}")
         return jsonify({'status': 'failed', 'error': str(e)}), 400
+
+
+@app.route('/queue', methods=['GET', 'POST', 'DELETE'])
+def api_queue():
+    """GET: Liste der Queue, POST: {'anime_id': id} hinzufügen, DELETE: leeren"""
+    try:
+        if request.method == 'GET':
+            return jsonify(queue_list())
+        elif request.method == 'POST':
+            data = request.get_json() or {}
+            aid = data.get('anime_id')
+            if not isinstance(aid, int):
+                # allow string digit
+                try:
+                    aid = int(str(aid))
+                except Exception:
+                    return jsonify({'status': 'failed', 'error': 'invalid anime_id'}), 400
+            ok = queue_add(aid)
+            return jsonify({'status': 'ok' if ok else 'failed'})
+        elif request.method == 'DELETE':
+            # Optional: einzelnes Element entfernen
+            qid = request.args.get('id') or (request.get_json(silent=True) or {}).get('id')
+            aid = request.args.get('anime_id') or (request.get_json(silent=True) or {}).get('anime_id')
+            if qid is not None:
+                try:
+                    qid_int = int(str(qid))
+                    conn = sqlite3.connect(DB_PATH)
+                    c = conn.cursor()
+                    c.execute("DELETE FROM queue WHERE id = ?", (qid_int,))
+                    conn.commit()
+                    conn.close()
+                    return jsonify({'status': 'ok'})
+                except Exception as e:
+                    log(f"[DB-ERROR] api_queue delete id: {e}")
+                    return jsonify({'status': 'failed', 'error': str(e)}), 500
+            if aid is not None:
+                try:
+                    aid_int = int(str(aid))
+                    conn = sqlite3.connect(DB_PATH)
+                    c = conn.cursor()
+                    c.execute("DELETE FROM queue WHERE anime_id = ?", (aid_int,))
+                    conn.commit()
+                    conn.close()
+                    return jsonify({'status': 'ok'})
+                except Exception as e:
+                    log(f"[DB-ERROR] api_queue delete anime_id: {e}")
+                    return jsonify({'status': 'failed', 'error': str(e)}), 500
+            # Fallback: ganze Queue leeren
+            ok = queue_clear()
+            return jsonify({'status': 'ok' if ok else 'failed'})
+    except Exception as e:
+        log(f"[ERROR] api_queue: {e}")
+        return jsonify({'status': 'failed', 'error': str(e)}), 500
 
 
 

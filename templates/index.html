@@ -61,6 +61,20 @@
       <div id="overviewContainer" class="row g-3">
         <!-- Cards für alle Animes (kurze Übersicht) -->
       </div>
+      <div class="mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">Warteschlange</h6>
+          <button id="queue-clear" class="btn btn-sm btn-outline-danger">Warteschlange leeren</button>
+        </div>
+        <div class="table-responsive">
+      <table class="table table-dark table-striped table-hover mt-1">
+            <thead>
+        <tr><th>#</th><th>ID</th><th>Title</th><th>Aktion</th></tr>
+            </thead>
+            <tbody id="queue-body"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- Database Tab -->
@@ -114,6 +128,7 @@
               <th>Deleted</th>
               <th>Fehlende deutsche Folgen</th>
               <th>Letzte S/E/F</th>
+              <th>Aktion</th>
             </tr>
           </thead>
           <tbody id="db-table-body"></tbody>
