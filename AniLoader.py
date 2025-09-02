@@ -130,6 +130,27 @@ def init_db():
             last_season INTEGER DEFAULT 0
         )
     """)
+
+    # Recalculate IDs to ensure they are sequential
+    c.execute("CREATE TEMPORARY TABLE anime_backup AS SELECT * FROM anime;")
+    c.execute("DROP TABLE anime;")
+    c.execute("""
+        CREATE TABLE anime (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            url TEXT UNIQUE,
+            complete INTEGER DEFAULT 0,
+            deutsch_komplett INTEGER DEFAULT 0,
+            deleted INTEGER DEFAULT 0,
+            fehlende_deutsch_folgen TEXT DEFAULT '[]',
+            last_film INTEGER DEFAULT 0,
+            last_episode INTEGER DEFAULT 0,
+            last_season INTEGER DEFAULT 0
+        )
+    """)
+    c.execute("INSERT INTO anime (title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season) SELECT title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season FROM anime_backup;")
+    c.execute("DROP TABLE anime_backup;")
+
     conn.commit()
     conn.close()
 
