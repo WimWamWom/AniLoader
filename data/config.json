@@ -1,0 +1,10 @@
+{
+  "languages": [
+    "German Dub",
+    "German Sub",
+    "English Dub",
+    "English Sub"
+  ],
+  "min_free_gb": 2.0,
+  "autostart_mode": null
+}
