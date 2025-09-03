@@ -4,34 +4,37 @@
 
 # AniLoader
 
-<ins>***Momentan noch in Arbeit. Bereits Funktionsfähig***</ins> </br>
-***Dieser Downloader basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader/tree/next) von [phoenixthrush](https://github.com/phoenixthrush).*** </br>
-Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automatischen Download von Animes von [AniWorld](https://aniworld.to/) und Serien von [SerienStream](https://s.to/) ermöglicht. Der Schwerpunkt liegt dabei auf deutschen Dub-Versionen. Das Skript verwaltet eine **SQLite-Datenbank**, in der alle heruntergeladenen Inhalte gespeichert und **fehlende deutsche Episoden** automatisch erkannt werden. Heruntergeladene Dateien werden sauber umbenannt und übersichtlich nach **Staffeln, Episoden und Filmen sortiert**. Dadurch entsteht eine klar strukturierte Ordnerhierarchie, in der Serien und Filme leicht auffindbar sind. Zusätzlich bietet das Webinterface eine komfortable Möglichkeit, Downloads zu verwalten und den aktuellen Fortschritt einzusehen.
+<ins><strong>In Arbeit, aber bereits funktionsfähig</strong></ins><br/>
+Dieser Downloader basiert auf dem Projekt <a href="https://github.com/phoenixthrush/AniWorld-Downloader" target="_blank" rel="noreferrer">AniWorld-Downloader</a> von <a href="https://github.com/phoenixthrush" target="_blank" rel="noreferrer">phoenixthrush</a> und nutzt dessen CLI <code>aniworld</code> für die eigentlichen Downloads.
+
+AniLoader ist ein Python-Tool mit optionalem Webinterface, das Animes von <a href="https://aniworld.to/" target="_blank" rel="noreferrer">AniWorld</a> und Serien von <a href="https://s.to/" target="_blank" rel="noreferrer">SerienStream (s.to)</a> automatisch laden und sauber in Ordnern (Staffeln/Episoden/Filme) ablegen kann. Der Fokus liegt auf deutschen Versionen (German Dub). Eine SQLite-Datenbank hält den Fortschritt fest, erkennt fehlende deutsche Folgen und vermeidet Dubletten.
 
 ## Inhalt
 
 - [Funktion](#funktion)
 - [Installation](#installation)
-  - [1. Repository klonen](#1-repository-klonen)
-  - [2. Python-Abhängigkeiten installieren](#2-python-abhängigkeiten-installieren)
-  - [3. Download-Liste erstellen](#download-liste-erstellen)
+  - [1. Voraussetzungen](#1-voraussetzungen)
+  - [2. Repository klonen](#2-repository-klonen)
+  - [3. Abhängigkeiten installieren](#3-abhängigkeiten-installieren)
+  - [4. Download-Liste anlegen](#4-download-liste-anlegen)
 - [Nutzung](#nutzung)
-  - [AniLoader als lokales Programm](#aniloader-als-lokales-programm)
-    - [Alle Anime herunterladen](#alle-anime-herunterladen)
-    - [Nur fehlende deutsche Folgen herunterladen](#nur-fehlende-deutsche-folgen-herunterladen)
-    - [Neue Episoden prüfen und herunterladen](#neue-episoden-prüfen-und-herunterladen)
-  - [AniLoader mit Webinterface](#aniloader-mit-webinterface)
-    - [Starten](#starten)
-    - [Web-Interface](#web-interface)
+  - [CLI (ohne Webinterface)](#cli-ohne-webinterface)
+  - [Webinterface (Flask/Waitress)](#webinterface-flaskwaitress)
+  - [Dateistruktur](#dateistruktur)
+- [Web-UI Features](#web-ui-features)
 - [API](#api)
   - [Start Download](#start-download)
   - [Status](#status)
   - [Logs](#logs)
-  - [Datenbank-Einträge](#datenbank-einträge)
+  - [Disk](#disk)
+  - [Config](#config)
+  - [Datenbank](#datenbank)
+  - [Counts](#counts)
+  - [Export](#export)
+  - [Check](#check)
+  - [Queue](#queue)
 - [Tampermonkey](#tampermonkey)
 - [Hinweise](#hinweise)
-  - [Good to Know](#good-to-know)
-  - [Anpassung](#anpassung)
 - [Beispiele](#beispiele)
 - [Debugging & Troubleshooting](#debugging--troubleshooting)
 - [Lizenz](#lizenz)
@@ -39,122 +42,67 @@ Dieses Projekt ist ein Python-Skript mit optionalem Webinterface, das den automa
 ## Funktion
 
 ### Features
-- **Import von Anime/Serien-Links** aus einer Textdatei (`AniLoader.txt`)
-- Verwaltung des Download-Status in einer SQLite-Datenbank (`AniLoader.db`)
-- **Priorisierung von Sprachen**:
+- Import von Serien-Links aus <code>AniLoader.txt</code>
+- Fortschrittsverwaltung in SQLite (welche Staffeln/Episoden/Filme sind geladen, fehlende deutsche Folgen, „komplett“ usw.)
+- Sprach-Priorität in dieser Reihenfolge (konfigurierbar):
   1. German Dub
   2. German Sub
   3. English Dub
   4. English Sub
-- Automatische Erkennung bereits heruntergeladener Episoden
-- **Löschen alter Untertitelversionen** außer German Dub
-- Sauberes **Umbenennen** von Episoden nach Staffel, Episode, Titel und Sprache
-- **Download von Staffeln und Filmen**
-- Automatische Sortierung der Downloads:  
-  - Filme → `Filme`
-  - Staffeln → `Staffel 1`, `Staffel 2`, …
-- Option, nur **fehlende deutsche Folgen** (`german`) oder **neue Episoden** (`new`) zu prüfen
-- **Webinterface** zur Kontrolle des Downloads, Überwachung der Logs und Datenbankabfrage
-  - Start-Buttons sind während eines laufenden Durchlaufs deaktiviert
-  - Roter Stop-Button zum Abbrechen ohne „Komplett“-Markierung
-  - Fortschrittskarte mit klickbarem Serienlink und Startzeit/Index
-  - Anzeige „Geladen pro Staffel … • Filme: N“ aus dem Dateisystem
-  - Speicheranzeige mit automatischer Einheit (TB/GB/MB)
-  - Sanfte Aktualisierung: vorhandene Werte bleiben sichtbar bis neue Daten ankommen
-
-## Dateistruktur
-
-```
-AniLoader/
-├─ AniLoader.txt # Liste der Anime-URLs (eine pro Zeile)
-├─ AniLoader.db # SQLite-Datenbank für Fortschritt und fehlende Folgen
-├─ downloader.py # Hauptskript ohne Webinterface
-├─ AniLoader.py # Hauptskript mit Webinterface
-├─ templates/ # HTML-Templates für Webinterface
-├─ static/ # CSS/JS für Webinterface
-├─ README.md # README
-├─ Downloads/ # Standard-Downloadordner
-│ ├─ Naruto/
-│ │ ├─ Filme/
-│ │ │ ├─ Film01.mp4
-│ │ │ └─ ...
-│ │ ├─ Staffel 1/
-│ │ │ ├─ S01E001 - Titel.mp4
-│ │ │ └─ ...
-│ │ ├─ Staffel 2/
-│ │ │ ├─ S02E001 - Titel [Sub].mp4
-│ │ │ └─ ...
-
-```
-
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+- Bereits vorhandene Folgen werden erkannt und übersprungen
+- Automatisches Löschen alter Nicht-Dub-Versionen, sobald German Dub vorhanden ist
+- Sauberes Umbenennen nach Schema: <code>S01E023 - Episodentitel [English Sub].mp4</code> bzw. <code>Film01 - Titel.mp4</code>
+- Ordnerstruktur: <code>Downloads/Serie/Staffel N/*.mp4</code> und <code>Downloads/Serie/Filme/*.mp4</code>
+- Modi: kompletter Lauf, nur neue Inhalte, nur deutsche Nachlieferungen, und Prüfung auf fehlende Dateien
+- Webinterface: Fortschritt, Logs, Datenbank-Ansicht, Speicheranzeige, Queue („Als nächstes“)
 
 ## Installation
 
-### 1. Repository klonen
-```
+### 1. Voraussetzungen
+- Empfohlen: Python 3.9 oder neuer (getestet mit 3.13)
+- Betriebssystem: Windows, Linux oder macOS (Windows bevorzugt, da Waitress im README gezeigt wird)
+
+### 2. Repository klonen
+```bash
 git clone https://github.com/WimWamWom/AniLoader
 ```
 
-### 2. **Python-Abhängigkeiten installieren**
-
-```
+### 3. Abhängigkeiten installieren
+Installiere alle benötigten Pakete in einem Schritt:
+```bash
 pip install requests beautifulsoup4 flask flask_cors aniworld waitress
 ```
 
+Prüfen, ob das Downloader-CLI vorhanden ist:
+```bash
+aniworld --help
+```
 
-### Download-Liste erstellen
-
-Die Datei `AniLoader.txt` enthält die Links zu den Animes / Serien, z. B.:
+### 4. Download-Liste anlegen
+Lege im Projektordner eine Datei <code>AniLoader.txt</code> an und trage je Zeile genau einen Serienlink ein (Basis-URL, keine Episoden-URL), z. B.:
 
 ```
-https://aniworld.to/serie/naruto
+https://aniworld.to/anime/stream/naruto
 https://s.to/serie/stream/the-rookie
 ```
-Jede URL muss in einer neuen Zeile stehen. Es darf dabei nur der Link zu dem Anime/der Serie sein, nicht zu einer spezifischen Folge.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Nutzung
 
-### AniLoader als lokales Programm
+### CLI (ohne Webinterface)
+Das CLI-Skript ist <code>downloader.py</code>. Start:
 
-`downloader.py` ist die schlanke, rein CLI-basierte Variante ohne Webserver. Sie bietet die gleichen Kernfunktionen wie `AniLoader.py` zur Verwaltung von Downloads, zur Pflege der SQLite-Datenbank und zur Erkennung fehlender deutscher Folgen.
-
-Aufrufmuster:
-
-```
+```bash
 py downloader.py [mode]
 ```
 
-Verfügbare Modi (argument `mode`):
-
-- `default` (kein Argument):
-  - Voller Durchlauf: prüft Filme und Staffeln, lädt fehlende Episoden/Filme in der Prioritätsreihenfolge der Sprachen und markiert Serien als komplett, wenn keine weiteren Staffeln gefunden werden.
-  - Aktualisiert `last_film`, `last_season`, `last_episode` in der DB und setzt `complete=True` wenn Serie abgeschlossen.
-
-- `german`:
-  - Versucht ausschließlich, für Einträge in `fehlende_deutsch_folgen` die deutsche (German Dub) Version nachzuladen.
-  - Wird eine deutschsprachige Version gefunden, wird der Eintrag aus `fehlende_deutsch_folgen` entfernt.
-
-- `new`:
-  - Prüft pro Serie auf neue Filme und Staffeln ab den in der DB gespeicherten `last_*`-Werten und lädt neue Inhalte nach.
-
-- `check-missing`:
-  - Wiederholte Prüfung auf fehlende Dateien: versucht zuerst die URLs in `fehlende_deutsch_folgen` erneut (German-only),
-    anschließend prüft es die Dateisystem-Einträge bis zu den gespeicherten `last_film` / `last_season` / `last_episode`-Werten und startet Nachdownloads für fehlende Dateien.
-
-Wichtige Konfigurationspunkte:
-
-- `AniLoader.txt`: Liste der Serien-URLs (eine URL pro Zeile) — wird beim Start importiert und danach leer gemacht.
-- `config.json` (wird automatisch erstellt, falls nicht vorhanden):
-  - `languages`: Reihenfolge der Sprachen, die versucht werden (Standard: `["German Dub","German Sub","English Dub","English Sub"]`).
-  - `min_free_gb`: minimaler freier Festplattenspeicher (in GB), unter dem Downloads abgebrochen werden (Standard: `2.0`).
+Modi:
+- <code>default</code> (Standard): kompletter Lauf über Filme und Staffeln; lädt Inhalte gemäß Sprach-Priorität; markiert ggf. komplett
+- <code>german</code>: versucht ausschließlich Einträge aus „fehlende_deutsch_folgen“ in German Dub nachzuladen
+- <code>new</code>: prüft ab den gespeicherten <code>last_*</code>-Werten auf neue Filme/Staffeln/Episoden
+- <code>check-missing</code>: versucht fehlende Dateien anhand DB- und Dateisystem-Infos nachzuladen
 
 Beispiele:
-
-```
+```bash
 py downloader.py
 py downloader.py german
 py downloader.py new
@@ -162,283 +110,180 @@ py downloader.py check-missing
 ```
 
 Hinweise:
+- <code>Downloads/</code> wird automatisch erzeugt
+- Minimale Restkapazität ist konfigurierbar (Standard 2 GB); unterhalb wird abgebrochen
+- <code>aniworld</code> muss im PATH liegen
 
-- Das CLI ruft extern das Tool `aniworld` auf. Stelle sicher, dass `aniworld` im PATH verfügbar ist.
-- `Downloads/` wird automatisch angelegt, falls nicht vorhanden.
-- Bei sehr großen Serien kann `check-missing` viele Download-Versuche auslösen; passe `min_free_gb` entsprechend an.
+### Webinterface (Flask/Waitress)
 
-
-## AniLoader mit Webinterface
-
-
-### Starten
-
-### Als Lokaler "Test"-Server
-Starte das Programm mit
-```
+- Entwicklungsstart (lokal):
+```bash
 py AniLoader.py
 ```
-**Achtung:**
-Der eingebaute Flask-Server ist nur für Entwicklung und Tests gedacht. Er ist nicht für den produktiven Einsatz geeignet, da er keine Sicherheit gegen Angriffe bietet und bei hoher Last instabil werden kann.
 
-### Start mit WSGI-Server (empfohlen)
+- Produktion unter Windows (empfohlen):
+```bash
+python -m waitress --host=0.0.0.0 --port=5050 AniLoader:app
+```
 
-Für den produktiven Einsatz solltest du einen WSGI-Server wie `waitress` verwenden (empfohlen für Windows):
+Aufruf: http://localhost:5050
 
-1. Installiere waitress:
-  ```
-  pip install waitress
-  ```
-2. Starte AniLoader mit waitress:
-  ```
-  python -m waitress --host=0.0.0.0 --port=5050 AniLoader:app
-  ```
-  (Das `:app` bezieht sich auf das Flask-App-Objekt in AniLoader.py)
+### Dateistruktur
 
+```
+AniLoader/
+├─ AniLoader.py             # Webserver + Logik
+├─ downloader.py            # CLI-Variante (ohne Webserver)
+├─ AniLoader.txt            # Import-Liste der Serien-URLs
+├─ data/
+│  ├─ AniLoader.db         # SQLite-Datenbank
+│  └─ config.json          # Konfiguration (languages, min_free_gb, autostart_mode)
+├─ Downloads/              # Zielordner der Dateien
+│  └─ <Serienname>/
+│     ├─ Filme/
+│     └─ Staffel 1/, Staffel 2/, ...
+├─ templates/              # HTML
+├─ static/                 # CSS/JS
+└─ README.md
+```
 
-## Web-Interface
+## Web-UI Features
+- Start-Buttons für die Modi; während eines Laufs sind die Buttons deaktiviert
+- Status-Anzeige inkl. „kein Speicher“ (Einheit automatisch in TB/GB/MB)
+- Live-Logs mit Filter und Kopieren
+- Datenbank-Tab: filtern/sortieren, Liste der fehlenden deutschen Folgen, Knopf „Als nächstes“ (Queue)
+- Warteschlangen-Tabellen-Ansicht inkl. Leeren/Einträge entfernen
 
-### Zugang
-Das Webinterface ist dann wie unter [http://localhost:5050](http://localhost:5050) erreichbar.
+## API
 
-Weitere Hinweise zu Sicherheit und Remote-Zugriff siehe Abschnitt "Debugging & Troubleshooting".
-
-##### Features
-- Starten und Verfolgen von Downloads
-- Überwachung von Logs in Echtzeit
-- Datenbankeinträge anzeigen, filtern und sortieren
-- Endpunkt für Tampermonkey skript
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-## API 
+Alle Endpunkte laufen standardmäßig unter <code>http://localhost:5050</code>.
 
 ### Start Download
-URL: /start_download </br>
-Method: GET oder POST </br>
-Query / JSON: mode = default | german | new </br>
-Beschreibung: startet den Hintergrund-Runner in einem der Modi. Der Endpoint startet die Hintergrund-Thread-Funktion run_mode(mode). </br>
+- URL: <code>/start_download</code>
+- Methode: GET oder POST
+- Parameter: <code>mode</code> = <code>default</code> | <code>german</code> | <code>new</code> | <code>check-missing</code>
+- Antwort: <code>{"status":"started","mode":"..."}</code> oder <code>409 already_running</code>
 
-#### GET, Standardmodus:
-```
+Beispiele:
+```bash
 curl "http://localhost:5050/start_download"
-```
-
-#### GET, German-Modus:
-```
 curl "http://localhost:5050/start_download?mode=german"
-```
-#### GET, Überprüfe auf neue Episoden:
-```
 curl "http://localhost:5050/start_download?mode=new"
-```
-Überprüft ob bei abgeschlossenen Animes neue Filme, Staffeln oder Episoden existieren
-
-#### GET, Überprüfe auf fehlende Episoden:
-```
 curl "http://localhost:5050/start_download?mode=check-missing"
 ```
-Überprüft bei angefangenen Animes, ob alle Folgen geladen wurden, und lädt fehlende nach.
 
 ### Status
+- URL: <code>/status</code>
+- Methode: GET
+- Liefert u. a.: <code>status</code> (idle|running|finished|kein-speicher), <code>mode</code>, <code>current_index</code>, <code>current_title</code>, <code>started_at</code>, sowie <code>current_season</code>/<code>current_episode</code>/<code>current_is_film</code> während eines Laufs.
 
-URL: /status </br>
-Method: GET </br>
-Beschreibung: liefert den aktuellen Status (idle | running | finished | kein-speicher), aktueller Modus, Index/Titel der Serie, Startzeit. </br>
-
-#### Aufruf
+Beispiel:
+```json
+{"status":"running","mode":"new","current_index":1,"current_title":"Naruto","started_at":1725300000.0}
 ```
-curl http://localhost:5050/status
-```
-
-#### Ausgabe
-```
-{"status":"running","mode":"new","current_index":1,"current_title":"Naruto","started_at":1600000000.0}
-```
-
-
 
 ### Logs
-### Disk
+- URL: <code>/logs</code>
+- Methode: GET
+- Liefert die letzten Logzeilen als JSON-Array
 
-URL: /disk </br>
-Method: GET </br>
-Beschreibung: freier Speicher als Zahl in GB (Frontend zeigt TB/GB/MB an). </br>
-```
-{"free_gb": 512.34}
-```
+### Disk
+- URL: <code>/disk</code>
+- Methode: GET
+- Liefert freien Speicher in GB: <code>{"free_gb": 512.3}</code>
 
 ### Config
-
-URL: /config </br>
-Method: GET | POST </br>
-Beschreibung: holt/setzt Sprachenreihenfolge und Mindestfreispeicher. </br>
-
-GET
+- URL: <code>/config</code>
+- Methoden: GET | POST
+- GET liefert z. B.:
+```json
+{"languages":["German Dub","German Sub","English Dub","English Sub"],"min_free_gb":2.0,"autostart_mode":null}
 ```
-curl http://localhost:5050/config
-```
-Antwort
-```
-{"languages":["German Dub","German Sub","English Dub","English Sub"],"min_free_gb":128}
+- POST Body (Beispiel):
+```json
+{"languages":["German Dub","German Sub"],"min_free_gb":5,"autostart_mode":"new"}
 ```
 
-POST
-```
-curl -X POST http://localhost:5050/config -H "Content-Type: application/json" -d '{"languages":["German Dub","German Sub"],"min_free_gb":256}'
-```
+### Datenbank
+- URL: <code>/database</code>
+- Methode: GET
+- Parameter:
+  - <code>q</code>: Suchtext für <code>title</code> oder <code>url</code>
+  - <code>complete</code>: 0 | 1
+  - <code>deleted</code>: 0 | 1
+  - <code>deutsch</code>: 0 | 1 (Filter auf <code>deutsch_komplett</code>)
+  - <code>sort_by</code>: <code>id</code> | <code>title</code> | <code>last_film</code> | <code>last_episode</code> | <code>last_season</code>
+  - <code>order</code>: <code>asc</code> | <code>desc</code>
+  - <code>limit</code> / <code>offset</code>
 
-URL: /logs </br>
-Method: GET </br>
-Beschreibung: liefert die im Speicher gehaltenen Log-Zeilen als JSON-Array (letzte MAX_LOG_LINES). </br>
-```
-curl http://localhost:5050/logs
-```
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-### Datenbank-Einträge
-URL: `/database` </br>
-Method: GET </br>
-Query-Parameter:
-- q = Suchbegriff (match auf title oder url)
-- complete = 0 oder 1 (Filter)
-- deleted = 0 oder 1 (Filter)
-- sort_by = id | title | last_film | last_episode | last_season
-- order = asc | desc
-- limit = Zahl
-- offset = Zahl
-
-#### Beispiel Aufruf 
-```
-curl "http://localhost:5050/database?q=naruto&complete=0&sort_by=title&order=asc&limit=50"
-```
-#### Ausgabe
-```
-{id,title,url,complete,deutsch_komplett,fehlende,last_film,last_episode,last_season}
-```
-
-### Counts (Staffel-/Film-Zählung)
-
-URL: /counts </br>
-Method: GET </br>
-Beschreibung: zählt pro Staffel Episoden und Filme aus dem Dateisystem. </br>
-Parameter: `id` (DB id) oder `title` (Serienordner unter Downloads). </br>
-
-Beispiel
-```
-curl "http://localhost:5050/counts?id=42"
-```
-Antwort
-```
-{"per_season":{"1":12,"2":12},"total_seasons":2,"total_episodes":24,"films":1,"title":"Naruto"}
-```
+### Counts
+- URL: <code>/counts</code>
+- Methode: GET
+- Parameter: <code>id</code> (DB-ID) oder <code>title</code> (Serienordner unter Downloads)
+- Antwort: <code>{ per_season: {"1":12,...}, total_seasons, total_episodes, films, title }</code>
 
 ### Export
-
-URL: /export </br>
-Method: POST </br>
-Beschreibung: fügt eine URL zur Datenbank hinzu (für Tampermonkey). </br>
-Body: `{ "url": "https://…" }`
+- URL: <code>/export</code>
+- Methode: POST
+- Body: <code>{ "url": "https://..." }</code>
+- Fügt eine Serien-URL in die DB ein (für Tampermonkey-Button)
 
 ### Check
+- URL: <code>/check</code>
+- Methode: GET
+- Parameter: <code>url</code>
+- Prüft, ob die URL in der DB existiert (und nicht als deleted markiert ist)
 
-URL: /check </br>
-Method: GET </br>
-Beschreibung: prüft, ob eine URL bereits existiert (und nicht gelöscht ist). </br>
-Query: `url=https://…`
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+### Queue
+- URL: <code>/queue</code>
+- Methoden:
+  - GET: Liste der Queue-Einträge
+  - POST: <code>{"anime_id": 42}</code> → fügt Anime zur Queue hinzu
+  - DELETE: ohne Parameter leert die Queue; mit <code>?id=QID</code> oder <code>?anime_id=AID</code> löscht gezielt
 
 ## Tampermonkey
-[Benutzer-Script](https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js) (JavaScript) fügt auf AniWorld / S.to einen Button hinzu. </br>
-Ändere im Tampermonkey-Script die Basis-URL für deinen Server (falls nicht `localhost`)</br>
---> Wenn dein Flask auf einem anderen Rechner läuft, setze die SERVER_IP auf dessen `IP-Adresse`(Bsp.: 123.45.67): 
-```
-const SERVER_IP = "localhost";
-oder
-const SERVER_IP = "123.45.67";
-```
-Verhalten:
-- Beim Laden prüft das Script /check?url=… → wenn vorhanden, Button ist grün und deaktiviert.
-- Klick auf Button sendet POST /export mit JSON {url}.
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+Userscript: https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js
 
+Konfiguration im Script:
+```js
+const SERVER_IP = "localhost"; // ggf. IP/Hostname deines AniLoader-Servers
+```
+
+Funktionsweise:
+- Prüft beim Laden per <code>/database</code>/<code>/status</code>, ob die Serie existiert bzw. gerade geladen wird
+- Legt ggf. per <code>POST /export</code> den Eintrag an
+- Startet falls nicht laufend <code>/start_download</code> im Standardmodus
+- Button deaktiviert sich, wenn bereits vorhanden/aktiver Download
 
 ## Hinweise
-### Good to Know
-- Die URL-Struktur des Anime muss dem Format von AniWorld oder SerienStream entsprechen
-- Alte Untertitelversionen (außer German Dub) werden automatisch gelöscht
-- Fehlende Streams oder Sprachprobleme zeigen Warnungen an
-
-### Anpassung
-
-Die wichtigsten Konfigurationen befinden sich am Anfang von `AniLoader.py`:
-- `DOWNLOAD_DIR`: Ordner für die Downloads
-- `DOWNLOAD_TXT`: Pfad zur Download-Textdatei
-- `DB_PATH`: Speicherort der SQLite-Datenbank
-- 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+- Die Pfade der Dateien werden auf Windows-Länge (<code>MAX_PATH</code>) geprüft; sehr lange Titel werden automatisch gekürzt
+- Wird eine German-Dub-Version gefunden, löscht AniLoader ältere Sub-/englische Versionen derselben Folge
+- Das System markiert „gelöschte“ Serien (falls Ordner entfernt) und setzt DB-Felder zurück; diese Einträge können reaktiviert werden, wenn dieselbe URL erneut exportiert wird
+- Autostart-Modus kann über <code>/config</code> gesetzt werden (<code>default</code>|<code>german</code>|<code>new</code>|<code>check-missing</code>)
 
 ## Beispiele
 
-### Dateiname nach Download
-
-
+Dateinamen nach Download:
 ```
-S01E005 - Der Ninja-Test [Dub].mp4
+S01E005 - Der Ninja-Test.mp4
 S01E006 - Kampf der Klingen [Sub].mp4
-Film01 - Naruto Movie [Dub].mp4
+Film01 - Naruto Movie.mp4
 ```
 
-### Beispiel für die Eingabe der Link  (`AniLoader.txt`)
+Beispiel-Einträge in <code>AniLoader.txt</code>:
 ```
 https://aniworld.to/anime/stream/a-certain-magical-index
 https://s.to/serie/stream/family-guy
-https://aniworld.to/anime/stream/classroom-of-the-elite
-https://aniworld.to/anime/stream/highschool-dxd
-https://s.to/serie/stream/die-schluempfe
-https://s.to/serie/stream/die-abenteuer-des-jungen-marco-polo
 ```
 
-
-### Beispiel SQLite-Datenbank (`AniLoader.db`)
-- wird automatisch erstellt, enthält pro Anime:
-  - title
-  - url
-  - complete
-  - deutsch_komplett
-  - fehlende_deutsch_folgen (JSON-Array)
-  - last_film (Integer)
-  - last_episode (Integer)
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 ## Debugging & Troubleshooting
-
-### Kein Download startet / aniworld: command not found
-aniworld nicht installiert oder nicht in PATH. Installiere / passe run_download an.
-
-### AniLoader.txt wird nicht eingelesen
-Stelle sicher, dass AniLoader.txt im selben Ordner wie AniLoader.py liegt. Beim Start wird die Datenbank aktualisiert.
-
-### Keine Logs im UI
-/logs liefert die Log-Zeilen als JSON. Prüfe mit curl http://localhost:5050/logs. UI muss diese anzeigen.
-
-### Server wird beim Seiten-Reload neu gestartet
-Das Skript läuft als normaler Flask-Prozess. Wenn du im Entwickler-Modus (debug=True) startest, kann der Reloader Threads neu starten. In deinem Code ist debug=False, das ist gut — Threads überleben Seitenreloads nicht automatisch, aber hier ist der Server persistent.
-
-### Datenbank-Inkonsistenzen
-SQLite Datei AniLoader.db kannst du mit sqlite3 AniLoader.db öffnen. Backup machen bevor du Änderungen vornimmst.
-
-### Remote Zugriff / Firewall
-Standardmäßig host="0.0.0.0" heißt erreichbar von Außen. Setze Firewall/Router-Portforwarding wenn nötig. Achtung: unsicher, wenn öffentlich zugänglich — siehe Sicherheitsabschnitt.
-
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+- „aniworld: command not found“: <code>aniworld</code> ist nicht installiert oder nicht im PATH; siehe Installation Schritt 4
+- Keine Logs im UI: <code>/logs</code> im Browser prüfen
+- „Kein Speicher“: <code>/disk</code> prüfen und <code>min_free_gb</code> in <code>/config</code> anpassen
+- Remote-Zugriff: Bei <code>host=0.0.0.0</code> ist der Server von außen erreichbar; sichere dein Netz/Firewall. Für Produktivbetrieb nutze einen WSGI-Server (Waitress) und setze ggf. Reverse Proxy/Auth davor
 
 ## Lizenz
 
-Dieses Projekt ist unter der [MIT-Lizenz](https://github.com/WimWamWom/AniLoader/blob/main/LICENSE) lizenziert. </br>
-Genauer Informatioen stehen in der LICENSE-Datei.
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+MIT-Lizenz (siehe LICENSE). Urheberrechte der verwendeten Projekte liegen bei den jeweiligen Autoren.
+
+<p align="right">(<a href="#readme-top">Nach oben</a>)</p>
