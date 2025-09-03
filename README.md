@@ -7,7 +7,7 @@
 <ins><strong>In Arbeit, aber bereits funktionsfähig</strong></ins><br/>
 Dieser Downloader basiert auf dem Projekt <a href="https://github.com/phoenixthrush/AniWorld-Downloader" target="_blank" rel="noreferrer">AniWorld-Downloader</a> von <a href="https://github.com/phoenixthrush" target="_blank" rel="noreferrer">phoenixthrush</a> und nutzt dessen CLI <code>aniworld</code> für die eigentlichen Downloads.
 
-AniLoader ist ein Python-Tool mit optionalem Webinterface, das Animes von <a href="https://aniworld.to/" target="_blank" rel="noreferrer">AniWorld</a> und Serien von <a href="https://s.to/" target="_blank" rel="noreferrer">SerienStream (s.to)</a> automatisch laden und sauber in Ordnern (Staffeln/Episoden/Filme) ablegen kann. Der Fokus liegt auf deutschen Versionen (German Dub). Eine SQLite-Datenbank hält den Fortschritt fest, erkennt fehlende deutsche Folgen und vermeidet Dubletten.
+AniLoader ist ein Python-Tool mit optionalem Webinterface, das Animes von <a href="https://aniworld.to/" target="_blank" rel="noreferrer">AniWorld</a> und Serien von <a href="https://s.to/" target="_blank" rel="noreferrer">SerienStream</a> automatisch laden und sauber in Ordnern (Staffeln/Episoden/Filme) ablegen kann. Der Fokus liegt auf deutschen Versionen (German Dub). Eine SQLite-Datenbank hält den Fortschritt fest, erkennt fehlende deutsche Folgen und vermeidet Dubletten.
 
 ## Inhalt
 
