@@ -287,11 +287,15 @@ def queue_add(anime_id: int) -> bool:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         # ensure anime exists
-        c.execute("SELECT id, url FROM anime WHERE id = ?", (anime_id,))
+        c.execute("SELECT id, url, complete FROM anime WHERE id = ?", (anime_id,))
         row = c.fetchone()
         if not row:
             return False
-        _, aurl = row
+        _, aurl, complete_flag = row
+        if complete_flag:
+            # Bereits komplett -> nicht zur Queue hinzufügen
+            log(f"[QUEUE] Anime {anime_id} ist bereits komplett – nicht zur Warteschlange hinzugefügt.")
+            return False
         # insert ignore-like behavior
         try:
             c.execute("INSERT OR IGNORE INTO queue (anime_id, anime_url) VALUES (?, ?)", (anime_id, aurl))
@@ -362,6 +366,26 @@ def queue_pop_next():
     except Exception as e:
         log(f"[DB-ERROR] queue_pop_next: {e}")
         return None
+
+def queue_prune_completed():
+    """Entfernt alle Queue-Einträge, deren Anime bereits als komplett markiert ist (oder nicht mehr existiert)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        # lösche alle, deren URL zu einem complete=1 Anime gehört
+        c.execute(
+            "DELETE FROM queue WHERE anime_url IN (SELECT url FROM anime WHERE complete = 1)"
+        )
+        # optional: verwaiste Einträge (ohne zugehörigen Anime) entfernen
+        c.execute(
+            "DELETE FROM queue WHERE anime_url NOT IN (SELECT url FROM anime)"
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        log(f"[DB-ERROR] queue_prune_completed: {e}")
+        return False
 
 def check_deutsch_komplett(anime_id):
     conn = sqlite3.connect(DB_PATH)
@@ -790,6 +814,7 @@ def run_mode(mode="default"):
         # lade Anime inkl. 'deleted' flag
         anime_list = load_anime()
         # Prüfe Queue und bilde Prioritätenliste
+        queue_prune_completed()
         queued = queue_list()
         queued_ids = [q['anime_id'] for q in queued]
         priority_map = {aid: idx for idx, aid in enumerate(queued_ids)}
@@ -798,12 +823,46 @@ def run_mode(mode="default"):
         log(f"[INFO] Gewählter Modus: {mode}")
         if mode == "german":
             log("=== Modus: Prüfe auf neue deutsche Synchro ===")
-            # Wenn Queue vorhanden, nur diese Anime in dieser Reihenfolge verarbeiten
-            work_list = anime_list
+            # 1) Zuerst Queue (falls vorhanden)
             if queued_ids:
                 work_list = [a for a in anime_list if a['id'] in queued_ids]
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-            for idx, anime in enumerate(work_list):
+                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (German)")
+                for idx, anime in enumerate(work_list):
+                    current_download["current_index"] = idx
+                    # Überspringen wenn als deleted markiert
+                    if anime.get("deleted"):
+                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+                        continue
+                    series_title = anime["title"] or get_series_title(anime["url"])
+                    anime_id = anime["id"]
+                    current_download["current_title"] = series_title
+                    fehlende = anime.get("fehlende_deutsch_folgen", [])
+                    if not fehlende:
+                        log(f"[GERMAN] '{series_title}': Keine neuen deutschen Folgen")
+                        continue
+                    log(f"[GERMAN] '{series_title}': {len(fehlende)} Folgen zu testen.")
+                    verbleibend = fehlende.copy()
+                    for url in fehlende:
+                        match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
+                        if match:
+                            season = int(match.group(1))
+                            episode = int(match.group(2))
+                        else:
+                            m2 = re.search(r"/film-(\d+)", url)
+                            season = 0
+                            episode = int(m2.group(1)) if m2 else 1
+                        result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
+                        if result == "OK" and url in verbleibend:
+                            verbleibend.remove(url)
+                            update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
+                            log(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
+                            delete_old_non_german_versions(series_folder=os.path.join(DOWNLOAD_DIR, series_title), season=season, episode=episode)
+                    check_deutsch_komplett(anime_id)
+
+            # 2) Danach restliche DB-Einträge
+            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
+            for idx, anime in enumerate(rest_list):
                 current_download["current_index"] = idx
                 # Überspringen wenn als deleted markiert
                 if anime.get("deleted"):
@@ -837,11 +896,37 @@ def run_mode(mode="default"):
                 check_deutsch_komplett(anime_id)
         elif mode == "new":
             log("=== Modus: Prüfe auf neue Episoden & Filme ===")
-            work_list = anime_list
+            # 1) Zuerst Queue
             if queued_ids:
                 work_list = [a for a in anime_list if a['id'] in queued_ids]
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-            for idx, anime in enumerate(work_list):
+                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (New)")
+                for idx, anime in enumerate(work_list):
+                    current_download["current_index"] = idx
+                    if anime.get("deleted"):
+                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+                        continue
+                    series_title = anime["title"] or get_series_title(anime["url"])
+                    anime_id = anime["id"]
+                    base_url = anime["url"]
+                    current_download["current_title"] = series_title
+                    start_film = (anime.get("last_film") or 1)
+                    start_season = anime.get("last_season") or 1
+                    start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
+                    log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
+                    r = download_films(series_title, base_url, anime_id, start_film=start_film)
+                    if r == "NO_SPACE":
+                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
+                        return
+                    r2 = download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
+                    if r2 == "NO_SPACE":
+                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
+                        return
+                    check_deutsch_komplett(anime_id)
+
+            # 2) Danach restliche DB-Einträge
+            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
+            for idx, anime in enumerate(rest_list):
                 
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
@@ -872,28 +957,95 @@ def run_mode(mode="default"):
             und versucht fehlende Filme oder Episoden erneut zu laden.
             """
             anime_list = load_anime()
-            work_list = anime_list
+            # 1) Zuerst Queue
             if queued_ids:
                 work_list = [a for a in anime_list if a['id'] in queued_ids]
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-            for anime in work_list:
-                
+                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Check-Missing)")
+                for anime in work_list:
+                    # Deleted ignorieren
+                    if anime.get("deleted"):
+                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
+                        continue
+                    # Nur Anime berücksichtigen, die bereits Downloads haben oder als komplett markiert sind
+                    if anime["last_film"] == 0 and anime["last_season"] == 0 and anime["last_episode"] == 0 and not anime["complete"]:
+                        continue
+
+                    series_title = anime["title"] or get_series_title(anime["url"])
+                    base_url = anime["url"]
+                    anime_id = anime["id"]
+
+                    log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
+
+                    # Alle Filme von 1 bis last_film prüfen
+                    film_num = 1
+                    while True:
+                        film_url = f"{base_url}/filme/film-{film_num}"
+                        if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), 0, film_num):
+                            log(f"[OK] Film {film_num} bereits vorhanden.")
+                        else:
+                            log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
+                            result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
+                            if result == "NO_STREAMS":
+                                break  # Keine weiteren Filme vorhanden
+                        film_num += 1
+                    # Start mit Staffel 1 und zähle leere Staffeln
+                    season = 1
+                    consecutive_empty_seasons = 0
+                    while True:
+                        episode = 1
+                        found_episode = False
+                        while True:
+                            episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
+                            if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), season, episode):
+                                log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
+                                episode += 1
+                                continue
+
+                            log(f"[INFO] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
+                            result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
+
+                            if result == "NO_STREAMS":
+                                if episode == 1:
+                                    # Staffel existiert nicht -> Abbruchkandidat
+                                    break
+                                else:
+                                    log(f"[INFO] Staffel {season} beendet nach {episode-1} Episoden.")
+                                    break
+                            else:
+                                found_episode = True
+                                episode += 1
+
+                        if not found_episode:
+                            consecutive_empty_seasons += 1
+                        else:
+                            consecutive_empty_seasons = 0
+
+                        if consecutive_empty_seasons >= 2:
+                            log(f"[CHECK-MISSING] '{series_title}' hat keine weiteren Staffeln.")
+                            break
+
+                        season += 1
+
+                    # Finaler Statuscheck
+                    check_deutsch_komplett(anime_id)
+                    log(f"[CHECK-MISSING] Kontrolle für '{series_title}' abgeschlossen.")
+
+            # 2) Danach restliche DB-Einträge
+            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
+            for anime in rest_list:
                 # Deleted ignorieren
                 if anime.get("deleted"):
                     log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
                     continue
-
                 # Nur Anime berücksichtigen, die bereits Downloads haben oder als komplett markiert sind
                 if anime["last_film"] == 0 and anime["last_season"] == 0 and anime["last_episode"] == 0 and not anime["complete"]:
                     continue
-
                 series_title = anime["title"] or get_series_title(anime["url"])
                 base_url = anime["url"]
                 anime_id = anime["id"]
-
                 log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
-
-                # Alle Filme von 1 bis last_film prüfen
+                # Filme
                 film_num = 1
                 while True:
                     film_url = f"{base_url}/filme/film-{film_num}"
@@ -903,9 +1055,9 @@ def run_mode(mode="default"):
                         log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
                         result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
                         if result == "NO_STREAMS":
-                            break  # Keine weiteren Filme vorhanden
+                            break
                     film_num += 1
-                # Start mit Staffel 1 und zähle leere Staffeln
+                # Staffeln
                 season = 1
                 consecutive_empty_seasons = 0
                 while True:
@@ -917,13 +1069,10 @@ def run_mode(mode="default"):
                             log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
                             episode += 1
                             continue
-
                         log(f"[INFO] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
                         result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
-
                         if result == "NO_STREAMS":
                             if episode == 1:
-                                # Staffel existiert nicht -> Abbruchkandidat
                                 break
                             else:
                                 log(f"[INFO] Staffel {season} beendet nach {episode-1} Episoden.")
@@ -931,29 +1080,55 @@ def run_mode(mode="default"):
                         else:
                             found_episode = True
                             episode += 1
-
                     if not found_episode:
                         consecutive_empty_seasons += 1
                     else:
                         consecutive_empty_seasons = 0
-
                     if consecutive_empty_seasons >= 2:
                         log(f"[CHECK-MISSING] '{series_title}' hat keine weiteren Staffeln.")
                         break
-
                     season += 1
-
-                # Finaler Statuscheck
                 check_deutsch_komplett(anime_id)
                 log(f"[CHECK-MISSING] Kontrolle für '{series_title}' abgeschlossen.")
 
         else:
             log("=== Modus: Standard  ===")
-            work_list = anime_list
+            # 1) Zuerst Queue
             if queued_ids:
                 work_list = [a for a in anime_list if a['id'] in queued_ids]
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-            for idx, anime in enumerate(work_list):
+                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Default)")
+                for idx, anime in enumerate(work_list):
+                    
+                    current_download["current_index"] = idx
+                    if anime.get("deleted"):
+                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+                        continue
+                    if anime["complete"]:
+                        log(f"[SKIP] '{anime['title']}' bereits komplett.")
+                        continue
+                    series_title = anime["title"] or get_series_title(anime["url"])
+                    anime_id = anime["id"]
+                    base_url = anime["url"]
+                    current_download["current_title"] = series_title
+                    start_film = (anime.get("last_film") or 1)
+                    start_season = anime.get("last_season") or 1
+                    start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
+                    log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
+                    r = download_films(series_title, base_url, anime_id, start_film=start_film)
+                    if r == "NO_SPACE":
+                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
+                        return
+                    r2 = download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
+                    if r2 == "NO_SPACE":
+                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
+                        return
+                    check_deutsch_komplett(anime_id)
+                    update_anime(anime_id, complete=1)
+                    log(f"[OK] Download abgeschlossen für: '{series_title}'")
+            # 2) Danach restliche DB-Einträge
+            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
+            for idx, anime in enumerate(rest_list):
                 
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
@@ -1091,6 +1266,7 @@ def api_queue():
     """GET: Liste der Queue, POST: {'anime_id': id} hinzufügen, DELETE: leeren"""
     try:
         if request.method == 'GET':
+            queue_prune_completed()
             return jsonify(queue_list())
         elif request.method == 'POST':
             data = request.get_json() or {}
