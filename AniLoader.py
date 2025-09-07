@@ -599,6 +599,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             current_download["current_season"] = int(season)
             current_download["current_episode"] = int(episode)
             current_download["current_is_film"] = (int(season) == 0)
+            current_download["episode_started_at"] = time.time()
     except Exception:
         pass
     # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
@@ -622,6 +623,11 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     if not german_only:
         if episode_already_downloaded(series_folder, season, episode):
             log(f"[SKIP] Episode bereits vorhanden: {series_title} - " + (f"S{season}E{episode}" if season > 0 else f"Film {episode}"))
+            try:
+                with download_lock:
+                    current_download["episode_started_at"] = None
+            except Exception:
+                pass
             return "SKIPPED"
 
     langs_to_try = ["German Dub"] if german_only else LANGUAGES
@@ -798,9 +804,13 @@ current_download = {
     "current_index": None,
     "current_title": None,
     "started_at": None,
+    "anime_started_at": None,
+    "episode_started_at": None,
     "current_season": None,
     "current_episode": None,
-    "current_is_film": None
+    "current_is_film": None,
+    "current_id": None,
+    "current_url": None
 }
 download_lock = threading.Lock()
 
@@ -816,9 +826,13 @@ def run_mode(mode="default"):
             "current_index": 0,
             "current_title": None,
             "started_at": time.time(),
+            "anime_started_at": None,
+            "episode_started_at": None,
             "current_season": None,
             "current_episode": None,
-            "current_is_film": None
+            "current_is_film": None,
+            "current_id": None,
+            "current_url": None
         })
     
     try:
@@ -849,6 +863,10 @@ def run_mode(mode="default"):
                     series_title = anime["title"] or get_series_title(anime["url"])
                     anime_id = anime["id"]
                     current_download["current_title"] = series_title
+                    current_download["anime_started_at"] = time.time()
+                    current_download["current_id"] = anime_id
+                    current_download["current_url"] = anime["url"]
+                    current_download["episode_started_at"] = None
                     fehlende = anime.get("fehlende_deutsch_folgen", [])
                     if not fehlende:
                         log(f"[GERMAN] '{series_title}': Keine neuen deutschen Folgen")
@@ -885,6 +903,10 @@ def run_mode(mode="default"):
                 series_title = anime["title"] or get_series_title(anime["url"])
                 anime_id = anime["id"]
                 current_download["current_title"] = series_title
+                current_download["anime_started_at"] = time.time()
+                current_download["current_id"] = anime_id
+                current_download["current_url"] = anime["url"]
+                current_download["episode_started_at"] = None
                 fehlende = anime.get("fehlende_deutsch_folgen", [])
                 if not fehlende:
                     log(f"[GERMAN] '{series_title}': Keine neuen deutschen Folgen")
@@ -924,6 +946,11 @@ def run_mode(mode="default"):
                                 continue
                             q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
                             q_anime_id = q_anime['id']
+                            current_download["current_title"] = q_series_title
+                            current_download["anime_started_at"] = time.time()
+                            current_download["current_id"] = q_anime_id
+                            current_download["current_url"] = q_anime['url']
+                            current_download["episode_started_at"] = None
                             fehlende = q_anime.get('fehlende_deutsch_folgen', [])
                             if not fehlende:
                                 log(f"[GERMAN] '{q_series_title}': Keine neuen deutschen Folgen")
@@ -962,6 +989,10 @@ def run_mode(mode="default"):
                     anime_id = anime["id"]
                     base_url = anime["url"]
                     current_download["current_title"] = series_title
+                    current_download["anime_started_at"] = time.time()
+                    current_download["current_id"] = anime_id
+                    current_download["current_url"] = base_url
+                    current_download["episode_started_at"] = None
                     start_film = (anime.get("last_film") or 1)
                     start_season = anime.get("last_season") or 1
                     start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
@@ -990,6 +1021,10 @@ def run_mode(mode="default"):
                 anime_id = anime["id"]
                 base_url = anime["url"]
                 current_download["current_title"] = series_title
+                current_download["anime_started_at"] = time.time()
+                current_download["current_id"] = anime_id
+                current_download["current_url"] = base_url
+                current_download["episode_started_at"] = None
                 start_film = (anime.get("last_film") or 1)
                 start_season = anime.get("last_season") or 1
                 start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
@@ -1020,6 +1055,11 @@ def run_mode(mode="default"):
                             q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
                             q_anime_id = q_anime['id']
                             base_url = q_anime['url']
+                            current_download["current_title"] = q_series_title
+                            current_download["anime_started_at"] = time.time()
+                            current_download["current_id"] = q_anime_id
+                            current_download["current_url"] = base_url
+                            current_download["episode_started_at"] = None
                             start_film = (q_anime.get('last_film') or 1)
                             start_season = q_anime.get('last_season') or 1
                             start_episode = (q_anime.get('last_episode') or 1) if start_season > 0 else 1
@@ -1058,6 +1098,11 @@ def run_mode(mode="default"):
                     series_title = anime["title"] or get_series_title(anime["url"])
                     base_url = anime["url"]
                     anime_id = anime["id"]
+                    current_download["current_title"] = series_title
+                    current_download["anime_started_at"] = time.time()
+                    current_download["current_id"] = anime_id
+                    current_download["current_url"] = base_url
+                    current_download["episode_started_at"] = None
 
                     log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
 
@@ -1130,6 +1175,11 @@ def run_mode(mode="default"):
                 series_title = anime["title"] or get_series_title(anime["url"])
                 base_url = anime["url"]
                 anime_id = anime["id"]
+                current_download["current_title"] = series_title
+                current_download["anime_started_at"] = time.time()
+                current_download["current_id"] = anime_id
+                current_download["current_url"] = base_url
+                current_download["episode_started_at"] = None
                 log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
                 # Filme
                 film_num = 1
@@ -1196,6 +1246,11 @@ def run_mode(mode="default"):
                             q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
                             base_url = q_anime['url']
                             q_anime_id = q_anime['id']
+                            current_download["current_title"] = q_series_title
+                            current_download["anime_started_at"] = time.time()
+                            current_download["current_id"] = q_anime_id
+                            current_download["current_url"] = base_url
+                            current_download["episode_started_at"] = None
                             # Filme
                             film_num = 1
                             while True:
@@ -1259,6 +1314,10 @@ def run_mode(mode="default"):
                     anime_id = anime["id"]
                     base_url = anime["url"]
                     current_download["current_title"] = series_title
+                    current_download["anime_started_at"] = time.time()
+                    current_download["current_id"] = anime_id
+                    current_download["current_url"] = base_url
+                    current_download["episode_started_at"] = None
                     start_film = (anime.get("last_film") or 1)
                     start_season = anime.get("last_season") or 1
                     start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
@@ -1291,6 +1350,10 @@ def run_mode(mode="default"):
                 anime_id = anime["id"]
                 base_url = anime["url"]
                 current_download["current_title"] = series_title
+                current_download["anime_started_at"] = time.time()
+                current_download["current_id"] = anime_id
+                current_download["current_url"] = base_url
+                current_download["episode_started_at"] = None
                 start_film = (anime.get("last_film") or 1)
                 start_season = anime.get("last_season") or 1
                 start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
@@ -1326,6 +1389,11 @@ def run_mode(mode="default"):
                             q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
                             q_anime_id = q_anime['id']
                             base_url = q_anime['url']
+                            current_download["current_title"] = q_series_title
+                            current_download["anime_started_at"] = time.time()
+                            current_download["current_id"] = q_anime_id
+                            current_download["current_url"] = base_url
+                            current_download["episode_started_at"] = None
                             start_film = (q_anime.get('last_film') or 1)
                             start_season = q_anime.get('last_season') or 1
                             start_episode = (q_anime.get('last_episode') or 1) if start_season > 0 else 1
@@ -1370,7 +1438,11 @@ def run_mode(mode="default"):
                     "current_title": None,
                     "current_season": None,
                     "current_episode": None,
-                    "current_is_film": None
+                    "current_is_film": None,
+                    "anime_started_at": None,
+                    "episode_started_at": None,
+                    "current_id": None,
+                    "current_url": None
                 })
             else:
                 # Nur laufende Details zurücksetzen, Status bleibt 'kein-speicher'
@@ -1379,7 +1451,11 @@ def run_mode(mode="default"):
                     "current_title": None,
                     "current_season": None,
                     "current_episode": None,
-                    "current_is_film": None
+                    "current_is_film": None,
+                    "anime_started_at": None,
+                    "episode_started_at": None,
+                    "current_id": None,
+                    "current_url": None
                 })
     
 

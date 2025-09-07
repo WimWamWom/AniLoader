@@ -57,10 +57,17 @@ async function fetchStatus() {
   try {
     const s = await apiGet('/status');
     const status = s.status || 'idle';
+    // expose to other functions
+    window.__status_started_at = s.started_at || null;
+    window.__status_anime_started_at = s.anime_started_at || null;
+    window.__status_episode_started_at = s.episode_started_at || null;
+    window.__status_current_id = s.current_id || null;
+    window.__status_current_url = s.current_url || null;
     if (status === 'kein-speicher') {
-      downloadStatus.innerHTML = `Status: <span class="badge text-bg-danger">Kein Speicher</span>${s.mode ? ' • ' + s.mode : ''}`;
+      downloadStatus.innerHTML = `Status: <span class="badge text-bg-danger">Kein Speicher</span>${s.mode ? ' • ' + s.mode : ''}${s.started_at ? ' • Start: ' + new Date(s.started_at*1000).toLocaleString() : ''}`;
     } else {
-      downloadStatus.textContent = `Status: ${status}${s.mode ? ' • ' + s.mode : ''}`;
+      const startedTxt = s.started_at ? ` • Start: ${new Date(s.started_at*1000).toLocaleString()}` : '';
+      downloadStatus.textContent = `Status: ${status}${s.mode ? ' • ' + s.mode : ''}${startedTxt}`;
     }
   // Disable start buttons while running
   setStartButtonsDisabled(status === 'running');
@@ -82,10 +89,12 @@ function renderOverview(items) {
   const curSeason = window.__status_current_season;
   const curEpisode = window.__status_current_episode;
   const curIsFilm = window.__status_current_is_film;
+  const animeStartedAt = window.__status_anime_started_at ? new Date(window.__status_anime_started_at*1000).toLocaleString() : null;
+  const episodeStartedAt = window.__status_episode_started_at ? new Date(window.__status_episode_started_at*1000).toLocaleTimeString() : null;
   const card = document.createElement('div');
     card.className = 'col-12';
     // Include current run meta (index + started_at) if a download is active and matches this item
-    const startedAt = window.__status_started_at ? new Date(window.__status_started_at*1000).toLocaleString() : null;
+    const startedAt = animeStartedAt; // per request: here show anime started time
     const idxInfo = (typeof window.__status_current_index === 'number') ? `Index: ${window.__status_current_index}` : '';
   const countsText = countsCache[item.id] || '';
   card.innerHTML = `
@@ -105,7 +114,7 @@ function renderOverview(items) {
           </div>
           <div class="mt-3">
             ${isRunning
-              ? `<div class="fw-bold">Lädt runter: ${curIsFilm ? `Film ${curEpisode}` : `Staffel ${curSeason} • Episode ${curEpisode}`}</div>`
+              ? `<div class="fw-bold">Lädt runter: ${curIsFilm ? `Film ${curEpisode}` : `Staffel ${curSeason} • Episode ${curEpisode}`} ${episodeStartedAt ? `<span class='small text-secondary'>(Start Ep.: ${episodeStartedAt})</span>` : ''}</div>`
               : `<div class=\"d-flex justify-content-between small mb-1\">\n                <div>Staffeln: <strong>${seasons}</strong> • Episoden: <strong>${episodes}</strong></div>\n                <div>Filme: <strong>${films}</strong></div>\n              </div>`}
       <div class="small mt-2 text-secondary" id="counts-${item.id}">${countsText}</div>
           </div>
@@ -140,12 +149,16 @@ async function fetchOverview() {
     const s = await apiGet('/status');
   // cache some status meta for renderOverview
   window.__status_started_at = s.started_at || null;
+  window.__status_anime_started_at = s.anime_started_at || null;
+  window.__status_episode_started_at = s.episode_started_at || null;
   window.__status_current_index = (typeof s.current_index === 'number') ? s.current_index : null;
   window.__status_current_title = s.current_title || null;
   window.__status_status = s.status || null;
   window.__status_current_season = (typeof s.current_season === 'number' || typeof s.current_season === 'string') ? s.current_season : null;
   window.__status_current_episode = (typeof s.current_episode === 'number' || typeof s.current_episode === 'string') ? s.current_episode : null;
   window.__status_current_is_film = !!s.current_is_film;
+  window.__status_current_id = s.current_id || null;
+  window.__status_current_url = s.current_url || null;
     const data = await apiGet('/database');
     let items = data.map(it => ({
       id: it.id,
