@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
 // @namespace    AniLoader
-// @version      1.2
+// @version      1.3
 // @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
 // @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
@@ -201,6 +201,11 @@
 
     // mount wrapper next to stream container and start polling server state
     streamContainer.insertAdjacentElement("afterend", buttonWrapper);
+
+    // Show offline placeholder immediately (do not wait for /health)
+    buttonWrapper.appendChild(offlineInfo);
+
+    // Then check server status and update UI accordingly
     renderByServerState();
     setInterval(renderByServerState, 10000);
 })();
