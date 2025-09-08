@@ -1482,6 +1482,11 @@ def api_status():
 
     
 
+@app.route("/health")
+def api_health():
+    """Lightweight health check endpoint used by the userscript."""
+    return jsonify({"ok": True}), 200
+
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():

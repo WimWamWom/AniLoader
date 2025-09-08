@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
 // @namespace    AniLoader
-// @version      1.1
+// @version      1.2
 // @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
 // @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
@@ -51,11 +51,13 @@
     const streamContainer = document.querySelector('#stream') || document.querySelector('.episodes-list');
     if (!streamContainer) return;
 
+    // Wrapper, in den entweder der Button oder ein Offline-Hinweis gerendert wird
     const buttonWrapper = document.createElement("div");
     buttonWrapper.style.marginTop = "16px";
     buttonWrapper.style.marginBottom = "16px";
     buttonWrapper.style.textAlign = "left";
 
+    // Button-Element (wird nur eingefügt, wenn der Server online ist)
     const exportButton = document.createElement("button");
     exportButton.innerText = "📤 Downloaden";
     exportButton.style.backgroundColor = "rgba(99,124,249,1)";
@@ -75,6 +77,21 @@
     exportButton.addEventListener("mouseout", () => {
         if(!exportButton.disabled) exportButton.style.backgroundColor = "rgba(99,124,249,1)";
     });
+
+    // Offline-Hinweis (gleich groß wie der Download-Button, weiß, mit Symbol)
+    const offlineInfo = document.createElement('button');
+    offlineInfo.textContent = '⛔ Server offline';
+    offlineInfo.style.backgroundColor = '#ffffff';
+    offlineInfo.style.color = '#333';
+    offlineInfo.style.fontSize = '15px';
+    offlineInfo.style.fontWeight = 'bold';
+    offlineInfo.style.padding = '10px 18px';
+    offlineInfo.style.border = '1px solid rgba(108,117,125,0.35)';
+    offlineInfo.style.borderRadius = '8px';
+    offlineInfo.style.cursor = 'not-allowed';
+    offlineInfo.style.boxShadow = '0px 3px 8px rgba(0,0,0,0.15)';
+    offlineInfo.style.transition = 'all 0.25s ease-in-out';
+    offlineInfo.disabled = true;
 
     // Compute and set button state based on DB + status
     async function refreshButton() {
@@ -150,10 +167,40 @@
         }
     });
 
-    // Initial state & periodic refresh
-    refreshButton();
-    setInterval(refreshButton, 15000);
+    // Server-Check und UI-Umschaltung
+    async function isServerOnline() {
+        try {
+            const res = await fetch(`http://${SERVER_IP}:5050/health`, { cache: 'no-store' });
+            return res && res.ok;
+        } catch (e) {
+            return false;
+        }
+    }
 
-    buttonWrapper.appendChild(exportButton);
+    let onlineState = null; // unknown | true | false
+    let refreshTimer = null;
+
+    async function renderByServerState() {
+        const isOnline = await isServerOnline();
+        if (isOnline === onlineState) return; // no change
+        onlineState = isOnline;
+        // clear wrapper
+        buttonWrapper.innerHTML = '';
+        if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+
+        if (isOnline) {
+            // show button and start periodic refresh
+            buttonWrapper.appendChild(exportButton);
+            await refreshButton();
+            refreshTimer = setInterval(refreshButton, 15000);
+        } else {
+            // show offline info
+            buttonWrapper.appendChild(offlineInfo);
+        }
+    }
+
+    // mount wrapper next to stream container and start polling server state
     streamContainer.insertAdjacentElement("afterend", buttonWrapper);
+    renderByServerState();
+    setInterval(renderByServerState, 10000);
 })();
