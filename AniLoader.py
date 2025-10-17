@@ -58,9 +58,30 @@ def load_config():
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
-                LANGUAGES = cfg.get('languages', LANGUAGES)
-                MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
-                AUTOSTART_MODE = cfg.get('autostart_mode') or None
+                # languages
+                langs = cfg.get('languages')
+                if isinstance(langs, list) and langs:
+                    LANGUAGES = langs
+                # min_free_gb
+                try:
+                    MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
+                except Exception:
+                    pass
+                # autostart_mode (normalize, validate)
+                raw_mode = cfg.get('autostart_mode')
+                allowed = {None, 'default', 'german', 'new', 'check-missing'}
+                if isinstance(raw_mode, str):
+                    raw_mode_norm = raw_mode.strip().lower()
+                    if raw_mode_norm in {'', 'none', 'off', 'disabled'}:
+                        AUTOSTART_MODE = None
+                    elif raw_mode_norm in allowed:
+                        AUTOSTART_MODE = raw_mode_norm
+                    else:
+                        AUTOSTART_MODE = None
+                elif raw_mode is None:
+                    AUTOSTART_MODE = None
+                else:
+                    AUTOSTART_MODE = None
                 log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB} autostart_mode={AUTOSTART_MODE}")
         else:
             save_config()  # create default config
@@ -71,8 +92,11 @@ def load_config():
 def save_config():
     try:
         cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB, 'autostart_mode': AUTOSTART_MODE}
-        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        # atomic write to avoid partial files
+        tmp_path = str(CONFIG_PATH) + ".tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, CONFIG_PATH)
         log(f"[CONFIG] gespeichert")
         return True
     except Exception as e:
@@ -143,6 +167,22 @@ def init_db():
         """
     )
 
+    # Migration: ensure 'position' column exists to support manual ordering
+    try:
+        c.execute("PRAGMA table_info(queue)")
+        cols = [r[1] for r in c.fetchall()]
+        if 'position' not in cols:
+            c.execute("ALTER TABLE queue ADD COLUMN position INTEGER")
+            # initialize position values in current order
+            c.execute("SELECT id FROM queue ORDER BY added_at ASC, id ASC")
+            qids = [r[0] for r in c.fetchall()]
+            for idx, qid in enumerate(qids, start=1):
+                c.execute("UPDATE queue SET position = ? WHERE id = ?", (idx, qid))
+            conn.commit()
+            log("[DB] queue.position Spalte hinzugefügt und initialisiert")
+    except Exception as e:
+        log(f"[DB-ERROR] Migration queue.position: {e}")
+
     # Recalculate IDs to ensure they are sequential
     c.execute("CREATE TEMPORARY TABLE anime_backup AS SELECT * FROM anime;")
     c.execute("DROP TABLE anime;")
@@ -165,6 +205,32 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+# -------------------- Title-Refresh beim Start --------------------
+def refresh_titles_on_start():
+    """Geht alle DB-Einträge mit https:// URL durch und aktualisiert den Titel, falls aus der URL-Seite ein anderer Name ermittelt wird."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT id, url, title FROM anime")
+        rows = c.fetchall()
+        updated = 0
+        for aid, url, old_title in rows:
+            try:
+                if not isinstance(url, str) or not url.startswith("https://"):
+                    continue
+                new_title = get_series_title(url)
+                if new_title and new_title != old_title:
+                    c.execute("UPDATE anime SET title = ? WHERE id = ?", (new_title, aid))
+                    updated += 1
+                    log(f"[DB] Titel aktualisiert (ID {aid}): '{old_title}' -> '{new_title}'")
+            except Exception as e:
+                log(f"[WARN] Titel-Check fehlgeschlagen (ID {aid}): {e}")
+        conn.commit()
+        conn.close()
+        log(f"[DB] Titel-Refresh abgeschlossen. Aktualisiert: {updated}")
+    except Exception as e:
+        log(f"[ERROR] Title refresh on start: {e}")
 
 # -------------------- Import / Insert --------------------
 def import_anime_txt():
@@ -243,16 +309,26 @@ def update_anime(anime_id, **kwargs):
     c = conn.cursor()
     fields = []
     values = []
+    will_complete = False
     for key, val in kwargs.items():
         if key == "fehlende_deutsch_folgen":
             val = json.dumps(val)
         fields.append(f"{key} = ?")
         values.append(val)
+        if key == 'complete' and bool(val):
+            will_complete = True
     values.append(anime_id)
     if fields:
         c.execute(f"UPDATE anime SET {', '.join(fields)} WHERE id = ?", values)
         conn.commit()
     conn.close()
+    # Entferne aus Queue, wenn jetzt komplett
+    if will_complete:
+        try:
+            queue_delete_by_anime_id(anime_id)
+            queue_prune_completed()
+        except Exception as e:
+            log(f"[QUEUE] Entfernen nach Abschluss fehlgeschlagen: {e}")
 
 def load_anime():
     """
@@ -296,12 +372,17 @@ def queue_add(anime_id: int) -> bool:
             # Bereits komplett -> nicht zur Queue hinzufügen
             log(f"[QUEUE] Anime {anime_id} ist bereits komplett – nicht zur Warteschlange hinzugefügt.")
             return False
-        # insert ignore-like behavior
-        try:
-            c.execute("INSERT OR IGNORE INTO queue (anime_id, anime_url) VALUES (?, ?)", (anime_id, aurl))
-            conn.commit()
-        finally:
+        # schon vorhanden?
+        c.execute("SELECT id FROM queue WHERE anime_url = ?", (aurl,))
+        if c.fetchone():
             conn.close()
+            return True
+        # nächste Position bestimmen
+        c.execute("SELECT COALESCE(MAX(position), 0) FROM queue")
+        next_pos = (c.fetchone() or [0])[0] + 1
+        c.execute("INSERT INTO queue (anime_id, anime_url, position) VALUES (?, ?, ?)", (anime_id, aurl, next_pos))
+        conn.commit()
+        conn.close()
         return True
     except Exception as e:
         log(f"[DB-ERROR] queue_add: {e}")
@@ -314,15 +395,15 @@ def queue_list():
         c = conn.cursor()
         c.execute(
             """
-            SELECT q.id, a.id as anime_id, a.title
+            SELECT q.id, a.id as anime_id, a.title, COALESCE(q.position, 0) as position
             FROM queue q
             LEFT JOIN anime a ON a.url = q.anime_url
-            ORDER BY q.added_at ASC, q.id ASC
+            ORDER BY position ASC, q.added_at ASC, q.id ASC
             """
         )
         rows = c.fetchall()
         conn.close()
-        return [{"id": r[0], "anime_id": r[1], "title": r[2]} for r in rows]
+        return [{"id": r[0], "anime_id": r[1], "title": r[2], "position": r[3]} for r in rows]
     except Exception as e:
         log(f"[DB-ERROR] queue_list: {e}")
         return []
@@ -344,7 +425,7 @@ def queue_pop_next():
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("SELECT id, anime_url FROM queue ORDER BY added_at ASC, id ASC LIMIT 1")
+        c.execute("SELECT id, anime_url FROM queue ORDER BY position ASC, added_at ASC, id ASC LIMIT 1")
         row = c.fetchone()
         if not row:
             conn.close()
@@ -397,6 +478,45 @@ def queue_delete_by_anime_id(anime_id: int) -> bool:
         return True
     except Exception as e:
         log(f"[DB-ERROR] queue_delete_by_anime_id: {e}")
+        return False
+
+def queue_delete(qid: int) -> bool:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM queue WHERE id = ?", (qid,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        log(f"[DB-ERROR] queue_delete: {e}")
+        return False
+
+def queue_reorder(order_ids):
+    """Setzt die Reihenfolge der Queue über die Liste von Queue-IDs (id aus /queue GET)."""
+    try:
+        if not isinstance(order_ids, list) or not all(isinstance(x, int) for x in order_ids):
+            return False
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        # Weisen die übergebenen Positionen zu
+        for pos, qid in enumerate(order_ids, start=1):
+            c.execute("UPDATE queue SET position = ? WHERE id = ?", (pos, qid))
+        # Restliche (nicht genannte) hinten anhängen in aktueller Reihenfolge
+        placeholders = ",".join(["?"] * len(order_ids)) if order_ids else None
+        if placeholders:
+            c.execute(f"SELECT id FROM queue WHERE id NOT IN ({placeholders}) ORDER BY position ASC, added_at ASC, id ASC", order_ids)
+        else:
+            c.execute("SELECT id FROM queue ORDER BY position ASC, added_at ASC, id ASC")
+        start_pos = len(order_ids) + 1
+        rest = [r[0] for r in c.fetchall()]
+        for idx, qid in enumerate(rest, start=start_pos):
+            c.execute("UPDATE queue SET position = ? WHERE id = ?", (idx, qid))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        log(f"[DB-ERROR] queue_reorder: {e}")
         return False
 
 def check_deutsch_komplett(anime_id):
@@ -1493,6 +1613,8 @@ def api_config():
     global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE
     if request.method == 'GET':
         try:
+            # Reload to reflect persisted file state
+            load_config()
             cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB, 'autostart_mode': AUTOSTART_MODE}
             return jsonify(cfg)
         except Exception as e:
@@ -1503,25 +1625,54 @@ def api_config():
     data = request.get_json() or {}
     langs = data.get('languages')
     min_free = data.get('min_free_gb')
-    autostart = data.get('autostart_mode')
+    # Support both 'autostart_mode' and 'autostart' as input
+    autostart_key_present = ('autostart_mode' in data) or ('autostart' in data)
+    autostart = data.get('autostart_mode') if ('autostart_mode' in data) else data.get('autostart')
     changed = False
     try:
+        log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, autostart={autostart}")
         if isinstance(langs, list) and langs:
             LANGUAGES = list(langs)
             changed = True
         if min_free is not None:
             MIN_FREE_GB = float(min_free)
             changed = True
-        if autostart is not None:
-            allowed = {None, '', 'default', 'german', 'new', 'check-missing'}
-            if autostart in allowed:
-                AUTOSTART_MODE = (autostart or None)
+        if autostart_key_present:
+            allowed = {'default', 'german', 'new', 'check-missing'}
+            if autostart is None:
+                # explicit null -> clear
+                AUTOSTART_MODE = None
                 changed = True
+            elif isinstance(autostart, str):
+                mode_norm = autostart.strip().lower()
+                if mode_norm in {'', 'none', 'off', 'disabled'}:
+                    AUTOSTART_MODE = None
+                    changed = True
+                elif mode_norm in allowed:
+                    AUTOSTART_MODE = mode_norm
+                    changed = True
+                else:
+                    return jsonify({'status': 'failed', 'error': 'invalid autostart_mode'}), 400
             else:
                 return jsonify({'status': 'failed', 'error': 'invalid autostart_mode'}), 400
         if changed:
-            save_config()
-        return jsonify({'status': 'ok'})
+            save_ok = save_config()
+            # Reload from disk to ensure persistence and normalization
+            try:
+                load_config()
+            except Exception as _e:
+                log(f"[CONFIG-ERROR] reload after save: {_e}")
+            log(f"[CONFIG] POST saved: autostart_mode={AUTOSTART_MODE}")
+            return jsonify({'status': 'ok' if save_ok else 'failed', 'config': {
+                'languages': LANGUAGES,
+                'min_free_gb': MIN_FREE_GB,
+                'autostart_mode': AUTOSTART_MODE
+            }})
+        return jsonify({'status': 'nochange', 'config': {
+            'languages': LANGUAGES,
+            'min_free_gb': MIN_FREE_GB,
+            'autostart_mode': AUTOSTART_MODE
+        }})
     except Exception as e:
         log(f"[ERROR] api_config POST: {e}")
         return jsonify({'status': 'failed', 'error': str(e)}), 400
@@ -1536,9 +1687,17 @@ def api_queue():
             return jsonify(queue_list())
         elif request.method == 'POST':
             data = request.get_json() or {}
+            # reorder: {"order": [queue_id1, queue_id2, ...]}
+            if 'order' in data:
+                try:
+                    ids = [int(x) for x in data.get('order') or []]
+                except Exception:
+                    return jsonify({'status': 'failed', 'error': 'invalid order list'}), 400
+                ok = queue_reorder(ids)
+                return jsonify({'status': 'ok' if ok else 'failed'})
+            # add entry
             aid = data.get('anime_id')
             if not isinstance(aid, int):
-                # allow string digit
                 try:
                     aid = int(str(aid))
                 except Exception:
@@ -1546,34 +1705,22 @@ def api_queue():
             ok = queue_add(aid)
             return jsonify({'status': 'ok' if ok else 'failed'})
         elif request.method == 'DELETE':
-            # Optional: einzelnes Element entfernen
-            qid = request.args.get('id') or (request.get_json(silent=True) or {}).get('id')
-            aid = request.args.get('anime_id') or (request.get_json(silent=True) or {}).get('anime_id')
+            # einzelnes Element entfernen oder komplette Queue leeren
+            payload = request.get_json(silent=True) or {}
+            qid = request.args.get('id') or payload.get('id')
+            aid = request.args.get('anime_id') or payload.get('anime_id')
             if qid is not None:
                 try:
-                    qid_int = int(str(qid))
-                    conn = sqlite3.connect(DB_PATH)
-                    c = conn.cursor()
-                    c.execute("DELETE FROM queue WHERE id = ?", (qid_int,))
-                    conn.commit()
-                    conn.close()
-                    return jsonify({'status': 'ok'})
-                except Exception as e:
-                    log(f"[DB-ERROR] api_queue delete id: {e}")
-                    return jsonify({'status': 'failed', 'error': str(e)}), 500
+                    ok = queue_delete(int(str(qid)))
+                except Exception:
+                    return jsonify({'status': 'failed', 'error': 'invalid id'}), 400
+                return jsonify({'status': 'ok' if ok else 'failed'})
             if aid is not None:
                 try:
-                    aid_int = int(str(aid))
-                    conn = sqlite3.connect(DB_PATH)
-                    c = conn.cursor()
-                    c.execute("DELETE FROM queue WHERE anime_id = ?", (aid_int,))
-                    conn.commit()
-                    conn.close()
-                    return jsonify({'status': 'ok'})
-                except Exception as e:
-                    log(f"[DB-ERROR] api_queue delete anime_id: {e}")
-                    return jsonify({'status': 'failed', 'error': str(e)}), 500
-            # Fallback: ganze Queue leeren
+                    ok = queue_delete_by_anime_id(int(str(aid)))
+                except Exception:
+                    return jsonify({'status': 'failed', 'error': 'invalid anime_id'}), 400
+                return jsonify({'status': 'ok' if ok else 'failed'})
             ok = queue_clear()
             return jsonify({'status': 'ok' if ok else 'failed'})
     except Exception as e:
@@ -1745,6 +1892,93 @@ def api_export():
     ok = insert_anime(url)
     return jsonify({"status": "ok" if ok else "failed"})
 
+@app.route("/anime", methods=["DELETE"])
+def api_anime_delete():
+    """Löscht einen Anime-Eintrag dauerhaft aus der Datenbank (und aus der Queue). Parameter: id (DB ID)."""
+    try:
+        anime_id = request.args.get("id") or (request.get_json(silent=True) or {}).get("id")
+        if anime_id is None:
+            return jsonify({"status": "failed", "error": "missing id"}), 400
+        try:
+            aid = int(str(anime_id))
+        except Exception:
+            return jsonify({"status": "failed", "error": "invalid id"}), 400
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        # Find URL for extra cleanup
+        c.execute("SELECT url, title FROM anime WHERE id = ?", (aid,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"status": "failed", "error": "not found"}), 404
+        aurl, atitle = row[0], row[1]
+        # Clean queue by anime_id and anime_url
+        try:
+            c.execute("DELETE FROM queue WHERE anime_id = ?", (aid,))
+            c.execute("DELETE FROM queue WHERE anime_url = ?", (aurl,))
+        except Exception as e:
+            log(f"[DB-ERROR] queue cleanup on delete: {e}")
+        # Delete anime itself
+        c.execute("DELETE FROM anime WHERE id = ?", (aid,))
+        conn.commit()
+        conn.close()
+        log(f"[DB] Anime gelöscht: ID {aid} • '{atitle}'")
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        log(f"[ERROR] api_anime_delete: {e}")
+        return jsonify({"status": "failed", "error": str(e)}), 500
+
+@app.route("/anime/restore", methods=["POST"])
+def api_anime_restore():
+    """Setzt einen als gelöscht markierten Anime zurück (deleted=0, Fortschritt zurücksetzen) und fügt ihn optional der Queue hinzu."""
+    try:
+        data = request.get_json(silent=True) or {}
+        anime_id = data.get("id") or request.args.get("id")
+        add_to_queue = bool(data.get("queue", True))
+        if anime_id is None:
+            return jsonify({"status": "failed", "error": "missing id"}), 400
+        try:
+            aid = int(str(anime_id))
+        except Exception:
+            return jsonify({"status": "failed", "error": "invalid id"}), 400
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT id, title FROM anime WHERE id = ?", (aid,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"status": "failed", "error": "not found"}), 404
+        # Reset state and clear deleted flag
+        c.execute(
+            """
+            UPDATE anime SET
+                complete = 0,
+                deutsch_komplett = 0,
+                deleted = 0,
+                fehlende_deutsch_folgen = '[]',
+                last_film = 0,
+                last_episode = 0,
+                last_season = 0
+            WHERE id = ?
+            """,
+            (aid,)
+        )
+        conn.commit()
+        conn.close()
+        log(f"[DB] Anime reaktiviert für erneuten Download: ID {aid}")
+        queued = False
+        if add_to_queue:
+            try:
+                queued = queue_add(aid)
+            except Exception as e:
+                log(f"[QUEUE] queue_add on restore: {e}")
+        return jsonify({"status": "ok", "queued": bool(queued)})
+    except Exception as e:
+        log(f"[ERROR] api_anime_restore: {e}")
+        return jsonify({"status": "failed", "error": str(e)}), 500
+
 @app.route("/check")
 def api_check():
     url = request.args.get("url")
@@ -1779,6 +2013,7 @@ def AniLoader():
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     deleted_check()
+    refresh_titles_on_start()
     log("[SYSTEM] AniLoader API starting...")
     # Autostart-Modus, falls in der Config gesetzt
     try:

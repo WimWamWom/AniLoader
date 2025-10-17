@@ -35,6 +35,16 @@ summary { cursor:pointer; }
 .table th { color:#9fb0ff; }
 .table td { color:#dbe7ff; }
 
+/* Make wide content wrap to avoid horizontal scrolling */
+.break-anywhere { overflow-wrap: anywhere; word-break: break-word; }
+#database .table-responsive { overflow-x: visible; }
+#database table.table { width: 100%; }
+.table-dark th, .table-dark td { white-space: normal; }
+.table a { word-break: break-word; }
+
+/* Slightly smaller table density */
+.table.table-sm th, .table.table-sm td { padding-top: .3rem; padding-bottom: .3rem; }
+
 /* Keep specific table cells fixed-height and allow vertical scrolling while preserving table width */
 .cell-scroll {
     display: block;

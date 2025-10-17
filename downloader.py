@@ -187,9 +187,18 @@ def load_config():
 
 def save_config():
     try:
-        cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB}
+        # Preserve unknown keys (e.g., autostart_mode) to avoid wiping them
+        base = {}
+        if CONFIG_PATH.exists():
+            try:
+                with open(CONFIG_PATH, 'r', encoding='utf-8') as rf:
+                    base = json.load(rf) or {}
+            except Exception:
+                base = {}
+        base['languages'] = LANGUAGES
+        base['min_free_gb'] = MIN_FREE_GB
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
+            json.dump(base, f, indent=2, ensure_ascii=False)
         return True
     except Exception:
         return False

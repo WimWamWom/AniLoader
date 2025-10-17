@@ -328,7 +328,12 @@ async function saveConfig() {
   const min_free_gb = parseFloat(minFreeInput.value) || 0;
   const autostart_mode = autostartSelect ? (autostartSelect.value || null) : null;
   try {
-    await apiPost('/config', { languages: langs, min_free_gb, autostart_mode });
+    const resp = await apiPost('/config', { languages: langs, min_free_gb, autostart_mode });
+    // Re-fetch to ensure UI reflects normalized/persisted values
+    await fetchConfig();
+    if (resp && resp.config) {
+      console.log('Config saved:', resp.config);
+    }
     alert('Einstellungen gespeichert');
   } catch(e) { alert('Speichern fehlgeschlagen'); console.error(e); }
 }
@@ -357,16 +362,21 @@ async function fetchDatabase() {
     data.forEach(row => {
       const fehl = Array.isArray(row.fehlende) ? row.fehlende.join(', ') : (row.fehlende || '');
       const tr = document.createElement('tr');
+      const isDeleted = !!row.deleted;
       tr.innerHTML = `
-        <td>${row.id}</td>
-        <td>${row.title}</td>
-        <td><a href="${row.url}" target="_blank" rel="noreferrer">${row.url}</a></td>
+        <td class="text-secondary">${row.id}</td>
+        <td class="break-anywhere">${row.title || ''}</td>
+        <td class="break-anywhere"><a href="${row.url}" target="_blank" rel="noreferrer">${row.url}</a></td>
         <td>${row.complete ? "✅" : "❌"}</td>
         <td>${row.deutsch_komplett ? "✅" : "❌"}</td>
-        <td>${row.deleted ? "✅" : "❌"}</td>
-        <td class="mono small"><div class="cell-scroll">${fehl}</div></td>
-        <td>${row.last_season || 0}/${row.last_episode || 0}/${row.last_film || 0}</td>
-        <td><button class="btn btn-sm btn-outline-primary" data-queue-id="${row.id}">Als nächstes</button></td>
+        <td>${isDeleted ? "✅" : "❌"}</td>
+        <td class="mono small break-anywhere"><div class="cell-scroll">${fehl}</div></td>
+        <td class="text-nowrap">${row.last_season || 0}/${row.last_episode || 0}/${row.last_film || 0}</td>
+        <td class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-primary" data-queue-id="${row.id}">Als nächstes</button>
+          ${isDeleted ? `<button class="btn btn-sm btn-warning" data-restore-id="${row.id}">Wieder herunterladen</button>` : ''}
+          <button class="btn btn-sm btn-outline-danger" data-delete-id="${row.id}">Aus Datenbank löschen</button>
+        </td>
       `;
       dbBody.appendChild(tr);
     });
@@ -375,6 +385,41 @@ async function fetchDatabase() {
       btn.addEventListener('click', (e) => {
         const id = Number(e.currentTarget.getAttribute('data-queue-id'));
         if (id) queueAdd(id);
+      });
+    });
+    // attach restore buttons
+    dbBody.querySelectorAll('button[data-restore-id]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = Number(e.currentTarget.getAttribute('data-restore-id'));
+        if (!id) return;
+        const ok = confirm('Diesen als gelöscht markierten Anime erneut herunterladen?\nDer Status wird zurückgesetzt und er wird der Warteschlange hinzugefügt.');
+        if (!ok) return;
+        try {
+          await fetch('/anime/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, queue: true }) });
+          await fetchDatabase();
+          await fetchQueue();
+        } catch(err) {
+          console.error('restore anime failed', err);
+          alert('Reaktivieren fehlgeschlagen');
+        }
+      });
+    });
+    // attach delete buttons with double confirmation
+    dbBody.querySelectorAll('button[data-delete-id]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = Number(e.currentTarget.getAttribute('data-delete-id'));
+        if (!id) return;
+        const first = confirm('Diesen Eintrag dauerhaft aus der Datenbank löschen?\nDies kann nicht rückgängig gemacht werden.');
+        if (!first) return;
+        const second = confirm('Sicher? Der Datenbank-Eintrag wird dauerhaft entfernt.');
+        if (!second) return;
+        try {
+          await fetch(`/anime?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+          await fetchDatabase();
+        } catch(err) {
+          console.error('delete anime failed', err);
+          alert('Löschen fehlgeschlagen');
+        }
       });
     });
   } catch(e) { console.error(e); }
