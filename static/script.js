@@ -244,6 +244,7 @@ const downloadPathInput = document.getElementById('download-path');
 const chooseDownloadPathBtn = document.getElementById('choose-download-path');
 const saveConfigBtn = document.getElementById('save-config');
 const resetConfigBtn = document.getElementById('reset-config');
+const refreshTitlesChk = document.getElementById('refresh-titles');
 
 async function fetchConfig() {
   try {
@@ -252,6 +253,7 @@ async function fetchConfig() {
     minFreeInput.value = cfg.min_free_gb ?? '';
   if (autostartSelect) autostartSelect.value = (cfg.autostart_mode ?? '') || '';
   if (downloadPathInput) downloadPathInput.value = cfg.download_path || '';
+  if (refreshTitlesChk) refreshTitlesChk.checked = !!cfg.refresh_titles;
   } catch(e) { console.error('fetchConfig', e); }
 }
 
@@ -335,6 +337,7 @@ async function saveConfig() {
   try {
     const payload = { languages: langs, min_free_gb, autostart_mode };
     if (download_path) payload.download_path = download_path;
+    if (refreshTitlesChk) payload.refresh_titles = !!refreshTitlesChk.checked;
     const resp = await apiPost('/config', payload);
     // Re-fetch to ensure UI reflects normalized/persisted values
     await fetchConfig();

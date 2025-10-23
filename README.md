@@ -165,6 +165,7 @@ Wichtige Schlüssel:
 - <code>download_path</code>: Ziel-Stammordner für alle Downloads (Standard: <code>./Downloads</code>); wird automatisch angelegt
 - <code>port</code>: Port des Webservers (nur per Datei änderbar; hat keine Wirkung im CLI-Betrieb)
 - <code>autostart_mode</code>: Optionaler Autostart-Modus für das Webinterface (<code>default</code>|<code>german</code>|<code>new</code>|<code>check-missing</code>|<code>full-check</code>)
+- <code>refresh_titles</code>: Aktualisiert Serien-Titel beim Start (Standard: <code>true</code>). Gilt sowohl für das Webinterface als auch für <code>downloader.py</code>.
 
 Hinweise:
 - Für das CLI (<code>downloader.py</code>) wird <code>download_path</code> genutzt; <code>port</code> ist dort ohne Wirkung.
@@ -188,6 +189,7 @@ Hinweis: Wenn wirklich „alles“ (inkl. externem <code>aniworld</code>-CLI) ü
 - Datenbank-Tab: filtern/sortieren, Liste der fehlenden deutschen Folgen, Knopf „Als nächstes“ (Queue)
 - Warteschlangen-Tabellen-Ansicht inkl. Leeren/Einträge entfernen
 - Einstellungen: Download-Speicherort direkt setzen oder bequem per „Ordner wählen…“ über den Explorer auswählen; Port ist nur in der <code>config.json</code> änderbar
+  - Schalter: „Titelaktualisierung beim Start aktivieren“
 
 ## API
 

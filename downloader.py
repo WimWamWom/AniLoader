@@ -31,6 +31,7 @@ db_path = os.path.join(data_folder, 'AniLoader.db')
 log_path = os.path.join(data_folder, 'last_run.log')
 LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 MIN_FREE_GB = 2.0
+REFRESH_TITLES = True
 
 # Ensure the data folder exists
 os.makedirs(data_folder, exist_ok=True)
@@ -132,6 +133,27 @@ def load_anime():
         anime_list.append(entry)
     return anime_list
 
+def refresh_titles_on_start():
+    """Aktualisiert Serien-Titel aus den Quellseiten. Läuft schnell durch und
+    aktualisiert nur, wenn ein neuer Titel ermittelt werden kann und er sich geändert hat.
+    """
+    try:
+        items = load_anime()
+        changed = 0
+        for entry in items:
+            url = entry.get("url")
+            if not url:
+                continue
+            new_title = get_series_title(url)
+            if new_title and new_title != entry.get("title"):
+                update_anime(entry["id"], title=new_title)
+                changed += 1
+                print(f"[TITLE] Aktualisiert: '{entry.get('title')}' -> '{new_title}'")
+        if changed:
+            print(f"[TITLE] {changed} Titel aktualisiert.")
+    except Exception as e:
+        print(f"[TITLE-ERROR] {e}")
+
 def update_anime(anime_id, **kwargs):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -206,7 +228,7 @@ def _write_config_atomic(cfg: dict) -> bool:
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, DOWNLOAD_DIR, SERVER_PORT
+    global LANGUAGES, MIN_FREE_GB, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES
     try:
         cfg = {}
         if CONFIG_PATH.exists():
@@ -252,6 +274,19 @@ def load_config():
             cfg['port'] = SERVER_PORT
             changed = True
 
+        # Neuer Schlüssel: refresh_titles (Titelaktualisierung beim Start)
+        if 'refresh_titles' in cfg:
+            try:
+                REFRESH_TITLES = bool(cfg.get('refresh_titles'))
+            except Exception:
+                REFRESH_TITLES = True
+                cfg['refresh_titles'] = True
+                changed = True
+        else:
+            cfg['refresh_titles'] = True
+            REFRESH_TITLES = True
+            changed = True
+
         if changed:
             _write_config_atomic(cfg)
     except Exception as e:
@@ -271,6 +306,7 @@ def save_config():
         base['min_free_gb'] = MIN_FREE_GB
         base['download_path'] = str(DOWNLOAD_DIR)
         base['port'] = base.get('port', SERVER_PORT)
+        base['refresh_titles'] = REFRESH_TITLES
         return _write_config_atomic(base)
     except Exception as e:
         print(f"[CONFIG-ERROR] save_config: {e}")
@@ -599,6 +635,8 @@ def main():
     load_config()
     init_db()
     import_anime_txt()
+    if REFRESH_TITLES:
+        refresh_titles_on_start()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     # Detect deleted series in filesystem and mark in DB
     deleted_check()

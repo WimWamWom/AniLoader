@@ -163,6 +163,7 @@ Important keys:
 - <code>download_path</code>: destination root folder for all downloads (default: <code>./Downloads</code>); created automatically if missing
 - <code>port</code>: web server port (configurable only via file; no effect in CLI-only runs)
 - <code>autostart_mode</code>: optional autostart mode for the web interface (<code>default</code>|<code>german</code>|<code>new</code>|<code>check-missing</code>|<code>full-check</code>)
+- <code>refresh_titles</code>: refresh series titles on startup (default: <code>true</code>). Applies to both the web interface and <code>downloader.py</code>.
 
 Notes:
 - For the CLI (<code>downloader.py</code>) only <code>download_path</code> is used; <code>port</code> has no effect.
@@ -186,6 +187,7 @@ Note: If you want absolutely everything (including the external <code>aniworld</
 - Database tab: filter/sort, list of missing German URLs, “Next” button (Queue)
 - Queue table with clear/remove entries
 - Settings: set download storage path directly or use the convenient “Choose folder…” button (native file chooser); port is configurable only via <code>config.json</code>
+  - Toggle: “Refresh titles on startup”
 
 ## API
 

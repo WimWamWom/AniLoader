@@ -58,10 +58,11 @@ LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 MIN_FREE_GB = 2.0
 MAX_PATH = 260
 AUTOSTART_MODE = None  # 'default'|'german'|'new'|'check-missing' or None
+REFRESH_TITLES = True  # Titelaktualisierung beim Start zulassen
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES
     try:
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
@@ -120,6 +121,18 @@ def load_config():
                 except Exception:
                     cfg['port'] = SERVER_PORT
                     changed = True
+                # refresh_titles flag (default True)
+                try:
+                    if 'refresh_titles' in cfg:
+                        REFRESH_TITLES = bool(cfg.get('refresh_titles'))
+                    else:
+                        cfg['refresh_titles'] = True
+                        REFRESH_TITLES = True
+                        changed = True
+                except Exception:
+                    REFRESH_TITLES = True
+                    cfg['refresh_titles'] = True
+                    changed = True
                 # persist if we added defaults
                 if changed:
                     if _write_config_atomic(cfg):
@@ -140,7 +153,8 @@ def save_config():
             'min_free_gb': MIN_FREE_GB,
             'download_path': str(DOWNLOAD_DIR),
             'port': SERVER_PORT,
-            'autostart_mode': AUTOSTART_MODE
+            'autostart_mode': AUTOSTART_MODE,
+            'refresh_titles': REFRESH_TITLES
         }
         # atomic write to avoid partial files
         tmp_path = str(CONFIG_PATH) + ".tmp"
@@ -1871,7 +1885,7 @@ def api_health():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES
     if request.method == 'GET':
         try:
             # Reload to reflect persisted file state
@@ -1881,7 +1895,8 @@ def api_config():
                 'min_free_gb': MIN_FREE_GB,
                 'download_path': str(DOWNLOAD_DIR),
                 'port': SERVER_PORT,
-                'autostart_mode': AUTOSTART_MODE
+                'autostart_mode': AUTOSTART_MODE,
+                'refresh_titles': REFRESH_TITLES
             }
             return jsonify(cfg)
         except Exception as e:
@@ -1893,6 +1908,7 @@ def api_config():
     langs = data.get('languages')
     min_free = data.get('min_free_gb')
     new_download_path = data.get('download_path')
+    refresh_titles_val = data.get('refresh_titles')
     # Support both 'autostart_mode' and 'autostart' as input
     autostart_key_present = ('autostart_mode' in data) or ('autostart' in data)
     autostart = data.get('autostart_mode') if ('autostart_mode' in data) else data.get('autostart')
@@ -1935,6 +1951,14 @@ def api_config():
                     return jsonify({'status': 'failed', 'error': 'invalid autostart_mode'}), 400
             else:
                 return jsonify({'status': 'failed', 'error': 'invalid autostart_mode'}), 400
+        # refresh_titles toggle
+        if refresh_titles_val is not None:
+            try:
+                REFRESH_TITLES = bool(refresh_titles_val)
+                changed = True
+            except Exception:
+                pass
+
         if changed:
             save_ok = save_config()
             # Reload from disk to ensure persistence and normalization
@@ -1948,14 +1972,16 @@ def api_config():
                 'min_free_gb': MIN_FREE_GB,
                 'download_path': str(DOWNLOAD_DIR),
                 'port': SERVER_PORT,
-                'autostart_mode': AUTOSTART_MODE
+                'autostart_mode': AUTOSTART_MODE,
+                'refresh_titles': REFRESH_TITLES
             }})
         return jsonify({'status': 'nochange', 'config': {
             'languages': LANGUAGES,
             'min_free_gb': MIN_FREE_GB,
             'download_path': str(DOWNLOAD_DIR),
             'port': SERVER_PORT,
-            'autostart_mode': AUTOSTART_MODE
+            'autostart_mode': AUTOSTART_MODE,
+            'refresh_titles': REFRESH_TITLES
         }})
     except Exception as e:
         log(f"[ERROR] api_config POST: {e}")
@@ -2334,7 +2360,8 @@ def AniLoader():
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     deleted_check()
-    refresh_titles_on_start()
+    if REFRESH_TITLES:
+        refresh_titles_on_start()
     log("[SYSTEM] AniLoader API starting...")
     # Autostart-Modus, falls in der Config gesetzt
     try:
