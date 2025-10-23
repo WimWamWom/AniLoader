@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # AniLoader.py by WimWamWom
 import os
+import socket
 import subprocess
 import time
 import random
@@ -13,11 +14,17 @@ import sqlite3
 import json
 import sys
 import shutil
+from urllib.parse import urlparse
 
 # -------------------- Konfiguration --------------------
 BASE_DIR = Path(__file__).resolve().parent
 ANIME_TXT = BASE_DIR / "AniLoader.txt"
-DOWNLOAD_DIR = BASE_DIR / "Downloads"
+# Standard-Download-Ordner; kann via config.json (download_path) überschrieben werden
+DEFAULT_DOWNLOAD_DIR = BASE_DIR / "Downloads"
+# Effektiver Download-Ordner zur Laufzeit (wird in load_config gesetzt)
+DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
+# Port-Schlüssel wird nur in der Config gepflegt (hier ohne Nutzung, für Kompatibilität)
+SERVER_PORT = 5050
 data_folder = os.path.join(os.path.dirname(__file__), 'data')
 config_path = os.path.join(data_folder, 'config.json')
 db_path = os.path.join(data_folder, 'AniLoader.db')
@@ -159,7 +166,11 @@ def sanitize_filename(name):
 def get_episode_title(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
+        # DNS nur für diese Anfrage über 1.1.1.1 leiten
+        host = urlparse(url).hostname
+        ips = resolve_ips_via_cloudflare(host)
+        with DnsOverride(host, ips):
+            r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         german_title = soup.select_one("span.episodeGermanTitle")
@@ -172,22 +183,83 @@ def get_episode_title(url):
         print(f"[FEHLER] Konnte Episodentitel nicht abrufen ({url}): {e}")
     return None
 
-def load_config():
-    global LANGUAGES, MIN_FREE_GB
+def _write_config_atomic(cfg: dict) -> bool:
+    """Schreibt config.json schön formatiert, mit einfachem Retry und atomarem Replace, wo möglich."""
     try:
+        tmp = str(CONFIG_PATH) + ".tmp"
+        # Versuche bis zu 3x zu schreiben/ersetzen (Windows/AV kann sperren)
+        for attempt in range(3):
+            try:
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                os.replace(tmp, CONFIG_PATH)
+                return True
+            except PermissionError:
+                time.sleep(0.2 * (attempt + 1))
+        # Fallback: direkt schreiben (nicht atomar)
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[CONFIG-ERROR] Schreiben fehlgeschlagen: {e}")
+        return False
+
+
+def load_config():
+    global LANGUAGES, MIN_FREE_GB, DOWNLOAD_DIR, SERVER_PORT
+    try:
+        cfg = {}
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-                cfg = json.load(f)
-                LANGUAGES = cfg.get('languages', LANGUAGES)
-                MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
+                try:
+                    cfg = json.load(f) or {}
+                except Exception:
+                    cfg = {}
+        # Defaults setzen/erweitern
+        changed = False
+        if 'languages' in cfg:
+            LANGUAGES = cfg.get('languages', LANGUAGES)
         else:
-            save_config()
+            cfg['languages'] = LANGUAGES
+            changed = True
+        if 'min_free_gb' in cfg:
+            try:
+                MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
+            except Exception:
+                MIN_FREE_GB = 2.0
+                cfg['min_free_gb'] = MIN_FREE_GB
+                changed = True
+        else:
+            cfg['min_free_gb'] = MIN_FREE_GB
+            changed = True
+
+        # Neuer Schlüssel: download_path
+        dlp = cfg.get('download_path')
+        if not dlp:
+            dlp = str(DEFAULT_DOWNLOAD_DIR)
+            cfg['download_path'] = dlp
+            changed = True
+        DOWNLOAD_DIR = Path(dlp)
+        Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
+
+        # Neuer Schlüssel: port (nur in Config genutzt)
+        prt = cfg.get('port')
+        try:
+            SERVER_PORT = int(prt) if prt is not None else SERVER_PORT
+        except Exception:
+            SERVER_PORT = 5050
+        if 'port' not in cfg:
+            cfg['port'] = SERVER_PORT
+            changed = True
+
+        if changed:
+            _write_config_atomic(cfg)
     except Exception as e:
         print(f"[CONFIG-ERROR] {e}")
 
 def save_config():
     try:
-        # Preserve unknown keys (e.g., autostart_mode) to avoid wiping them
+        # Behalte unbekannte Schlüssel (z.B. autostart_mode), um sie nicht zu löschen
         base = {}
         if CONFIG_PATH.exists():
             try:
@@ -197,16 +269,19 @@ def save_config():
                 base = {}
         base['languages'] = LANGUAGES
         base['min_free_gb'] = MIN_FREE_GB
-        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
-            json.dump(base, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception:
+        base['download_path'] = str(DOWNLOAD_DIR)
+        base['port'] = base.get('port', SERVER_PORT)
+        return _write_config_atomic(base)
+    except Exception as e:
+        print(f"[CONFIG-ERROR] save_config: {e}")
         return False
 
 def freier_speicher_mb(pfad: str) -> float:
     """Gibt den verfügbaren Speicherplatz des angegebenen Pfads in GB zurück."""
     try:
-        gesamt, belegt, frei = shutil.disk_usage(pfad)
+        # Unterstützt str oder Path
+        p = str(pfad)
+        gesamt, belegt, frei = shutil.disk_usage(p)
         return round(frei / (1024 ** 3), 1)
     except FileNotFoundError:
         raise ValueError(f"Pfad nicht gefunden: {pfad}")
@@ -216,7 +291,10 @@ def freier_speicher_mb(pfad: str) -> float:
 def get_series_title(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
+        host = urlparse(url).hostname
+        ips = resolve_ips_via_cloudflare(host)
+        with DnsOverride(host, ips):
+            r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         title = soup.select_one("div.series-title h1 span")
@@ -225,6 +303,73 @@ def get_series_title(url):
     except Exception as e:
         print(f"[FEHLER] Konnte Serien-Titel nicht abrufen ({url}): {e}")
     return None
+
+# -------------------- DNS über 1.1.1.1 nur für Titelabfragen --------------------
+def resolve_ips_via_cloudflare(hostname: str):
+    """Löst Host über Cloudflare DNS (1.1.1.1) auf und gibt Liste von IPs zurück.
+    Fällt auf None zurück, wenn dnspython nicht verfügbar oder Auflösung fehlschlägt.
+    """
+    if not hostname:
+        return None
+    try:
+        import dns.resolver  # type: ignore
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers = ["1.1.1.1"]
+        ips = []
+        for rrtype in ("A", "AAAA"):
+            try:
+                ans = resolver.resolve(hostname, rrtype, lifetime=2.0)
+                for rdata in ans:
+                    ips.append(rdata.address)
+            except Exception:
+                pass
+        return ips or None
+    except Exception:
+        # dnspython nicht installiert oder Fehler -> Standard-DNS verwenden
+        return None
+
+
+class DnsOverride:
+    """Kontextmanager, der socket.getaddrinfo temporär patcht, um eine
+    bestimmte Hostauflösung mit vorgegebenen IPs (von 1.1.1.1) zu erzwingen.
+    """
+    def __init__(self, hostname: str, ips: list | None):
+        self.hostname = hostname
+        self.ips = ips or []
+        self._orig = None
+
+    def __enter__(self):
+        if not self.hostname or not self.ips:
+            return self
+        self._orig = socket.getaddrinfo
+
+        def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+            try:
+                if host == self.hostname:
+                    results = []
+                    for ip in self.ips:
+                        if ":" in ip:
+                            fam = socket.AF_INET6
+                            sockaddr = (ip, port, 0, 0)
+                        else:
+                            fam = socket.AF_INET
+                            sockaddr = (ip, port)
+                        results.append((fam, socket.SOCK_STREAM, proto or 0, "", sockaddr))
+                    return results
+            except Exception:
+                pass
+            return self._orig(host, port, family, type, proto, flags)
+
+        socket.getaddrinfo = _patched_getaddrinfo
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._orig:
+            try:
+                socket.getaddrinfo = self._orig
+            except Exception:
+                pass
+        return False
 
 def episode_already_downloaded(series_folder, season, episode):
     if not os.path.exists(series_folder):
@@ -304,7 +449,7 @@ def run_download(cmd):
 
 # -------------------- Downloadfunktionen --------------------
 def download_episode(series_title, episode_url, season, episode, anime_id, german_only=False):
-    series_folder = os.path.join(DOWNLOAD_DIR, series_title)
+    series_folder = os.path.join(str(DOWNLOAD_DIR), series_title)
     # Prüfe freien Speicher vor jedem Download
     try:
         free_gb = freier_speicher_mb(DOWNLOAD_DIR)
@@ -326,7 +471,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
 
     for lang in langs_to_try:
         print(f"[DOWNLOAD] Versuche {lang} -> {episode_url}")
-        cmd = ["aniworld", "--language", lang, "-o", DOWNLOAD_DIR, "--episode", episode_url]
+        cmd = ["aniworld", "--language", lang, "-o", str(DOWNLOAD_DIR), "--episode", episode_url]
         result = run_download(cmd)
         if result == "NO_STREAMS":
             print(f"[INFO] Kein Stream verfügbar: {episode_url} -> Abbruch")
@@ -483,8 +628,9 @@ def main():
                 if result == "OK" and url in verbleibend:
                     verbleibend.remove(url)
                     update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
-                    print(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
-                    delete_old_non_german_versions(series_folder=series_title, season=season, episode=episode)
+            print(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
+            # Korrigierter Pfad: vollständigen Serienordner übergeben
+            delete_old_non_german_versions(series_folder=os.path.join(str(DOWNLOAD_DIR), series_title), season=season, episode=episode)
             check_deutsch_komplett(anime_id)
 
     elif mode == "new":
@@ -541,6 +687,32 @@ def main():
                         print(f"[MISSING] S{s}E{e} fehlt, versuche Download...")
                         download_episode(series_title, f"{base_url}/staffel-{s}/episode-{e}", s, e, anime_id)
                         time.sleep(1)
+            check_deutsch_komplett(anime_id)
+
+    elif mode == "full-check":
+        print("\n=== Modus: Kompletter Check (alle Animes von Anfang an prüfen) ===")
+        for anime in anime_list:
+            series_title = anime["title"] or get_series_title(anime["url"])
+            anime_id = anime["id"]
+            base_url = anime["url"]
+            # Zuerst fehlende deutsche Folgen erneut versuchen (wie in check-missing)
+            fehlende = anime.get("fehlende_deutsch_folgen", []) or []
+            if fehlende:
+                print(f"[FULL-CHECK] '{series_title}': {len(fehlende)} fehlende deutsche Folgen werden geprüft.")
+                verbleibend = fehlende.copy()
+                for url in fehlende:
+                    match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
+                    season = int(match.group(1)) if match else 0
+                    episode = int(match.group(2)) if match else int(re.search(r"/film-(\d+)", url).group(1))
+                    result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
+                    if result == "OK" and url in verbleibend:
+                        verbleibend.remove(url)
+                        update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
+                        print(f"[FULL-CHECK] '{url}' jetzt auf deutsch vorhanden.")
+            # Danach vollständige Prüfung ab Film 1 und Staffel 1/Episode 1
+            print(f"\n[FULL-CHECK] Prüfe '{series_title}' komplett von Anfang an…")
+            download_films(series_title, base_url, anime_id, start_film=1)
+            download_seasons(series_title, base_url, anime_id, start_season=1, start_episode=1)
             check_deutsch_komplett(anime_id)
 
     else:

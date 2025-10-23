@@ -21,6 +21,7 @@ AniLoader is a Python tool with an optional web interface to automatically downl
   - [CLI (no web interface)](#cli-no-web-interface)
   - [Web interface (Flask/Waitress)](#web-interface-flaskwaitress)
   - [Directory structure](#directory-structure)
+- [Configuration](#configuration)
 - [Web-UI Features](#web-ui-features)
 - [API](#api)
   - [Start Download](#start-download)
@@ -73,6 +74,11 @@ Install everything in one command:
 pip install requests beautifulsoup4 flask flask_cors aniworld waitress
 ```
 
+Optional (to use Cloudflare DNS 1.1.1.1 for title lookups):
+```bash
+pip install dnspython
+```
+
 Verify that the downloader CLI is present:
 ```bash
 aniworld --help
@@ -100,6 +106,7 @@ Modes:
 - <code>german</code>: retries entries from “fehlende_deutsch_folgen” in German Dub only
 - <code>new</code>: checks for new movies/seasons/episodes starting from stored <code>last_*</code> values
 - <code>check-missing</code>: attempts to re-download missing files using DB and filesystem info
+- <code>full-check</code>: exhaustive check from the beginning (movies from 1, seasons from 1/episode 1) for all series; existing files are skipped
 
 Examples:
 ```bash
@@ -107,6 +114,7 @@ py downloader.py
 py downloader.py german
 py downloader.py new
 py downloader.py check-missing
+py downloader.py full-check
 ```
 
 Notes:
@@ -137,7 +145,7 @@ AniLoader/
 ├─ AniLoader.txt            # Import list of series URLs
 ├─ data/
 │  ├─ AniLoader.db         # SQLite database
-│  └─ config.json          # Config (languages, min_free_gb, autostart_mode)
+│  └─ config.json          # Config (languages, min_free_gb, download_path, port, autostart_mode)
 ├─ Downloads/
 │  └─ <Series>/Filme/ and Staffel 1/, Staffel 2/, ...
 ├─ templates/
@@ -145,12 +153,39 @@ AniLoader/
 └─ README_en.md
 ```
 
+## Configuration
+
+The configuration file is located at <code>data/config.json</code>. Missing keys are added automatically on startup and the file is written with pretty formatting.
+
+Important keys:
+- <code>languages</code>: order of languages to attempt (default: German Dub → German Sub → English Dub → English Sub)
+- <code>min_free_gb</code>: minimum free disk space in GB; below this threshold downloads stop (default: 2.0)
+- <code>download_path</code>: destination root folder for all downloads (default: <code>./Downloads</code>); created automatically if missing
+- <code>port</code>: web server port (configurable only via file; no effect in CLI-only runs)
+- <code>autostart_mode</code>: optional autostart mode for the web interface (<code>default</code>|<code>german</code>|<code>new</code>|<code>check-missing</code>|<code>full-check</code>)
+
+Notes:
+- For the CLI (<code>downloader.py</code>) only <code>download_path</code> is used; <code>port</code> has no effect.
+- On the first run, <code>download_path</code> is set if missing and the folder is created.
+
+### DNS for title lookups (optional)
+- AniLoader can resolve only the HTML title lookups (<code>get_series_title</code>/<code>get_episode_title</code>) via Cloudflare DNS <code>1.1.1.1</code>.
+- This is enabled when <code>dnspython</code> is installed. If not installed, it gracefully falls back to your system DNS (no errors).
+- No system- or router-level settings are changed. The DNS override applies only to these lookups and keeps TLS/SNI intact (connections still use the hostname).
+
+Enable optionally:
+```bash
+pip install dnspython
+```
+Note: If you want absolutely everything (including the external <code>aniworld</code> CLI) to use 1.1.1.1, change DNS globally on your OS/router.
+
 ## Web-UI Features
-- Start buttons for modes; disabled while a run is active
+- Start buttons for all modes (including “Full Check”); disabled while a run is active
 - Status indicator incl. out-of-space (unit auto TB/GB/MB)
 - Live logs with filter and copy
 - Database tab: filter/sort, list of missing German URLs, “Next” button (Queue)
 - Queue table with clear/remove entries
+- Settings: set download storage path directly or use the convenient “Choose folder…” button (native file chooser); port is configurable only via <code>config.json</code>
 
 ## API
 
@@ -159,7 +194,7 @@ Base URL: <code>http://localhost:5050</code>
 ### Start Download
 - URL: <code>/start_download</code>
 - Method: GET or POST
-- Param: <code>mode</code> = <code>default</code> | <code>german</code> | <code>new</code> | <code>check-missing</code>
+- Param: <code>mode</code> = <code>default</code> | <code>german</code> | <code>new</code> | <code>check-missing</code> | <code>full-check</code>
 - Response: <code>{"status":"started","mode":"..."}</code> or <code>409 already_running</code>
 
 Examples:
@@ -195,12 +230,15 @@ Example:
 - Methods: GET | POST
 - GET example:
 ```json
-{"languages":["German Dub","German Sub","English Dub","English Sub"],"min_free_gb":2.0,"autostart_mode":null}
+{"languages":["German Dub","German Sub","English Dub","English Sub"],"min_free_gb":2.0,"download_path":"C:\\Path\\to\\Downloads","port":5050,"autostart_mode":null}
 ```
 - POST body example:
 ```json
-{"languages":["German Dub","German Sub"],"min_free_gb":5,"autostart_mode":"new"}
+{"download_path":"D:\\Media\\Anime"}
 ```
+Notes:
+- <code>download_path</code> can be changed via POST; the folder is created if needed.
+- <code>port</code> is only configurable via the file <code>data/config.json</code> and is picked up on server start.
 
 ### Database
 - URL: <code>/database</code>

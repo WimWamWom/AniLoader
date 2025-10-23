@@ -16,6 +16,8 @@ import threading
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 import random
+import socket
+from urllib.parse import urlparse
 
 
 # -------------------- Konfiguration --------------------
@@ -691,7 +693,10 @@ def freier_speicher_mb(pfad: str) -> float:
 def get_episode_title(url):
     try:
         headers = get_headers()
-        r = requests.get(url, headers=headers, timeout=10)
+        host = urlparse(url).hostname
+        ips = resolve_ips_via_cloudflare(host)
+        with DnsOverride(host, ips):
+            r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         german_title = soup.select_one("span.episodeGermanTitle")
@@ -709,7 +714,10 @@ def get_episode_title(url):
 def get_series_title(url):
     try:
         headers = get_headers()
-        r = requests.get(url, headers=headers, timeout=10)
+        host = urlparse(url).hostname
+        ips = resolve_ips_via_cloudflare(host)
+        with DnsOverride(host, ips):
+            r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         title = soup.select_one("div.series-title h1 span")
@@ -718,6 +726,69 @@ def get_series_title(url):
     except Exception as e:
         log(f"[FEHLER] Konnte Serien-Titel nicht abrufen ({url}): {e}")
     return None
+
+# -------------------- DNS über 1.1.1.1 nur für Titelabfragen --------------------
+def resolve_ips_via_cloudflare(hostname: str):
+    """DNS-Auflösung über Cloudflare (1.1.1.1). Gibt Liste von IPs zurück oder None bei Fehler."""
+    if not hostname:
+        return None
+    try:
+        import dns.resolver  # type: ignore
+        resolver = dns.resolver.Resolver(configure=False)
+        resolver.nameservers = ["1.1.1.1"]
+        ips = []
+        for rrtype in ("A", "AAAA"):
+            try:
+                ans = resolver.resolve(hostname, rrtype, lifetime=2.0)
+                for rdata in ans:
+                    ips.append(rdata.address)
+            except Exception:
+                pass
+        return ips or None
+    except Exception:
+        return None
+
+
+class DnsOverride:
+    """Kontextmanager, der socket.getaddrinfo temporär patcht, um den angegebenen Host
+    mit vorgegebenen IPs (via 1.1.1.1 aufgelöst) zu beantworten."""
+    def __init__(self, hostname: str, ips):
+        self.hostname = hostname
+        self.ips = ips or []
+        self._orig = None
+
+    def __enter__(self):
+        if not self.hostname or not self.ips:
+            return self
+        self._orig = socket.getaddrinfo
+
+        def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+            try:
+                if host == self.hostname:
+                    results = []
+                    for ip in self.ips:
+                        if ":" in ip:
+                            fam = socket.AF_INET6
+                            sockaddr = (ip, port, 0, 0)
+                        else:
+                            fam = socket.AF_INET
+                            sockaddr = (ip, port)
+                        results.append((fam, socket.SOCK_STREAM, proto or 0, "", sockaddr))
+                    return results
+            except Exception:
+                pass
+            return self._orig(host, port, family, type, proto, flags)
+
+        socket.getaddrinfo = _patched_getaddrinfo
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._orig:
+            try:
+                socket.getaddrinfo = self._orig
+            except Exception:
+                pass
+        return False
 
 def episode_already_downloaded(series_folder, season, episode):
     if not os.path.exists(series_folder):
