@@ -50,6 +50,7 @@
           <button id="start-german" class="btn btn-success">🇩🇪 German</button>
           <button id="start-new" class="btn btn-warning">🆕 Überprüfe auf neue Episoden</button>
           <button id="start-missing" class="btn btn-info">🔄️ Überprüfe auf fehlende Episoden</button>
+          <button id="start-full-check" class="btn btn-secondary">✅ Kompletter Check</button>
           
         </div>
         <div class="col-md-4 text-md-end">
@@ -170,6 +171,14 @@
             <div class="card-body">
               <h6 class="card-title">Systemeinstellungen</h6>
               <div class="mb-3">
+                <label for="download-path" class="form-label small">Speicherort (Download-Verzeichnis)</label>
+                <div class="input-group">
+                  <input id="download-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Downloads" />
+                  <button id="choose-download-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
+                </div>
+                <div class="form-text">Du kannst den Pfad eingeben oder über den Explorer auswählen. Der Ordner wird bei Bedarf erstellt.</div>
+              </div>
+              <div class="mb-3">
                 <label for="min-free" class="form-label small">Speicher-Schwelle</label>
                 <div class="input-group">
                   <input id="min-free" type="number" step="0.1" class="form-control" />
@@ -187,6 +196,7 @@
                   <option value="check-missing">Fehlende Episoden</option>
                 </select>
                 <div class="form-text">Wird beim Serverstart automatisch ausgeführt (optional).</div>
+                <div class="form-text text-secondary">Hinweis: Der Server-Port kann nur direkt in der config.json geändert werden.</div>
               </div>
             </div>
             <div class="card-footer text-end">

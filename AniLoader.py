@@ -11,6 +11,7 @@ import sqlite3
 import json
 import sys
 import shutil
+import stat
 import threading
 from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
@@ -20,7 +21,12 @@ import random
 # -------------------- Konfiguration --------------------
 BASE_DIR = Path(__file__).resolve().parent
 ANIME_TXT = BASE_DIR / "AniLoader.txt"
-DOWNLOAD_DIR = BASE_DIR / "Downloads"
+# Default downloads directory; can be overridden via config.json (download_path)
+DEFAULT_DOWNLOAD_DIR = BASE_DIR / "Downloads"
+# Effective downloads directory used at runtime
+DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
+# Server port (configurable only via config.json)
+SERVER_PORT = 5050
 
 # Define paths for the data folder
 data_folder = os.path.join(os.path.dirname(__file__), 'data')
@@ -53,7 +59,7 @@ AUTOSTART_MODE = None  # 'default'|'german'|'new'|'check-missing' or None
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT
     try:
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
@@ -82,6 +88,42 @@ def load_config():
                     AUTOSTART_MODE = None
                 else:
                     AUTOSTART_MODE = None
+                # download_path (add default if missing)
+                changed = False
+                dl_path = cfg.get('download_path')
+                if isinstance(dl_path, str) and dl_path.strip():
+                    try:
+                        DOWNLOAD_DIR = Path(dl_path).expanduser()
+                        try:
+                            DOWNLOAD_DIR = DOWNLOAD_DIR.resolve()
+                        except Exception:
+                            # keep as provided if resolve fails
+                            pass
+                    except Exception:
+                        DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
+                else:
+                    DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
+                    cfg['download_path'] = str(DOWNLOAD_DIR)
+                    changed = True
+                # port (only from config; keep default if invalid)
+                try:
+                    port_val = cfg.get('port', SERVER_PORT)
+                    if isinstance(port_val, str) and port_val.isdigit():
+                        port_val = int(port_val)
+                    if isinstance(port_val, int) and 1 <= port_val <= 65535:
+                        SERVER_PORT = port_val
+                    else:
+                        cfg['port'] = SERVER_PORT
+                        changed = True
+                except Exception:
+                    cfg['port'] = SERVER_PORT
+                    changed = True
+                # persist if we added defaults
+                if changed:
+                    if _write_config_atomic(cfg):
+                        log("[CONFIG] fehlende Schlüssel ergänzt und gespeichert")
+                    else:
+                        log("[CONFIG-ERROR] Ergänzung konnte nicht gespeichert werden (Datei evtl. gesperrt)")
                 log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB} autostart_mode={AUTOSTART_MODE}")
         else:
             save_config()  # create default config
@@ -91,7 +133,13 @@ def load_config():
 
 def save_config():
     try:
-        cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB, 'autostart_mode': AUTOSTART_MODE}
+        cfg = {
+            'languages': LANGUAGES,
+            'min_free_gb': MIN_FREE_GB,
+            'download_path': str(DOWNLOAD_DIR),
+            'port': SERVER_PORT,
+            'autostart_mode': AUTOSTART_MODE
+        }
         # atomic write to avoid partial files
         tmp_path = str(CONFIG_PATH) + ".tmp"
         with open(tmp_path, 'w', encoding='utf-8') as f:
@@ -114,6 +162,8 @@ USER_AGENTS = [
 log_lines = []
 log_lock = threading.Lock()
 MAX_LOG_LINES = 2000
+# Separate lock to serialize config writes on Windows
+CONFIG_WRITE_LOCK = threading.Lock()
 
 def log(msg):
     """Thread-safe log buffer + print."""
@@ -131,6 +181,56 @@ def log(msg):
             sys.stdout.flush()
         except Exception:
             pass
+def _write_config_atomic(cfg: dict) -> bool:
+    """Write config.json with retries and atomic replace where possible.
+    Handles transient PermissionError on Windows by retrying and finally
+    falling back to a direct write if needed.
+    """
+    try:
+        with CONFIG_WRITE_LOCK:
+            dir_path = os.path.dirname(str(CONFIG_PATH))
+            os.makedirs(dir_path, exist_ok=True)
+            tmp_path = str(CONFIG_PATH) + ".tmp"
+            # make sure target file is writable (remove read-only)
+            try:
+                if os.path.exists(CONFIG_PATH):
+                    os.chmod(CONFIG_PATH, stat.S_IWRITE | stat.S_IREAD)
+            except Exception:
+                pass
+            for attempt in range(5):
+                try:
+                    with open(tmp_path, 'w', encoding='utf-8') as wf:
+                        json.dump(cfg, wf, indent=2, ensure_ascii=False)
+                    os.replace(tmp_path, CONFIG_PATH)
+                    return True
+                except PermissionError:
+                    # Clean temp and backoff
+                    try:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+                    except Exception:
+                        pass
+                    time.sleep(0.3 * (attempt + 1))
+                    continue
+                except Exception:
+                    # Cleanup and break to fallback
+                    try:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+                    except Exception:
+                        pass
+                    break
+            # Fallback: non-atomic write
+            try:
+                with open(CONFIG_PATH, 'w', encoding='utf-8') as wf:
+                    json.dump(cfg, wf, indent=2, ensure_ascii=False)
+                return True
+            except Exception as e:
+                log(f"[CONFIG-ERROR] final write failed: {e}")
+                return False
+    except Exception as e:
+        log(f"[CONFIG-ERROR] _write_config_atomic: {e}")
+        return False
 
 # -------------------- Flask app --------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -1010,7 +1110,6 @@ def run_mode(mode="default"):
                             delete_old_non_german_versions(series_folder=os.path.join(DOWNLOAD_DIR, series_title), season=season, episode=episode)
                     check_deutsch_komplett(anime_id)
                     # Entferne diesen Eintrag aus der Queue (falls vorhanden)
-                    queue_delete_by_anime_id(anime_id)
 
             # 2) Danach restliche DB-Einträge
             rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
@@ -1414,6 +1513,97 @@ def run_mode(mode="default"):
                 except Exception as _e:
                     log(f"[QUEUE] Re-Check Fehler (Check-Missing): {_e}")
 
+        elif mode == "full-check":
+            log("=== Modus: Kompletter Check (alle Animes von Anfang an prüfen) ===")
+            # 1) Zuerst Queue (falls vorhanden)
+            if queued_ids:
+                work_list = [a for a in anime_list if a['id'] in queued_ids]
+                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
+                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Full-Check)")
+                for idx, anime in enumerate(work_list):
+                    current_download["current_index"] = idx
+                    if anime.get("deleted"):
+                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+                        continue
+                    series_title = anime["title"] or get_series_title(anime["url"])
+                    anime_id = anime["id"]
+                    base_url = anime["url"]
+                    current_download["current_title"] = series_title
+                    current_download["anime_started_at"] = time.time()
+                    current_download["current_id"] = anime_id
+                    current_download["current_url"] = base_url
+                    current_download["episode_started_at"] = None
+                    # Start immer bei 1 (Filme und Staffeln)
+                    r = download_films(series_title, base_url, anime_id, start_film=1)
+                    if r == "NO_SPACE":
+                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
+                        return
+                    r2 = download_seasons(series_title, base_url, anime_id, start_season=1, start_episode=1)
+                    if r2 == "NO_SPACE":
+                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
+                        return
+                    check_deutsch_komplett(anime_id)
+                    # Entferne aus Queue
+                    queue_delete_by_anime_id(anime_id)
+
+            # 2) Danach restliche DB-Einträge
+            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
+            for idx, anime in enumerate(rest_list):
+                current_download["current_index"] = idx
+                if anime.get("deleted"):
+                    log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+                    continue
+                series_title = anime["title"] or get_series_title(anime["url"])
+                anime_id = anime["id"]
+                base_url = anime["url"]
+                current_download["current_title"] = series_title
+                current_download["anime_started_at"] = time.time()
+                current_download["current_id"] = anime_id
+                current_download["current_url"] = base_url
+                current_download["episode_started_at"] = None
+                r = download_films(series_title, base_url, anime_id, start_film=1)
+                if r == "NO_SPACE":
+                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
+                    return
+                r2 = download_seasons(series_title, base_url, anime_id, start_season=1, start_episode=1)
+                if r2 == "NO_SPACE":
+                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
+                    return
+                check_deutsch_komplett(anime_id)
+                # Nach jedem DB-Eintrag: Queue erneut prüfen und abarbeiten
+                try:
+                    queue_prune_completed()
+                    queued_now = queue_list()
+                    if queued_now:
+                        amap = {a['id']: a for a in load_anime()}
+                        work_q = [amap[q['anime_id']] for q in queued_now if q.get('anime_id') in amap]
+                        work_q.sort(key=lambda a: next((i for i,q in enumerate(queued_now) if q['anime_id']==a['id']), 999999))
+                        log(f"[QUEUE] {len(work_q)} neue Einträge – abarbeiten (Full-Check)")
+                        for q_anime in work_q:
+                            if q_anime.get('deleted'):
+                                log(f"[SKIP] '{q_anime['title']}' übersprungen (deleted flag gesetzt).")
+                                queue_delete_by_anime_id(q_anime['id'])
+                                continue
+                            q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
+                            q_anime_id = q_anime['id']
+                            base_url = q_anime['url']
+                            current_download["current_title"] = q_series_title
+                            current_download["anime_started_at"] = time.time()
+                            current_download["current_id"] = q_anime_id
+                            current_download["current_url"] = base_url
+                            current_download["episode_started_at"] = None
+                            r = download_films(q_series_title, base_url, q_anime_id, start_film=1)
+                            if r == 'NO_SPACE':
+                                return
+                            r2 = download_seasons(q_series_title, base_url, q_anime_id, start_season=1, start_episode=1)
+                            if r2 == 'NO_SPACE':
+                                return
+                            check_deutsch_komplett(q_anime_id)
+                            queue_delete_by_anime_id(q_anime_id)
+
+                except Exception as _e:
+                    log(f"[QUEUE] Re-Check Fehler (Full-Check): {_e}")
+
         else:
             log("=== Modus: Standard  ===")
             # 1) Zuerst Queue
@@ -1584,7 +1774,7 @@ def run_mode(mode="default"):
 def api_start_download():
     body = request.get_json(silent=True) or {}
     mode = request.args.get("mode") or body.get("mode") or "default"
-    if mode not in ("default", "german", "new", "check-missing"):
+    if mode not in ("default", "german", "new", "check-missing", "full-check"):
         return jsonify({"status": "error", "msg": "Ungültiger Mode"}), 400
     with download_lock:
         if current_download["status"] == "running":
@@ -1610,12 +1800,18 @@ def api_health():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT
     if request.method == 'GET':
         try:
             # Reload to reflect persisted file state
             load_config()
-            cfg = {'languages': LANGUAGES, 'min_free_gb': MIN_FREE_GB, 'autostart_mode': AUTOSTART_MODE}
+            cfg = {
+                'languages': LANGUAGES,
+                'min_free_gb': MIN_FREE_GB,
+                'download_path': str(DOWNLOAD_DIR),
+                'port': SERVER_PORT,
+                'autostart_mode': AUTOSTART_MODE
+            }
             return jsonify(cfg)
         except Exception as e:
             log(f"[ERROR] api_config GET: {e}")
@@ -1625,18 +1821,31 @@ def api_config():
     data = request.get_json() or {}
     langs = data.get('languages')
     min_free = data.get('min_free_gb')
+    new_download_path = data.get('download_path')
     # Support both 'autostart_mode' and 'autostart' as input
     autostart_key_present = ('autostart_mode' in data) or ('autostart' in data)
     autostart = data.get('autostart_mode') if ('autostart_mode' in data) else data.get('autostart')
     changed = False
     try:
-        log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, autostart={autostart}")
+        log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, download_path={new_download_path}, autostart={autostart}")
         if isinstance(langs, list) and langs:
             LANGUAGES = list(langs)
             changed = True
         if min_free is not None:
             MIN_FREE_GB = float(min_free)
             changed = True
+        if isinstance(new_download_path, str) and new_download_path.strip():
+            try:
+                new_path = Path(new_download_path).expanduser()
+                try:
+                    resolved = new_path.resolve()
+                except Exception:
+                    resolved = new_path
+                resolved.mkdir(parents=True, exist_ok=True)
+                DOWNLOAD_DIR = resolved
+                changed = True
+            except Exception as e:
+                return jsonify({'status': 'failed', 'error': f'Ungültiger Speicherort: {e}'}), 400
         if autostart_key_present:
             allowed = {'default', 'german', 'new', 'check-missing'}
             if autostart is None:
@@ -1666,16 +1875,57 @@ def api_config():
             return jsonify({'status': 'ok' if save_ok else 'failed', 'config': {
                 'languages': LANGUAGES,
                 'min_free_gb': MIN_FREE_GB,
+                'download_path': str(DOWNLOAD_DIR),
+                'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE
             }})
         return jsonify({'status': 'nochange', 'config': {
             'languages': LANGUAGES,
             'min_free_gb': MIN_FREE_GB,
+            'download_path': str(DOWNLOAD_DIR),
+            'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE
         }})
     except Exception as e:
         log(f"[ERROR] api_config POST: {e}")
         return jsonify({'status': 'failed', 'error': str(e)}), 400
+
+
+@app.route("/pick_folder", methods=["GET"])
+def api_pick_folder():
+    """Öffnet eine native Ordnerauswahl (Windows-Explorer/OS-Dialog) auf dem Server-Host und liefert den gewählten Pfad zurück.
+    Hinweis: Erfordert eine Desktop-Umgebung und tkinter. Bei fehlender GUI/Tk wird ein Fehler zurückgegeben.
+    """
+    try:
+        # Import on demand, um Serverstart ohne GUI zu ermöglichen
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except Exception as e:
+            log(f"[ERROR] tkinter nicht verfügbar: {e}")
+            return jsonify({'status': 'failed', 'selected': None, 'error': 'tkinter nicht verfügbar'}), 500
+
+        root = tk.Tk()
+        root.withdraw()
+        # Nach vorn holen, damit der Dialog nicht hinter Fenstern erscheint
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        try:
+            path = filedialog.askdirectory(title="Download-Verzeichnis wählen")
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+        if not path:
+            return jsonify({'status': 'canceled', 'selected': None}), 200
+        return jsonify({'status': 'ok', 'selected': path}), 200
+    except Exception as e:
+        log(f"[ERROR] api_pick_folder: {e}")
+        return jsonify({'status': 'failed', 'selected': None, 'error': str(e)}), 500
 
 
 @app.route('/queue', methods=['GET', 'POST', 'DELETE'])
@@ -2029,4 +2279,9 @@ def AniLoader():
 AniLoader()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)
+    # ensure we load config so SERVER_PORT is honored when launched directly
+    try:
+        load_config()
+    except Exception:
+        pass
+    app.run(host="0.0.0.0", port=SERVER_PORT, debug=False, threaded=True)

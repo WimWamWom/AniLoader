@@ -18,6 +18,7 @@ const startDefault = document.getElementById('start-default');
 const startNew = document.getElementById('start-new');
 const startGerman = document.getElementById('start-german');
 const startMissing = document.getElementById('start-missing');
+const startFullCheck = document.getElementById('start-full-check');
 
 
 const downloadStatus = document.getElementById('download-status');
@@ -31,7 +32,7 @@ const queueBody = document.getElementById('queue-body');
 const queueClearBtn = document.getElementById('queue-clear');
 
 function setStartButtonsDisabled(disabled) {
-  [startDefault, startNew, startGerman, startMissing].forEach(btn => {
+  [startDefault, startNew, startGerman, startMissing, startFullCheck].forEach(btn => {
     if (btn) btn.disabled = !!disabled;
   });
 }
@@ -239,6 +240,8 @@ async function queueRemove(queueId) {
 const langList = document.getElementById('lang-list');
 const minFreeInput = document.getElementById('min-free');
 const autostartSelect = document.getElementById('autostart-mode');
+const downloadPathInput = document.getElementById('download-path');
+const chooseDownloadPathBtn = document.getElementById('choose-download-path');
 const saveConfigBtn = document.getElementById('save-config');
 const resetConfigBtn = document.getElementById('reset-config');
 
@@ -248,6 +251,7 @@ async function fetchConfig() {
     renderLangList(cfg.languages || []);
     minFreeInput.value = cfg.min_free_gb ?? '';
   if (autostartSelect) autostartSelect.value = (cfg.autostart_mode ?? '') || '';
+  if (downloadPathInput) downloadPathInput.value = cfg.download_path || '';
   } catch(e) { console.error('fetchConfig', e); }
 }
 
@@ -327,8 +331,11 @@ async function saveConfig() {
   });
   const min_free_gb = parseFloat(minFreeInput.value) || 0;
   const autostart_mode = autostartSelect ? (autostartSelect.value || null) : null;
+  const download_path = downloadPathInput ? downloadPathInput.value.trim() : '';
   try {
-    const resp = await apiPost('/config', { languages: langs, min_free_gb, autostart_mode });
+    const payload = { languages: langs, min_free_gb, autostart_mode };
+    if (download_path) payload.download_path = download_path;
+    const resp = await apiPost('/config', payload);
     // Re-fetch to ensure UI reflects normalized/persisted values
     await fetchConfig();
     if (resp && resp.config) {
@@ -344,6 +351,26 @@ function resetConfig() {
 
 saveConfigBtn?.addEventListener('click', saveConfig);
 resetConfigBtn?.addEventListener('click', resetConfig);
+chooseDownloadPathBtn?.addEventListener('click', async () => {
+  if (!chooseDownloadPathBtn) return;
+  chooseDownloadPathBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (downloadPathInput) downloadPathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseDownloadPathBtn.disabled = false;
+  }
+});
 
 // load config initially
 fetchConfig();
@@ -547,6 +574,7 @@ startDefault.addEventListener('click', () => startDownload('default'));
 startNew.addEventListener('click', () => startDownload('new'));
 startGerman.addEventListener('click', () => startDownload('german'));
 startMissing.addEventListener('click', () => startDownload('check-missing'));
+startFullCheck?.addEventListener('click', () => startDownload('full-check'));
 // no stop button
 refreshBtn.addEventListener('click', () => { fetchOverview(); fetchDatabase(); fetchStatus(); });
 clearFilter.addEventListener('click', () => { logFilter.value=''; });
