@@ -170,7 +170,19 @@
           <div class="card h-100">
             <div class="card-body">
               <h6 class="card-title">Systemeinstellungen</h6>
+              
+              <!-- Storage Mode Auswahl -->
               <div class="mb-3">
+                <label class="form-label small">Speichermodus</label>
+                <select id="storage-mode" class="form-select">
+                  <option value="standard">Standard (ein gemeinsamer Ordner)</option>
+                  <option value="separate">Separat (getrennte Ordner für Filme und Serien)</option>
+                </select>
+                <div class="form-text">Wähle, ob Filme und Serien im gleichen oder in getrennten Ordnern gespeichert werden sollen.</div>
+              </div>
+              
+              <!-- Standard Download Path (nur bei standard mode sichtbar) -->
+              <div class="mb-3" id="standard-path-container">
                 <label for="download-path" class="form-label small">Speicherort (Download-Verzeichnis)</label>
                 <div class="input-group">
                   <input id="download-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Downloads" />
@@ -178,6 +190,28 @@
                 </div>
                 <div class="form-text">Du kannst den Pfad eingeben oder über den Explorer auswählen. Der Ordner wird bei Bedarf erstellt.</div>
               </div>
+              
+              <!-- Separate Paths (nur bei separate mode sichtbar) -->
+              <div id="separate-paths-container" style="display: none;">
+                <div class="mb-3">
+                  <label for="movies-path" class="form-label small">Filme-Speicherort</label>
+                  <div class="input-group">
+                    <input id="movies-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Filme" />
+                    <button id="choose-movies-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
+                  </div>
+                  <div class="form-text">Speicherort für alle Filme.</div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="series-path" class="form-label small">Serien-Speicherort</label>
+                  <div class="input-group">
+                    <input id="series-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Serien" />
+                    <button id="choose-series-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
+                  </div>
+                  <div class="form-text">Speicherort für alle Serien.</div>
+                </div>
+              </div>
+              
               <div class="mb-3">
                 <label for="min-free" class="form-label small">Speicher-Schwelle</label>
                 <div class="input-group">

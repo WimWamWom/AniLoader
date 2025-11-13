@@ -27,6 +27,10 @@ ANIME_TXT = BASE_DIR / "AniLoader.txt"
 DEFAULT_DOWNLOAD_DIR = BASE_DIR / "Downloads"
 # Effective downloads directory used at runtime
 DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
+# Neue Speichermodus-Variablen
+STORAGE_MODE = "standard"  # 'standard' oder 'separate'
+MOVIES_PATH = ""  # Nur für separate Mode
+SERIES_PATH = ""  # Nur für separate Mode
 # Server port (configurable only via config.json)
 SERVER_PORT = 5050
 
@@ -62,7 +66,7 @@ REFRESH_TITLES = True  # Titelaktualisierung beim Start zulassen
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH
     try:
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
@@ -108,6 +112,28 @@ def load_config():
                     DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
                     cfg['download_path'] = str(DOWNLOAD_DIR)
                     changed = True
+                # storage_mode, movies_path, series_path
+                storage_mode = cfg.get('storage_mode', 'standard')
+                if storage_mode in ['standard', 'separate']:
+                    STORAGE_MODE = storage_mode
+                else:
+                    STORAGE_MODE = 'standard'
+                    cfg['storage_mode'] = 'standard'
+                    changed = True
+                
+                MOVIES_PATH = cfg.get('movies_path', '')
+                if 'movies_path' not in cfg:
+                    # Standardmäßig Unterordner "Filme" im Download-Verzeichnis
+                    cfg['movies_path'] = str(DOWNLOAD_DIR / 'Filme')
+                    MOVIES_PATH = str(DOWNLOAD_DIR / 'Filme')
+                    changed = True
+                    
+                SERIES_PATH = cfg.get('series_path', '')
+                if 'series_path' not in cfg:
+                    # Standardmäßig Unterordner "Serien" im Download-Verzeichnis
+                    cfg['series_path'] = str(DOWNLOAD_DIR / 'Serien')
+                    SERIES_PATH = str(DOWNLOAD_DIR / 'Serien')
+                    changed = True
                 # port (only from config; keep default if invalid)
                 try:
                     port_val = cfg.get('port', SERVER_PORT)
@@ -152,6 +178,9 @@ def save_config():
             'languages': LANGUAGES,
             'min_free_gb': MIN_FREE_GB,
             'download_path': str(DOWNLOAD_DIR),
+            'storage_mode': STORAGE_MODE,
+            'movies_path': MOVIES_PATH,
+            'series_path': SERIES_PATH,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
             'refresh_titles': REFRESH_TITLES
@@ -804,6 +833,24 @@ class DnsOverride:
                 pass
         return False
 
+def get_base_path_for_content(is_film=False):
+    """
+    Gibt den Basis-Pfad für Downloads zurück, basierend auf storage_mode.
+    - 'standard': Verwendet DOWNLOAD_DIR für alles
+    - 'separate': Verwendet MOVIES_PATH für Filme, SERIES_PATH für Serien
+    """
+    if STORAGE_MODE == 'separate':
+        if is_film and MOVIES_PATH:
+            path = Path(MOVIES_PATH)
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+        elif not is_film and SERIES_PATH:
+            path = Path(SERIES_PATH)
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+    # Fallback zu DOWNLOAD_DIR (standard mode oder wenn separate Pfade nicht gesetzt sind)
+    return DOWNLOAD_DIR
+
 def episode_already_downloaded(series_folder, season, episode):
     if not os.path.exists(series_folder):
         return False
@@ -858,7 +905,11 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
 
     safe_title = sanitize_episode_title(title) if title else ""
 
-    dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
+    # Im separate Modus keinen "Filme" Unterordner erstellen, da wir bereits im Filme-Ordner sind
+    if STORAGE_MODE == 'separate' and season == 0:
+        dest_folder = Path(series_folder)
+    else:
+        dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
     dest_folder.mkdir(parents=True, exist_ok=True)
 
     safe_title = check_length(dest_folder, pattern, safe_title, lang_suffix)
@@ -907,15 +958,20 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             current_download["episode_started_at"] = time.time()
     except Exception:
         pass
+    
+    # Bestimme den richtigen Basis-Pfad basierend auf Inhalt (Film vs. Serie)
+    is_film = (season == 0)
+    base_path = get_base_path_for_content(is_film)
+    
     # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
     try:
-        free_gb = freier_speicher_mb(DOWNLOAD_DIR)
+        free_gb = freier_speicher_mb(base_path)
     except Exception as e:
         log(f"[ERROR] Konnte freien Speicher nicht ermitteln: {e}")
         return "FAILED"
 
     if free_gb < MIN_FREE_GB:
-        log(f"[ERROR] Zu wenig freier Speicher ({free_gb} GB < {MIN_FREE_GB} GB) im Download-Ordner ({DOWNLOAD_DIR}) - Abbruch")
+        log(f"[ERROR] Zu wenig freier Speicher ({free_gb} GB < {MIN_FREE_GB} GB) im Download-Ordner ({base_path}) - Abbruch")
         # Status global setzen, damit Web-UI es anzeigen kann
         try:
             with download_lock:
@@ -924,7 +980,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             pass
         return "NO_SPACE"
     
-    series_folder = os.path.join(DOWNLOAD_DIR, series_title)
+    series_folder = os.path.join(base_path, series_title)
     if not german_only:
         if episode_already_downloaded(series_folder, season, episode):
             log(f"[SKIP] Episode bereits vorhanden: {series_title} - " + (f"S{season}E{episode}" if season > 0 else f"Film {episode}"))
@@ -941,7 +997,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
 
     for lang in langs_to_try:
         log(f"[DOWNLOAD] Versuche {lang} -> {episode_url}")
-        cmd = ["aniworld", "--language", lang, "-o", str(DOWNLOAD_DIR), "--episode", episode_url]
+        cmd = ["aniworld", "--language", lang, "-o", str(base_path), "--episode", episode_url]
         result = run_download(cmd)
         
         if result == "NO_STREAMS":
@@ -971,7 +1027,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             if episode_url not in fehlende:
                 # Nur in DB schreiben, wenn noch genug Speicher zur Verfügung steht
                 try:
-                    free_after_gb = freier_speicher_mb(DOWNLOAD_DIR)
+                    free_after_gb = freier_speicher_mb(base_path)
                 except Exception:
                     free_after_gb = 0
                 if free_after_gb >= MIN_FREE_GB:
@@ -1052,6 +1108,7 @@ def deleted_check():
     Prüft, welche Animes in der DB als complete markiert sind,
     aber nicht mehr im Downloads-Ordner existieren.
     Setzt diese Animes anschließend auf Initialwerte zurück und markiert deleted = 1.
+    Berücksichtigt beide Pfade wenn separate Mode aktiv ist.
     """
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -1063,9 +1120,25 @@ def deleted_check():
 
         # --- Alle Ordnernamen im Downloads-Verzeichnis lesen (erste Ebene) ---
         local_animes = []
-        downloads_path = Path(DOWNLOAD_DIR)
-        if downloads_path.exists():
-            local_animes = [folder.name for folder in downloads_path.iterdir() if folder.is_dir()]
+        
+        # Sammle alle lokalen Anime-Ordner aus allen relevanten Pfaden
+        # Standard-Pfad oder Serien-Pfad prüfen
+        if STORAGE_MODE == 'separate' and SERIES_PATH:
+            series_path = Path(SERIES_PATH)
+            if series_path.exists():
+                local_animes.extend([folder.name for folder in series_path.iterdir() if folder.is_dir()])
+        
+        # Film-Pfad im separate Mode prüfen
+        if STORAGE_MODE == 'separate' and MOVIES_PATH:
+            movies_path = Path(MOVIES_PATH)
+            if movies_path.exists():
+                local_animes.extend([folder.name for folder in movies_path.iterdir() if folder.is_dir()])
+        
+        # Im standard Mode nur DOWNLOAD_DIR prüfen
+        if STORAGE_MODE == 'standard':
+            downloads_path = Path(DOWNLOAD_DIR)
+            if downloads_path.exists():
+                local_animes = [folder.name for folder in downloads_path.iterdir() if folder.is_dir()]
 
         log(f"[CHECK] Gefundene complete-Animes in DB: {len(complete_animes_in_db)}")
         log(f"[CHECK] Gefundene lokale Animes: {len(local_animes)}")
@@ -1885,7 +1958,7 @@ def api_health():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH
     if request.method == 'GET':
         try:
             # Reload to reflect persisted file state
@@ -1894,6 +1967,9 @@ def api_config():
                 'languages': LANGUAGES,
                 'min_free_gb': MIN_FREE_GB,
                 'download_path': str(DOWNLOAD_DIR),
+                'storage_mode': STORAGE_MODE,
+                'movies_path': MOVIES_PATH,
+                'series_path': SERIES_PATH,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
                 'refresh_titles': REFRESH_TITLES
@@ -1908,13 +1984,16 @@ def api_config():
     langs = data.get('languages')
     min_free = data.get('min_free_gb')
     new_download_path = data.get('download_path')
+    storage_mode = data.get('storage_mode')
+    movies_path = data.get('movies_path')
+    series_path = data.get('series_path')
     refresh_titles_val = data.get('refresh_titles')
     # Support both 'autostart_mode' and 'autostart' as input
     autostart_key_present = ('autostart_mode' in data) or ('autostart' in data)
     autostart = data.get('autostart_mode') if ('autostart_mode' in data) else data.get('autostart')
     changed = False
     try:
-        log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, download_path={new_download_path}, autostart={autostart}")
+        log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, download_path={new_download_path}, storage_mode={storage_mode}, autostart={autostart}")
         if isinstance(langs, list) and langs:
             LANGUAGES = list(langs)
             changed = True
@@ -1933,6 +2012,22 @@ def api_config():
                 changed = True
             except Exception as e:
                 return jsonify({'status': 'failed', 'error': f'Ungültiger Speicherort: {e}'}), 400
+        
+        # Storage Mode
+        if storage_mode is not None and storage_mode in ['standard', 'separate']:
+            STORAGE_MODE = storage_mode
+            changed = True
+        
+        # Movies Path
+        if movies_path is not None:
+            MOVIES_PATH = movies_path.strip()
+            changed = True
+        
+        # Series Path
+        if series_path is not None:
+            SERIES_PATH = series_path.strip()
+            changed = True
+            
         if autostart_key_present:
             allowed = {'default', 'german', 'new', 'check-missing'}
             if autostart is None:
@@ -1971,6 +2066,9 @@ def api_config():
                 'languages': LANGUAGES,
                 'min_free_gb': MIN_FREE_GB,
                 'download_path': str(DOWNLOAD_DIR),
+                'storage_mode': STORAGE_MODE,
+                'movies_path': MOVIES_PATH,
+                'series_path': SERIES_PATH,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
                 'refresh_titles': REFRESH_TITLES
@@ -1979,6 +2077,9 @@ def api_config():
             'languages': LANGUAGES,
             'min_free_gb': MIN_FREE_GB,
             'download_path': str(DOWNLOAD_DIR),
+            'storage_mode': STORAGE_MODE,
+            'movies_path': MOVIES_PATH,
+            'series_path': SERIES_PATH,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
             'refresh_titles': REFRESH_TITLES

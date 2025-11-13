@@ -242,18 +242,45 @@ const minFreeInput = document.getElementById('min-free');
 const autostartSelect = document.getElementById('autostart-mode');
 const downloadPathInput = document.getElementById('download-path');
 const chooseDownloadPathBtn = document.getElementById('choose-download-path');
+const storageModeSelect = document.getElementById('storage-mode');
+const moviesPathInput = document.getElementById('movies-path');
+const seriesPathInput = document.getElementById('series-path');
+const chooseMoviesPathBtn = document.getElementById('choose-movies-path');
+const chooseSeriesPathBtn = document.getElementById('choose-series-path');
+const standardPathContainer = document.getElementById('standard-path-container');
+const separatePathsContainer = document.getElementById('separate-paths-container');
 const saveConfigBtn = document.getElementById('save-config');
 const resetConfigBtn = document.getElementById('reset-config');
 const refreshTitlesChk = document.getElementById('refresh-titles');
+
+// Toggle path containers based on storage mode
+function updateStorageModeVisibility() {
+  const mode = storageModeSelect ? storageModeSelect.value : 'standard';
+  if (standardPathContainer) {
+    standardPathContainer.style.display = (mode === 'standard') ? 'block' : 'none';
+  }
+  if (separatePathsContainer) {
+    separatePathsContainer.style.display = (mode === 'separate') ? 'block' : 'none';
+  }
+}
+
+// Listen for storage mode changes
+if (storageModeSelect) {
+  storageModeSelect.addEventListener('change', updateStorageModeVisibility);
+}
 
 async function fetchConfig() {
   try {
     const cfg = await apiGet('/config');
     renderLangList(cfg.languages || []);
     minFreeInput.value = cfg.min_free_gb ?? '';
-  if (autostartSelect) autostartSelect.value = (cfg.autostart_mode ?? '') || '';
-  if (downloadPathInput) downloadPathInput.value = cfg.download_path || '';
-  if (refreshTitlesChk) refreshTitlesChk.checked = !!cfg.refresh_titles;
+    if (autostartSelect) autostartSelect.value = (cfg.autostart_mode ?? '') || '';
+    if (downloadPathInput) downloadPathInput.value = cfg.download_path || '';
+    if (storageModeSelect) storageModeSelect.value = cfg.storage_mode || 'standard';
+    if (moviesPathInput) moviesPathInput.value = cfg.movies_path || '';
+    if (seriesPathInput) seriesPathInput.value = cfg.series_path || '';
+    if (refreshTitlesChk) refreshTitlesChk.checked = !!cfg.refresh_titles;
+    updateStorageModeVisibility();
   } catch(e) { console.error('fetchConfig', e); }
 }
 
@@ -334,8 +361,19 @@ async function saveConfig() {
   const min_free_gb = parseFloat(minFreeInput.value) || 0;
   const autostart_mode = autostartSelect ? (autostartSelect.value || null) : null;
   const download_path = downloadPathInput ? downloadPathInput.value.trim() : '';
+  const storage_mode = storageModeSelect ? storageModeSelect.value : 'standard';
+  const movies_path = moviesPathInput ? moviesPathInput.value.trim() : '';
+  const series_path = seriesPathInput ? seriesPathInput.value.trim() : '';
+  
   try {
-    const payload = { languages: langs, min_free_gb, autostart_mode };
+    const payload = { 
+      languages: langs, 
+      min_free_gb, 
+      autostart_mode,
+      storage_mode,
+      movies_path,
+      series_path
+    };
     if (download_path) payload.download_path = download_path;
     if (refreshTitlesChk) payload.refresh_titles = !!refreshTitlesChk.checked;
     const resp = await apiPost('/config', payload);
@@ -372,6 +410,48 @@ chooseDownloadPathBtn?.addEventListener('click', async () => {
     alert('Ordnerauswahl fehlgeschlagen.');
   } finally {
     chooseDownloadPathBtn.disabled = false;
+  }
+});
+
+chooseMoviesPathBtn?.addEventListener('click', async () => {
+  if (!chooseMoviesPathBtn) return;
+  chooseMoviesPathBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (moviesPathInput) moviesPathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseMoviesPathBtn.disabled = false;
+  }
+});
+
+chooseSeriesPathBtn?.addEventListener('click', async () => {
+  if (!chooseSeriesPathBtn) return;
+  chooseSeriesPathBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (seriesPathInput) seriesPathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseSeriesPathBtn.disabled = false;
   }
 });
 
