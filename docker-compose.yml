@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  aniloader:
+    build: .
+    container_name: aniloader
+    ports:
+      - "5000:5000"  # Port anpassen falls nötig
+    volumes:
+      # Persistente Daten (Datenbank, Konfiguration)
+      - ./data:/app/data
+      # Download-Verzeichnis
+      - ./Downloads:/app/Downloads
+      # Optional: Separate Pfade für Filme/Serien (bei storage_mode: separate)
+      # - /pfad/zu/deinen/filmen:/movies
+      # - /pfad/zu/deinen/serien:/series
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

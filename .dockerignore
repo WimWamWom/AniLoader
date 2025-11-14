@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Git
+.git/
+.gitignore
+
+# Downloads (werden als Volume gemountet)
+Downloads/*
+
+# Data (wird als Volume gemountet)
+data/anime.db
+data/config.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dokumentation
+README.md
+README_en.md
+LICENSE
+
+# Tampermonkey
+Tampermonkey.user.js
