@@ -1,5 +1,5 @@
 # Multi-stage build für kleineres Image
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Arbeitsverzeichnis erstellen
 WORKDIR /app
@@ -20,6 +20,11 @@ FROM python:3.11-slim
 # Metadaten
 LABEL maintainer="WimWamWom"
 LABEL description="AniLoader - Anime Download Manager"
+LABEL org.opencontainers.image.title="AniLoader"
+LABEL org.opencontainers.image.description="Anime Download Manager mit Web-Interface"
+LABEL org.opencontainers.image.url="https://github.com/WimWamWom/AniLoader"
+LABEL org.opencontainers.image.source="https://github.com/WimWamWom/AniLoader"
+LABEL org.opencontainers.image.vendor="WimWamWom"
 
 # Arbeitsverzeichnis erstellen
 WORKDIR /app

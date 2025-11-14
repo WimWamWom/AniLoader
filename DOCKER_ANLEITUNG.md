@@ -205,7 +205,7 @@ Erstelle eine XML-Datei für einfachere Installation:
   <Overview>AniLoader - Anime Download Manager mit Web-Interface</Overview>
   <Category>Downloaders: Status:Stable</Category>
   <WebUI>http://[IP]:[PORT:5000]</WebUI>
-  <Icon>https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png</Icon>
   <Config Name="WebUI Port" Target="5000" Default="5000" Mode="tcp" Description="Port für Web-Interface" Type="Port" Display="always" Required="true" Mask="false">5000</Config>
   <Config Name="Data" Target="/app/data" Default="/mnt/user/appdata/aniloader/data" Mode="rw" Description="Datenbank und Konfiguration" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/aniloader/data</Config>
   <Config Name="Downloads" Target="/app/Downloads" Default="/mnt/user/Downloads/AniLoader" Mode="rw" Description="Download-Verzeichnis" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Downloads/AniLoader</Config>
