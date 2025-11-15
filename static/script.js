@@ -20,6 +20,9 @@ const startGerman = document.getElementById('start-german');
 const startMissing = document.getElementById('start-missing');
 const startFullCheck = document.getElementById('start-full-check');
 
+const txtFileUpload = document.getElementById('txtFileUpload');
+const uploadTxtBtn = document.getElementById('uploadTxtBtn');
+const uploadStatus = document.getElementById('uploadStatus');
 
 const downloadStatus = document.getElementById('download-status');
 // removed current card; info now shown in overview card
@@ -247,6 +250,8 @@ const moviesPathInput = document.getElementById('movies-path');
 const seriesPathInput = document.getElementById('series-path');
 const chooseMoviesPathBtn = document.getElementById('choose-movies-path');
 const chooseSeriesPathBtn = document.getElementById('choose-series-path');
+const dataFolderPathInput = document.getElementById('data-folder-path');
+const chooseDataFolderBtn = document.getElementById('choose-data-folder');
 const standardPathContainer = document.getElementById('standard-path-container');
 const separatePathsContainer = document.getElementById('separate-paths-container');
 const saveConfigBtn = document.getElementById('save-config');
@@ -279,6 +284,7 @@ async function fetchConfig() {
     if (storageModeSelect) storageModeSelect.value = cfg.storage_mode || 'standard';
     if (moviesPathInput) moviesPathInput.value = cfg.movies_path || '';
     if (seriesPathInput) seriesPathInput.value = cfg.series_path || '';
+    if (dataFolderPathInput) dataFolderPathInput.value = cfg.data_folder_path || '';
     if (refreshTitlesChk) refreshTitlesChk.checked = !!cfg.refresh_titles;
     updateStorageModeVisibility();
   } catch(e) { console.error('fetchConfig', e); }
@@ -364,6 +370,7 @@ async function saveConfig() {
   const storage_mode = storageModeSelect ? storageModeSelect.value : 'standard';
   const movies_path = moviesPathInput ? moviesPathInput.value.trim() : '';
   const series_path = seriesPathInput ? seriesPathInput.value.trim() : '';
+  const data_folder_path = dataFolderPathInput ? dataFolderPathInput.value.trim() : '';
   
   try {
     const payload = { 
@@ -375,6 +382,7 @@ async function saveConfig() {
       series_path
     };
     if (download_path) payload.download_path = download_path;
+    if (data_folder_path) payload.data_folder_path = data_folder_path;
     if (refreshTitlesChk) payload.refresh_titles = !!refreshTitlesChk.checked;
     const resp = await apiPost('/config', payload);
     // Re-fetch to ensure UI reflects normalized/persisted values
@@ -382,7 +390,11 @@ async function saveConfig() {
     if (resp && resp.config) {
       console.log('Config saved:', resp.config);
     }
-    alert('Einstellungen gespeichert');
+    if (data_folder_path && resp && resp.status === 'ok') {
+      alert('Einstellungen gespeichert. Der Server muss neu gestartet werden, damit der neue Data-Ordner verwendet wird.');
+    } else {
+      alert('Einstellungen gespeichert');
+    }
   } catch(e) { alert('Speichern fehlgeschlagen'); console.error(e); }
 }
 
@@ -452,6 +464,27 @@ chooseSeriesPathBtn?.addEventListener('click', async () => {
     alert('Ordnerauswahl fehlgeschlagen.');
   } finally {
     chooseSeriesPathBtn.disabled = false;
+  }
+});
+
+chooseDataFolderBtn?.addEventListener('click', async () => {
+  if (!chooseDataFolderBtn) return;
+  chooseDataFolderBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (dataFolderPathInput) dataFolderPathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseDataFolderBtn.disabled = false;
   }
 });
 
@@ -652,12 +685,67 @@ async function startDownload(mode) {
 
 // stop removed
 
+/* Upload TXT file */
+async function uploadTxtFile() {
+  const fileInput = txtFileUpload;
+  if (!fileInput.files || fileInput.files.length === 0) {
+    uploadStatus.textContent = 'Bitte wähle eine Datei aus';
+    uploadStatus.className = 'small text-danger';
+    return;
+  }
+  
+  const file = fileInput.files[0];
+  if (!file.name.endsWith('.txt')) {
+    uploadStatus.textContent = 'Nur TXT-Dateien erlaubt';
+    uploadStatus.className = 'small text-danger';
+    return;
+  }
+  
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  try {
+    uploadStatus.textContent = 'Hochladen...';
+    uploadStatus.className = 'small text-info';
+    uploadTxtBtn.disabled = true;
+    
+    const res = await fetch('/upload_txt', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const data = await res.json();
+    
+    if (res.ok && data.status === 'ok') {
+      uploadStatus.textContent = data.msg;
+      uploadStatus.className = 'small text-success';
+      fileInput.value = ''; // Clear file input
+      // Refresh overview and database
+      setTimeout(() => {
+        fetchOverview();
+        fetchDatabase();
+        uploadStatus.textContent = '';
+      }, 3000);
+    } else {
+      uploadStatus.textContent = data.msg || 'Upload fehlgeschlagen';
+      uploadStatus.className = 'small text-danger';
+    }
+  } catch (e) {
+    console.error('uploadTxtFile', e);
+    uploadStatus.textContent = 'Fehler beim Upload';
+    uploadStatus.className = 'small text-danger';
+  } finally {
+    uploadTxtBtn.disabled = false;
+  }
+}
+
 /* Event listeners */
 startDefault.addEventListener('click', () => startDownload('default'));
 startNew.addEventListener('click', () => startDownload('new'));
 startGerman.addEventListener('click', () => startDownload('german'));
 startMissing.addEventListener('click', () => startDownload('check-missing'));
 startFullCheck?.addEventListener('click', () => startDownload('full-check'));
+uploadTxtBtn?.addEventListener('click', uploadTxtFile);
 // no stop button
 refreshBtn.addEventListener('click', () => { fetchOverview(); fetchDatabase(); fetchStatus(); });
 clearFilter.addEventListener('click', () => { logFilter.value=''; });

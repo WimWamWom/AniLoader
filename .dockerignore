@@ -13,11 +13,10 @@ ENV/
 .gitignore
 
 # Downloads (werden als Volume gemountet)
-Downloads/*
+Downloads/
 
 # Data (wird als Volume gemountet)
-data/anime.db
-data/config.json
+data/
 
 # IDE
 .vscode/
@@ -29,10 +28,15 @@ data/config.json
 .DS_Store
 Thumbs.db
 
-# Dokumentation
+# Dokumentation (nicht im Image benötigt)
 README.md
 README_en.md
 LICENSE
+DOCKER_ANLEITUNG.md
 
 # Tampermonkey
 Tampermonkey.user.js
+
+# Docker files
+docker-compose.yml
+Dockerfile

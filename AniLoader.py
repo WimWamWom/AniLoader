@@ -35,7 +35,9 @@ SERIES_PATH = ""  # Nur für separate Mode
 SERVER_PORT = 5050
 
 # Define paths for the data folder
-data_folder = os.path.join(os.path.dirname(__file__), 'data')
+# Will be loaded from config.json if set, otherwise defaults to ./data
+DEFAULT_DATA_FOLDER = os.path.join(os.path.dirname(__file__), 'data')
+data_folder = DEFAULT_DATA_FOLDER
 config_path = os.path.join(data_folder, 'config.json')
 db_path = os.path.join(data_folder, 'AniLoader.db')
 log_path = os.path.join(data_folder, 'last_run.log')
@@ -65,12 +67,44 @@ AUTOSTART_MODE = None  # 'default'|'german'|'new'|'check-missing' or None
 REFRESH_TITLES = True  # Titelaktualisierung beim Start zulassen
 
 
+def update_data_paths(new_data_folder):
+    """Updates the global data folder paths when the data_folder_path config changes."""
+    global data_folder, config_path, db_path, log_path, CONFIG_PATH, DB_PATH
+    data_folder = new_data_folder
+    config_path = os.path.join(data_folder, 'config.json')
+    db_path = os.path.join(data_folder, 'AniLoader.db')
+    log_path = os.path.join(data_folder, 'last_run.log')
+    CONFIG_PATH = Path(config_path)
+    DB_PATH = Path(db_path)
+    # Ensure the new data folder exists
+    os.makedirs(data_folder, exist_ok=True)
+
+
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, data_folder
     try:
+        # First, check if there's a data_folder_path override in the config
         if CONFIG_PATH.exists():
             with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
+                # Check for data_folder_path first
+                data_folder_path = cfg.get('data_folder_path')
+                if data_folder_path and isinstance(data_folder_path, str) and data_folder_path.strip():
+                    try:
+                        new_folder = Path(data_folder_path).expanduser()
+                        try:
+                            new_folder = new_folder.resolve()
+                        except Exception:
+                            pass
+                        if str(new_folder) != data_folder:
+                            update_data_paths(str(new_folder))
+                            # Reload config from new location
+                            if CONFIG_PATH.exists():
+                                with open(CONFIG_PATH, 'r', encoding='utf-8') as f2:
+                                    cfg = json.load(f2)
+                    except Exception as e:
+                        log(f"[CONFIG-WARN] Ungültiger data_folder_path: {e}, verwende Standard")
+                
                 # languages
                 langs = cfg.get('languages')
                 if isinstance(langs, list) and langs:
@@ -159,13 +193,17 @@ def load_config():
                     REFRESH_TITLES = True
                     cfg['refresh_titles'] = True
                     changed = True
+                # data_folder_path - add if missing but don't change global var during load
+                if 'data_folder_path' not in cfg:
+                    cfg['data_folder_path'] = data_folder
+                    changed = True
                 # persist if we added defaults
                 if changed:
                     if _write_config_atomic(cfg):
                         log("[CONFIG] fehlende Schlüssel ergänzt und gespeichert")
                     else:
                         log("[CONFIG-ERROR] Ergänzung konnte nicht gespeichert werden (Datei evtl. gesperrt)")
-                log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB} autostart_mode={AUTOSTART_MODE}")
+                log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB} autostart_mode={AUTOSTART_MODE} data_folder={data_folder}")
         else:
             save_config()  # create default config
     except Exception as e:
@@ -183,7 +221,8 @@ def save_config():
             'series_path': SERIES_PATH,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
-            'refresh_titles': REFRESH_TITLES
+            'refresh_titles': REFRESH_TITLES,
+            'data_folder_path': data_folder
         }
         # atomic write to avoid partial files
         tmp_path = str(CONFIG_PATH) + ".tmp"
@@ -1925,7 +1964,47 @@ def run_mode(mode="default"):
                     "current_id": None,
                     "current_url": None
                 })
-    
+@app.route("/upload_txt", methods=["POST"])
+def api_upload_txt():
+    """Nimmt eine hochgeladene TXT-Datei entgegen und verarbeitet sie wie AniLoader.txt beim Start."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "msg": "Keine Datei hochgeladen"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"status": "error", "msg": "Keine Datei ausgewählt"}), 400
+        
+        if not file.filename.endswith('.txt'):
+            return jsonify({"status": "error", "msg": "Nur TXT-Dateien erlaubt"}), 400
+        
+        # Datei lesen
+        content = file.read().decode('utf-8')
+        links = [line.strip() for line in content.split('\n') if line.strip()]
+        
+        if not links:
+            return jsonify({"status": "error", "msg": "Keine URLs in der Datei gefunden"}), 400
+        
+        # URLs in die Datenbank importieren
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        imported = 0
+        for url in links:
+            if insert_anime(url=url):
+                imported += 1
+        conn.commit()
+        conn.close()
+        
+        log(f"[UPLOAD] {imported} Anime-URLs aus hochgeladener Datei '{file.filename}' importiert")
+        return jsonify({
+            "status": "ok",
+            "msg": f"{imported} URLs erfolgreich importiert",
+            "count": imported
+        })
+    except Exception as e:
+        log(f"[ERROR] api_upload_txt: {e}")
+        return jsonify({"status": "error", "msg": str(e)}), 500
+
 
 # -------------------- API Endpoints --------------------
 @app.route("/start_download", methods=["POST", "GET"])
@@ -1958,7 +2037,7 @@ def api_health():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, data_folder
     if request.method == 'GET':
         try:
             # Reload to reflect persisted file state
@@ -1972,7 +2051,8 @@ def api_config():
                 'series_path': SERIES_PATH,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
-                'refresh_titles': REFRESH_TITLES
+                'refresh_titles': REFRESH_TITLES,
+                'data_folder_path': data_folder
             }
             return jsonify(cfg)
         except Exception as e:
@@ -1988,12 +2068,13 @@ def api_config():
     movies_path = data.get('movies_path')
     series_path = data.get('series_path')
     refresh_titles_val = data.get('refresh_titles')
+    new_data_folder = data.get('data_folder_path')
     # Support both 'autostart_mode' and 'autostart' as input
     autostart_key_present = ('autostart_mode' in data) or ('autostart' in data)
     autostart = data.get('autostart_mode') if ('autostart_mode' in data) else data.get('autostart')
     changed = False
     try:
-        log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, download_path={new_download_path}, storage_mode={storage_mode}, autostart={autostart}")
+        log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, download_path={new_download_path}, storage_mode={storage_mode}, autostart={autostart}, data_folder_path={new_data_folder}")
         if isinstance(langs, list) and langs:
             LANGUAGES = list(langs)
             changed = True
@@ -2012,6 +2093,23 @@ def api_config():
                 changed = True
             except Exception as e:
                 return jsonify({'status': 'failed', 'error': f'Ungültiger Speicherort: {e}'}), 400
+        
+        # Data Folder Path
+        if isinstance(new_data_folder, str) and new_data_folder.strip():
+            try:
+                new_folder = Path(new_data_folder).expanduser()
+                try:
+                    new_folder = new_folder.resolve()
+                except Exception:
+                    pass
+                # Create the new data folder
+                new_folder.mkdir(parents=True, exist_ok=True)
+                # Update paths globally
+                update_data_paths(str(new_folder))
+                changed = True
+                log(f"[CONFIG] Data-Ordner geändert zu: {data_folder}")
+            except Exception as e:
+                return jsonify({'status': 'failed', 'error': f'Ungültiger Data-Ordner: {e}'}), 400
         
         # Storage Mode
         if storage_mode is not None and storage_mode in ['standard', 'separate']:
@@ -2071,7 +2169,8 @@ def api_config():
                 'series_path': SERIES_PATH,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
-                'refresh_titles': REFRESH_TITLES
+                'refresh_titles': REFRESH_TITLES,
+                'data_folder_path': data_folder
             }})
         return jsonify({'status': 'nochange', 'config': {
             'languages': LANGUAGES,
@@ -2082,7 +2181,8 @@ def api_config():
             'series_path': SERIES_PATH,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
-            'refresh_titles': REFRESH_TITLES
+            'refresh_titles': REFRESH_TITLES,
+            'data_folder_path': data_folder
         }})
     except Exception as e:
         log(f"[ERROR] api_config POST: {e}")

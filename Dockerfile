@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
+# aniworld-Downloader installieren
+RUN pip install --no-cache-dir --user aniworld
+
 # Finales Image
 FROM python:3.11-slim
 
@@ -48,6 +51,9 @@ COPY templates/ ./templates/
 
 # Verzeichnisse für persistente Daten erstellen
 RUN mkdir -p /app/data /app/Downloads
+
+# Erstelle initiale config.json Template
+RUN echo '{"languages": ["German Dub", "German Sub", "English Dub", "English Sub"], "min_free_gb": 2.0, "download_path": "", "autostart_mode": null, "refresh_titles": true, "storage_mode": "standard", "movies_path": "", "series_path": "", "data_folder_path": "", "server_port": 5000}' > /app/data/config.json.default
 
 # Port freigeben (Standard: 5000, kann via config.json geändert werden)
 EXPOSE 5000

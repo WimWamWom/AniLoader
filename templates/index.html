@@ -59,6 +59,22 @@
         </div>
       </div>
 
+      <div class="row mb-3">
+        <div class="col-md-12">
+          <div class="card">
+            <div class="card-body">
+              <h6 class="card-title">📄 TXT-Datei hochladen</h6>
+              <div class="d-flex gap-2 align-items-center">
+                <input type="file" id="txtFileUpload" class="form-control" accept=".txt" style="max-width: 300px;">
+                <button id="uploadTxtBtn" class="btn btn-primary">Hochladen & Importieren</button>
+                <span id="uploadStatus" class="small text-secondary"></span>
+              </div>
+              <small class="text-muted">Lade eine TXT-Datei mit Anime-URLs hoch (eine URL pro Zeile). Die URLs werden in die Datenbank importiert.</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="overviewContainer" class="row g-3">
         <!-- Cards für alle Animes (kurze Übersicht) -->
       </div>
@@ -210,6 +226,15 @@
                   </div>
                   <div class="form-text">Speicherort für alle Serien.</div>
                 </div>
+              </div>
+
+              <div class="mb-3">
+                <label for="data-folder-path" class="form-label small">Data-Ordner (Konfiguration & Datenbank)</label>
+                <div class="input-group">
+                  <input id="data-folder-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\data" />
+                  <button id="choose-data-folder" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
+                </div>
+                <div class="form-text">Speicherort für config.json, AniLoader.db und Logs. Änderungen erfordern einen Server-Neustart.</div>
               </div>
               
               <div class="mb-3">
