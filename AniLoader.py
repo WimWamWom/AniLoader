@@ -353,7 +353,22 @@ def _write_config_atomic(cfg: dict) -> bool:
 # -------------------- Flask app --------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
 # CORS für Tampermonkey-Skript von HTTPS-Seiten (aniworld.to, s.to)
-CORS(app, resources={r"/*": {"origins": "*", "allow_headers": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]}})
+CORS(app, resources={r"/*": {
+    "origins": "*", 
+    "allow_headers": "*", 
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "supports_credentials": False,
+    "expose_headers": "*"
+}})
+
+# Zusätzlicher Hook für CORS Preflight Requests
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', '*')
+    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+    response.headers.add('Access-Control-Max-Age', '3600')
+    return response
 
 # -------------------- DB-Funktionen --------------------
 def init_db():
