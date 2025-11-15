@@ -25,8 +25,14 @@ DEFAULT_DOWNLOAD_DIR = BASE_DIR / "Downloads"
 DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
 # Neue Speichermodus-Variablen
 STORAGE_MODE = "standard"  # 'standard' oder 'separate'
-MOVIES_PATH = ""  # Nur für separate Mode
-SERIES_PATH = ""  # Nur für separate Mode
+MOVIES_PATH = ""  # Nur für separate Mode (deprecated)
+SERIES_PATH = ""  # Nur für separate Mode (deprecated)
+# Neue Content-Type basierte Pfade
+ANIME_PATH = ""  # Pfad für Animes (aniworld.to)
+SERIEN_PATH = ""  # Pfad für Serien (s.to)
+# Film/Staffel Organisation
+ANIME_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Animes
+SERIEN_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Serien
 # Port-Schlüssel wird nur in der Config gepflegt (hier ohne Nutzung, für Kompatibilität)
 SERVER_PORT = 5050
 data_folder = os.path.join(os.path.dirname(__file__), 'data')
@@ -45,6 +51,23 @@ CONFIG_PATH = Path(config_path)
 DB_PATH = Path(db_path)
 
 # -------------------- Datenbankfunktionen --------------------
+def get_content_type_from_url(url):
+    """
+    Bestimmt den Content-Type basierend auf der URL.
+    Returns: 'anime' für aniworld.to, 'serie' für s.to, None für unbekannt
+    """
+    try:
+        hostname = urlparse(url).hostname
+        if hostname:
+            hostname = hostname.lower()
+            if 'aniworld.to' in hostname:
+                return 'anime'
+            elif 's.to' in hostname:
+                return 'serie'
+    except Exception:
+        pass
+    return None
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -232,7 +255,7 @@ def _write_config_atomic(cfg: dict) -> bool:
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH
+    global LANGUAGES, MIN_FREE_GB, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES
     try:
         cfg = {}
         if CONFIG_PATH.exists():
@@ -292,6 +315,36 @@ def load_config():
             cfg['series_path'] = str(DOWNLOAD_DIR / 'Serien')
             SERIES_PATH = str(DOWNLOAD_DIR / 'Serien')
             changed = True
+        
+        # Neue Content-Type basierte Pfade
+        if 'anime_path' in cfg:
+            ANIME_PATH = cfg.get('anime_path', '')
+        else:
+            cfg['anime_path'] = str(DOWNLOAD_DIR / 'Animes')
+            ANIME_PATH = str(DOWNLOAD_DIR / 'Animes')
+            changed = True
+            
+        if 'serien_path' in cfg:
+            SERIEN_PATH = cfg.get('serien_path', '')
+        else:
+            cfg['serien_path'] = str(DOWNLOAD_DIR / 'Serien')
+            SERIEN_PATH = str(DOWNLOAD_DIR / 'Serien')
+            changed = True
+        
+        # Film/Staffel Organisation
+        if 'anime_separate_movies' in cfg:
+            ANIME_SEPARATE_MOVIES = cfg.get('anime_separate_movies', False)
+        else:
+            cfg['anime_separate_movies'] = False
+            ANIME_SEPARATE_MOVIES = False
+            changed = True
+            
+        if 'serien_separate_movies' in cfg:
+            SERIEN_SEPARATE_MOVIES = cfg.get('serien_separate_movies', False)
+        else:
+            cfg['serien_separate_movies'] = False
+            SERIEN_SEPARATE_MOVIES = False
+            changed = True
 
         # Neuer Schlüssel: port (nur in Config genutzt)
         prt = cfg.get('port')
@@ -337,6 +390,10 @@ def save_config():
         base['storage_mode'] = STORAGE_MODE
         base['movies_path'] = MOVIES_PATH
         base['series_path'] = SERIES_PATH
+        base['anime_path'] = ANIME_PATH
+        base['serien_path'] = SERIEN_PATH
+        base['anime_separate_movies'] = ANIME_SEPARATE_MOVIES
+        base['serien_separate_movies'] = SERIEN_SEPARATE_MOVIES
         base['port'] = base.get('port', SERVER_PORT)
         base['refresh_titles'] = REFRESH_TITLES
         return _write_config_atomic(base)
@@ -439,14 +496,35 @@ class DnsOverride:
                 pass
         return False
 
-def get_base_path_for_content(is_film=False):
+def get_base_path_for_content(content_type='anime', is_film=False):
     """
-    Gibt den Basis-Pfad für Downloads zurück, basierend auf storage_mode.
-    - 'standard': Verwendet DOWNLOAD_DIR für alles
-    - 'separate': Verwendet MOVIES_PATH für Filme, SERIES_PATH für Serien
+    Gibt den Basis-Pfad für Downloads zurück, basierend auf storage_mode, content_type und is_film.
+    
+    Args:
+        content_type: 'anime' für aniworld.to, 'serie' für s.to
+        is_film: True wenn es sich um einen Film handelt (Season 0)
+    
+    Returns:
+        Path object für den Download-Pfad
     """
     if STORAGE_MODE == 'separate':
-        if is_film and MOVIES_PATH:
+        # Content-Type basierte Pfade
+        if content_type == 'anime' and ANIME_PATH:
+            base_path = Path(ANIME_PATH)
+            # Wenn Film-Separation aktiviert ist
+            if is_film and ANIME_SEPARATE_MOVIES:
+                base_path = base_path / 'Filme'
+            base_path.mkdir(parents=True, exist_ok=True)
+            return base_path
+        elif content_type == 'serie' and SERIEN_PATH:
+            base_path = Path(SERIEN_PATH)
+            # Wenn Film-Separation aktiviert ist
+            if is_film and SERIEN_SEPARATE_MOVIES:
+                base_path = base_path / 'Filme'
+            base_path.mkdir(parents=True, exist_ok=True)
+            return base_path
+        # Fallback zu alten MOVIES_PATH/SERIES_PATH (deprecated, für Kompatibilität)
+        elif is_film and MOVIES_PATH:
             path = Path(MOVIES_PATH)
             path.mkdir(parents=True, exist_ok=True)
             return path
@@ -476,7 +554,18 @@ def delete_old_non_german_versions(series_folder, season, episode):
             except Exception as e:
                 print(f"[FEHLER] Konnte Datei nicht löschen: {file.name} -> {e}")
 
-def rename_downloaded_file(series_folder, season, episode, title, language):
+def rename_downloaded_file(series_folder, season, episode, title, language, content_type='anime'):
+    """
+    Benennt heruntergeladene Datei um und verschiebt sie in den richtigen Ordner.
+    
+    Args:
+        series_folder: Basis-Ordner für die Serie/Anime
+        season: Staffel-Nummer (0 = Film)
+        episode: Episoden-Nummer
+        title: Titel der Episode
+        language: Sprache (German Dub, etc.)
+        content_type: 'anime' oder 'serie'
+    """
     lang_suffix = {
         "German Dub": False,
         "German Sub": "Sub",
@@ -508,11 +597,28 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
         new_name += f" [{lang_suffix}]"
     new_name += ".mp4"
 
-    # Im separate Modus keinen "Filme" Unterordner erstellen, da wir bereits im Filme-Ordner sind
-    if STORAGE_MODE == 'separate' and season == 0:
+    # Bestimme Zielordner basierend auf STORAGE_MODE und Film-Separation
+    is_film = (season == 0)
+    
+    # Prüfe ob Film-Separation für diesen Content-Type aktiv ist
+    separate_movies = False
+    if content_type == 'anime' and ANIME_SEPARATE_MOVIES:
+        separate_movies = True
+    elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
+        separate_movies = True
+    
+    if STORAGE_MODE == 'separate' and is_film and separate_movies:
+        # Filme sind bereits im separaten Filme-Ordner, keine weitere Unterteilung
         dest_folder = Path(series_folder)
+    elif not separate_movies and is_film:
+        # Filme in "Filme" Unterordner innerhalb der Serie
+        dest_folder = Path(series_folder) / "Filme"
+    elif season > 0:
+        # Staffeln in eigenen Unterordnern
+        dest_folder = Path(series_folder) / f"Staffel {season}"
     else:
-        dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
+        dest_folder = Path(series_folder)
+    
     dest_folder.mkdir(parents=True, exist_ok=True)
     new_path = dest_folder / new_name
 
@@ -539,9 +645,14 @@ def run_download(cmd):
 
 # -------------------- Downloadfunktionen --------------------
 def download_episode(series_title, episode_url, season, episode, anime_id, german_only=False):
-    # Bestimme den richtigen Basis-Pfad basierend auf Inhalt (Film vs. Serie)
+    # Content-Type aus URL bestimmen
+    content_type = get_content_type_from_url(episode_url)
+    if not content_type:
+        content_type = 'anime'  # Default zu anime wenn unbekannt
+    
+    # Bestimme den richtigen Basis-Pfad basierend auf Content-Type und Film-Status
     is_film = (season == 0)
-    base_path = get_base_path_for_content(is_film)
+    base_path = get_base_path_for_content(content_type, is_film)
     series_folder = os.path.join(str(base_path), series_title)
     
     # Prüfe freien Speicher vor jedem Download
@@ -572,7 +683,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             return "NO_STREAMS"
         elif result == "OK":
             title = get_episode_title(episode_url)
-            rename_downloaded_file(series_folder, season, episode, title, lang)
+            rename_downloaded_file(series_folder, season, episode, title, lang, content_type)
             if lang == "German Dub":
                 german_available = True
                 delete_old_non_german_versions(series_folder, season, episode)

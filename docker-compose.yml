@@ -9,11 +9,12 @@ services:
     volumes:
       # Persistente Daten (Datenbank, Konfiguration)
       - ./data:/app/data
-      # Download-Verzeichnis
+      # Download-Verzeichnis (bei storage_mode: standard)
       - ./Downloads:/app/Downloads
-      # Optional: Separate Pfade für Filme/Serien (bei storage_mode: separate)
-      # - /pfad/zu/deinen/filmen:/movies
-      # - /pfad/zu/deinen/serien:/series
+      # Optional: Separate Pfade für Animes (bei storage_mode: separate)
+      # - /pfad/zu/deinen/animes:/animes
+      # Optional: Separate Pfade für Serien (bei storage_mode: separate)
+      # - /pfad/zu/deinen/serien:/serien
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped

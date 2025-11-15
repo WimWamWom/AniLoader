@@ -29,8 +29,14 @@ DEFAULT_DOWNLOAD_DIR = BASE_DIR / "Downloads"
 DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
 # Neue Speichermodus-Variablen
 STORAGE_MODE = "standard"  # 'standard' oder 'separate'
-MOVIES_PATH = ""  # Nur für separate Mode
-SERIES_PATH = ""  # Nur für separate Mode
+MOVIES_PATH = ""  # Nur für separate Mode (wird nicht mehr verwendet)
+SERIES_PATH = ""  # Nur für separate Mode (wird nicht mehr verwendet)
+# Neue Content-Type basierte Pfade
+ANIME_PATH = ""  # Pfad für Animes (aniworld.to)
+SERIEN_PATH = ""  # Pfad für Serien (s.to)
+# Film/Staffel Organisation
+ANIME_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Animes
+SERIEN_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Serien
 # Server port (configurable only via config.json)
 SERVER_PORT = 5050
 
@@ -81,7 +87,7 @@ def update_data_paths(new_data_folder):
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, data_folder
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, data_folder
     try:
         # First, check if there's a data_folder_path override in the config
         if CONFIG_PATH.exists():
@@ -168,6 +174,30 @@ def load_config():
                     cfg['series_path'] = str(DOWNLOAD_DIR / 'Serien')
                     SERIES_PATH = str(DOWNLOAD_DIR / 'Serien')
                     changed = True
+                
+                # Neue Content-Type basierte Pfade
+                ANIME_PATH = cfg.get('anime_path', '')
+                if 'anime_path' not in cfg:
+                    cfg['anime_path'] = str(DOWNLOAD_DIR / 'Animes')
+                    ANIME_PATH = str(DOWNLOAD_DIR / 'Animes')
+                    changed = True
+                    
+                SERIEN_PATH = cfg.get('serien_path', '')
+                if 'serien_path' not in cfg:
+                    cfg['serien_path'] = str(DOWNLOAD_DIR / 'Serien')
+                    SERIEN_PATH = str(DOWNLOAD_DIR / 'Serien')
+                    changed = True
+                
+                # Film/Staffel Organisation
+                ANIME_SEPARATE_MOVIES = cfg.get('anime_separate_movies', False)
+                if 'anime_separate_movies' not in cfg:
+                    cfg['anime_separate_movies'] = False
+                    changed = True
+                    
+                SERIEN_SEPARATE_MOVIES = cfg.get('serien_separate_movies', False)
+                if 'serien_separate_movies' not in cfg:
+                    cfg['serien_separate_movies'] = False
+                    changed = True
                 # port (only from config; keep default if invalid)
                 try:
                     port_val = cfg.get('port', SERVER_PORT)
@@ -219,6 +249,10 @@ def save_config():
             'storage_mode': STORAGE_MODE,
             'movies_path': MOVIES_PATH,
             'series_path': SERIES_PATH,
+            'anime_path': ANIME_PATH,
+            'serien_path': SERIEN_PATH,
+            'anime_separate_movies': ANIME_SEPARATE_MOVIES,
+            'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
             'refresh_titles': REFRESH_TITLES,
@@ -2037,7 +2071,7 @@ def api_health():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, data_folder
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, data_folder
     if request.method == 'GET':
         try:
             # Reload to reflect persisted file state
@@ -2049,6 +2083,10 @@ def api_config():
                 'storage_mode': STORAGE_MODE,
                 'movies_path': MOVIES_PATH,
                 'series_path': SERIES_PATH,
+                'anime_path': ANIME_PATH,
+                'serien_path': SERIEN_PATH,
+                'anime_separate_movies': ANIME_SEPARATE_MOVIES,
+                'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
                 'refresh_titles': REFRESH_TITLES,
@@ -2067,6 +2105,10 @@ def api_config():
     storage_mode = data.get('storage_mode')
     movies_path = data.get('movies_path')
     series_path = data.get('series_path')
+    anime_path = data.get('anime_path')
+    serien_path = data.get('serien_path')
+    anime_separate_movies = data.get('anime_separate_movies')
+    serien_separate_movies = data.get('serien_separate_movies')
     refresh_titles_val = data.get('refresh_titles')
     new_data_folder = data.get('data_folder_path')
     # Support both 'autostart_mode' and 'autostart' as input
@@ -2125,6 +2167,26 @@ def api_config():
         if series_path is not None:
             SERIES_PATH = series_path.strip()
             changed = True
+        
+        # Anime Path
+        if anime_path is not None:
+            ANIME_PATH = anime_path.strip()
+            changed = True
+        
+        # Serien Path
+        if serien_path is not None:
+            SERIEN_PATH = serien_path.strip()
+            changed = True
+        
+        # Anime Separate Movies
+        if anime_separate_movies is not None:
+            ANIME_SEPARATE_MOVIES = bool(anime_separate_movies)
+            changed = True
+        
+        # Serien Separate Movies
+        if serien_separate_movies is not None:
+            SERIEN_SEPARATE_MOVIES = bool(serien_separate_movies)
+            changed = True
             
         if autostart_key_present:
             allowed = {'default', 'german', 'new', 'check-missing'}
@@ -2159,7 +2221,7 @@ def api_config():
                 load_config()
             except Exception as _e:
                 log(f"[CONFIG-ERROR] reload after save: {_e}")
-            log(f"[CONFIG] POST saved: autostart_mode={AUTOSTART_MODE}")
+            log(f"[CONFIG] POST saved: storage_mode={STORAGE_MODE}, anime_path={ANIME_PATH}, serien_path={SERIEN_PATH}, anime_separate_movies={ANIME_SEPARATE_MOVIES}, serien_separate_movies={SERIEN_SEPARATE_MOVIES}")
             return jsonify({'status': 'ok' if save_ok else 'failed', 'config': {
                 'languages': LANGUAGES,
                 'min_free_gb': MIN_FREE_GB,
@@ -2167,6 +2229,10 @@ def api_config():
                 'storage_mode': STORAGE_MODE,
                 'movies_path': MOVIES_PATH,
                 'series_path': SERIES_PATH,
+                'anime_path': ANIME_PATH,
+                'serien_path': SERIEN_PATH,
+                'anime_separate_movies': ANIME_SEPARATE_MOVIES,
+                'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
                 'refresh_titles': REFRESH_TITLES,
@@ -2179,6 +2245,10 @@ def api_config():
             'storage_mode': STORAGE_MODE,
             'movies_path': MOVIES_PATH,
             'series_path': SERIES_PATH,
+            'anime_path': ANIME_PATH,
+            'serien_path': SERIEN_PATH,
+            'anime_separate_movies': ANIME_SEPARATE_MOVIES,
+            'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
             'refresh_titles': REFRESH_TITLES,

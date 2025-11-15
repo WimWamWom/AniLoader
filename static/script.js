@@ -248,8 +248,14 @@ const chooseDownloadPathBtn = document.getElementById('choose-download-path');
 const storageModeSelect = document.getElementById('storage-mode');
 const moviesPathInput = document.getElementById('movies-path');
 const seriesPathInput = document.getElementById('series-path');
+const animePathInput = document.getElementById('anime-path');
+const serienPathInput = document.getElementById('serien-path');
+const animeSeparateMoviesChk = document.getElementById('anime-separate-movies');
+const serienSeparateMoviesChk = document.getElementById('serien-separate-movies');
 const chooseMoviesPathBtn = document.getElementById('choose-movies-path');
 const chooseSeriesPathBtn = document.getElementById('choose-series-path');
+const chooseAnimePathBtn = document.getElementById('choose-anime-path');
+const chooseSerienPathBtn = document.getElementById('choose-serien-path');
 const dataFolderPathInput = document.getElementById('data-folder-path');
 const chooseDataFolderBtn = document.getElementById('choose-data-folder');
 const standardPathContainer = document.getElementById('standard-path-container');
@@ -284,6 +290,10 @@ async function fetchConfig() {
     if (storageModeSelect) storageModeSelect.value = cfg.storage_mode || 'standard';
     if (moviesPathInput) moviesPathInput.value = cfg.movies_path || '';
     if (seriesPathInput) seriesPathInput.value = cfg.series_path || '';
+    if (animePathInput) animePathInput.value = cfg.anime_path || '';
+    if (serienPathInput) serienPathInput.value = cfg.serien_path || '';
+    if (animeSeparateMoviesChk) animeSeparateMoviesChk.checked = !!cfg.anime_separate_movies;
+    if (serienSeparateMoviesChk) serienSeparateMoviesChk.checked = !!cfg.serien_separate_movies;
     if (dataFolderPathInput) dataFolderPathInput.value = cfg.data_folder_path || '';
     if (refreshTitlesChk) refreshTitlesChk.checked = !!cfg.refresh_titles;
     updateStorageModeVisibility();
@@ -370,6 +380,10 @@ async function saveConfig() {
   const storage_mode = storageModeSelect ? storageModeSelect.value : 'standard';
   const movies_path = moviesPathInput ? moviesPathInput.value.trim() : '';
   const series_path = seriesPathInput ? seriesPathInput.value.trim() : '';
+  const anime_path = animePathInput ? animePathInput.value.trim() : '';
+  const serien_path = serienPathInput ? serienPathInput.value.trim() : '';
+  const anime_separate_movies = animeSeparateMoviesChk ? animeSeparateMoviesChk.checked : false;
+  const serien_separate_movies = serienSeparateMoviesChk ? serienSeparateMoviesChk.checked : false;
   const data_folder_path = dataFolderPathInput ? dataFolderPathInput.value.trim() : '';
   
   try {
@@ -379,7 +393,11 @@ async function saveConfig() {
       autostart_mode,
       storage_mode,
       movies_path,
-      series_path
+      series_path,
+      anime_path,
+      serien_path,
+      anime_separate_movies,
+      serien_separate_movies
     };
     if (download_path) payload.download_path = download_path;
     if (data_folder_path) payload.data_folder_path = data_folder_path;
@@ -464,6 +482,48 @@ chooseSeriesPathBtn?.addEventListener('click', async () => {
     alert('Ordnerauswahl fehlgeschlagen.');
   } finally {
     chooseSeriesPathBtn.disabled = false;
+  }
+});
+
+chooseAnimePathBtn?.addEventListener('click', async () => {
+  if (!chooseAnimePathBtn) return;
+  chooseAnimePathBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (animePathInput) animePathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseAnimePathBtn.disabled = false;
+  }
+});
+
+chooseSerienPathBtn?.addEventListener('click', async () => {
+  if (!chooseSerienPathBtn) return;
+  chooseSerienPathBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (serienPathInput) serienPathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseSerienPathBtn.disabled = false;
   }
 });
 
@@ -763,9 +823,9 @@ fetchStatus();
 fetchLogs();
 fetchDisk();
 fetchQueue();
-// Staggered polling: each runs every 60s, with 5s offsets between starts
-const INTERVAL_MS = 60000;
-const STAGGER_MS = 5000; // 5 seconds
+// Staggered polling: each runs regularly with offsets between starts
+const INTERVAL_MS = 5000; // 5 Sekunden (war vorher 60s)
+const STAGGER_MS = 1000; // 1 Sekunde zwischen den verschiedenen Abfragen
 function scheduleStaggered(fn, offsetMs) {
   setTimeout(() => {
     try { fn(); } catch(e) { console.error(e); }

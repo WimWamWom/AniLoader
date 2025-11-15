@@ -192,9 +192,9 @@
                 <label class="form-label small">Speichermodus</label>
                 <select id="storage-mode" class="form-select">
                   <option value="standard">Standard (ein gemeinsamer Ordner)</option>
-                  <option value="separate">Separat (getrennte Ordner für Filme und Serien)</option>
+                  <option value="separate">Separat (getrennte Ordner für Animes und Serien)</option>
                 </select>
-                <div class="form-text">Wähle, ob Filme und Serien im gleichen oder in getrennten Ordnern gespeichert werden sollen.</div>
+                <div class="form-text">Wähle, ob Animes und Serien im gleichen oder in getrennten Ordnern gespeichert werden sollen.</div>
               </div>
               
               <!-- Standard Download Path (nur bei standard mode sichtbar) -->
@@ -210,21 +210,37 @@
               <!-- Separate Paths (nur bei separate mode sichtbar) -->
               <div id="separate-paths-container" style="display: none;">
                 <div class="mb-3">
-                  <label for="movies-path" class="form-label small">Filme-Speicherort</label>
+                  <label for="anime-path" class="form-label small">Anime-Speicherort</label>
                   <div class="input-group">
-                    <input id="movies-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Filme" />
-                    <button id="choose-movies-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
+                    <input id="anime-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Animes" />
+                    <button id="choose-anime-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
                   </div>
-                  <div class="form-text">Speicherort für alle Filme.</div>
+                  <div class="form-text">Speicherort für alle Animes (aniworld.to).</div>
                 </div>
                 
                 <div class="mb-3">
-                  <label for="series-path" class="form-label small">Serien-Speicherort</label>
+                  <label for="serien-path" class="form-label small">Serien-Speicherort</label>
                   <div class="input-group">
-                    <input id="series-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Serien" />
-                    <button id="choose-series-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
+                    <input id="serien-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Serien" />
+                    <button id="choose-serien-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
                   </div>
-                  <div class="form-text">Speicherort für alle Serien.</div>
+                  <div class="form-text">Speicherort für alle Serien (s.to).</div>
+                </div>
+                
+                <div class="mb-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="anime-separate-movies">
+                    <label class="form-check-label small" for="anime-separate-movies">Anime-Filme separat speichern</label>
+                  </div>
+                  <div class="form-text">Wenn aktiviert: Filme in eigenem Unterordner "Filme" getrennt von Staffeln.</div>
+                </div>
+                
+                <div class="mb-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="serien-separate-movies">
+                    <label class="form-check-label small" for="serien-separate-movies">Serien-Filme separat speichern</label>
+                  </div>
+                  <div class="form-text">Wenn aktiviert: Filme in eigenem Unterordner "Filme" getrennt von Staffeln.</div>
                 </div>
               </div>
 

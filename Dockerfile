@@ -53,7 +53,7 @@ COPY templates/ ./templates/
 RUN mkdir -p /app/data /app/Downloads
 
 # Erstelle initiale config.json Template
-RUN echo '{"languages": ["German Dub", "German Sub", "English Dub", "English Sub"], "min_free_gb": 2.0, "download_path": "", "autostart_mode": null, "refresh_titles": true, "storage_mode": "standard", "movies_path": "", "series_path": "", "data_folder_path": "", "server_port": 5000}' > /app/data/config.json.default
+RUN echo '{"languages": ["German Dub", "German Sub", "English Dub", "English Sub"], "min_free_gb": 2.0, "download_path": "", "autostart_mode": null, "refresh_titles": true, "storage_mode": "standard", "movies_path": "", "series_path": "", "anime_path": "/app/Downloads/Animes", "serien_path": "/app/Downloads/Serien", "anime_separate_movies": false, "serien_separate_movies": false, "data_folder_path": "", "server_port": 5000}' > /app/data/config.json.default
 
 # Port freigeben (Standard: 5000, kann via config.json geändert werden)
 EXPOSE 5000

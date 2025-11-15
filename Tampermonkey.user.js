@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
 // @namespace    AniLoader
-// @version      1.3
+// @version      1.4
 // @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
 // @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
@@ -15,16 +15,18 @@
 (function() {
     'use strict';
 
-    // 🌐 === SERVER IP / DOMAIN ===
-    const SERVER_IP = "localhost"; 
+    // 🌐 === SERVER KONFIGURATION ===
+    // Passe diese Werte an deine Umgebung an:
+    const SERVER_IP = "localhost";  // Bei Unraid: IP deines Servers, z.B. "192.168.1.100"
+    const SERVER_PORT = 5000;        // Standard-Port (kann in config.json geändert werden)
 
     async function apiGet(path) {
-        const res = await fetch(`http://${SERVER_IP}:5050${path}`);
+        const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`);
         if (!res.ok) throw new Error('API ' + res.status);
         return res.json();
     }
     async function apiPost(path, body) {
-        const res = await fetch(`http://${SERVER_IP}:5050${path}`, {
+        const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`, {
             method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body||{})
         });
         if (!res.ok) throw new Error('API ' + res.status);
@@ -170,7 +172,7 @@
     // Server-Check und UI-Umschaltung
     async function isServerOnline() {
         try {
-            const res = await fetch(`http://${SERVER_IP}:5050/health`, { cache: 'no-store' });
+            const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}/status`, { cache: 'no-store' });
             return res && res.ok;
         } catch (e) {
             return false;
