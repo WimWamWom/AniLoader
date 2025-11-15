@@ -17,7 +17,7 @@
 
     // 🌐 === SERVER KONFIGURATION ===
     // Passe diese Werte an deine Umgebung an:
-    const SERVER_IP = "localhost";
+    const SERVER_IP = "10.10.10.10";
     const SERVER_PORT = 5050;       
 
     async function apiGet(path) {
