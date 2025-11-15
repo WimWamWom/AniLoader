@@ -352,7 +352,8 @@ def _write_config_atomic(cfg: dict) -> bool:
 
 # -------------------- Flask app --------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
-CORS(app)
+# CORS für Tampermonkey-Skript von HTTPS-Seiten (aniworld.to, s.to)
+CORS(app, resources={r"/*": {"origins": "*", "allow_headers": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]}})
 
 # -------------------- DB-Funktionen --------------------
 def init_db():

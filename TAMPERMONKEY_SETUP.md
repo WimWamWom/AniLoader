@@ -93,12 +93,27 @@ const SERVER_PORT = 5050;  // Dein custom Port
 
 ### Problem: CORS-Fehler in Browser-Konsole
 
-**Ursache:** Browser blockiert Cross-Origin-Requests
+**Ursache:** Browser blockiert Cross-Origin-Requests von HTTPS zu HTTP
+
+**Symptome:**
+- Server ist erreichbar (z.B. `http://10.10.10.10:5050/status` funktioniert)
+- Aber Tampermonkey zeigt "⛔ Server offline"
+- Browser-Konsole (F12) zeigt CORS-Fehler:
+  ```
+  Access to fetch at 'http://10.10.10.10:5050/status' from origin 'https://aniworld.to' 
+  has been blocked by CORS policy
+  ```
 
 **Lösung:**
-- AniLoader hat bereits CORS aktiviert
-- Prüfe ob du HTTPS nutzt (sollte HTTP sein)
-- Stelle sicher dass der Server erreichbar ist
+- ✅ **Seit Version 1.5 behoben!** CORS ist jetzt korrekt konfiguriert
+- Falls immer noch Probleme:
+  1. Stelle sicher du nutzt die neueste Version (Skript neu installieren)
+  2. Docker-Container neu starten: `docker restart aniloader`
+  3. Browser-Cache leeren (Strg+F5)
+
+**Alternative für ältere Versionen:**
+- Browser-Extension: "CORS Unblock" installieren (nicht empfohlen)
+- Oder: AniLoader mit HTTPS-Proxy betreiben (fortgeschritten)
 
 ### Problem: "Mixed Content" Warnung
 

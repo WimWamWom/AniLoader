@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
 // @namespace    AniLoader
-// @version      1.4
+// @version      1.5
 // @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
 // @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
@@ -18,16 +18,23 @@
     // 🌐 === SERVER KONFIGURATION ===
     // Passe diese Werte an deine Umgebung an:
     const SERVER_IP = "localhost";  // Bei Unraid: IP deines Servers, z.B. "192.168.1.100"
-    const SERVER_PORT = 5000;        // Standard-Port (kann in config.json geändert werden)
+    const SERVER_PORT = 5050;        // Standard-Port (kann in config.json geändert werden)
 
     async function apiGet(path) {
-        const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`);
+        const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`, {
+            mode: 'cors',
+            cache: 'no-cache'
+        });
         if (!res.ok) throw new Error('API ' + res.status);
         return res.json();
     }
     async function apiPost(path, body) {
         const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`, {
-            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body||{})
+            method: 'POST', 
+            headers: {'Content-Type':'application/json'},
+            mode: 'cors',
+            cache: 'no-cache',
+            body: JSON.stringify(body||{})
         });
         if (!res.ok) throw new Error('API ' + res.status);
         return res.json();
@@ -172,9 +179,13 @@
     // Server-Check und UI-Umschaltung
     async function isServerOnline() {
         try {
-            const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}/status`, { cache: 'no-store' });
+            const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}/status`, { 
+                mode: 'cors',
+                cache: 'no-store' 
+            });
             return res && res.ok;
         } catch (e) {
+            console.error('Server-Check Fehler:', e);
             return false;
         }
     }
