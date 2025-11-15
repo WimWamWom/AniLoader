@@ -17,8 +17,8 @@
 
     // 🌐 === SERVER KONFIGURATION ===
     // Passe diese Werte an deine Umgebung an:
-    const SERVER_IP = "localhost";  // Bei Unraid: IP deines Servers, z.B. "192.168.1.100"
-    const SERVER_PORT = 5050;        // Standard-Port (kann in config.json geändert werden)
+    const SERVER_IP = "localhost";
+    const SERVER_PORT = 5050;       
 
     async function apiGet(path) {
         const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`, {
