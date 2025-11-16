@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
 // @namespace    AniLoader
-// @version      1.5
+// @version      1.6
 // @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
 // @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
@@ -21,19 +21,32 @@
     const SERVER_PORT = 5050;       
 
     async function apiGet(path) {
-        const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`, {
+        const separator = path.includes('?') ? '&' : '?';
+        const url = `http://${SERVER_IP}:${SERVER_PORT}${path}${separator}_t=${Date.now()}`;
+        console.log('[AniLoader] GET:', url);
+        const res = await fetch(url, {
             mode: 'cors',
-            cache: 'no-cache'
+            cache: 'no-store',
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            }
         });
         if (!res.ok) throw new Error('API ' + res.status);
         return res.json();
     }
     async function apiPost(path, body) {
-        const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}${path}`, {
+        const url = `http://${SERVER_IP}:${SERVER_PORT}${path}`;
+        console.log('[AniLoader] POST:', url, body);
+        const res = await fetch(url, {
             method: 'POST', 
-            headers: {'Content-Type':'application/json'},
+            headers: {
+                'Content-Type':'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            },
             mode: 'cors',
-            cache: 'no-cache',
+            cache: 'no-store',
             body: JSON.stringify(body||{})
         });
         if (!res.ok) throw new Error('API ' + res.status);
@@ -179,13 +192,24 @@
     // Server-Check und UI-Umschaltung
     async function isServerOnline() {
         try {
-            const res = await fetch(`http://${SERVER_IP}:${SERVER_PORT}/status`, { 
+            const url = `http://${SERVER_IP}:${SERVER_PORT}/status?_t=${Date.now()}`;
+            console.log('[AniLoader] Checking server:', url);
+            const res = await fetch(url, { 
                 mode: 'cors',
-                cache: 'no-store' 
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache'
+                }
             });
+            console.log('[AniLoader] Server response:', res.ok, res.status);
+            if (res.ok) {
+                const data = await res.json();
+                console.log('[AniLoader] Server data:', data);
+            }
             return res && res.ok;
         } catch (e) {
-            console.error('Server-Check Fehler:', e);
+            console.error('[AniLoader] Server-Check Fehler:', e);
             return false;
         }
     }
@@ -195,6 +219,7 @@
 
     async function renderByServerState() {
         const isOnline = await isServerOnline();
+        console.log('[AniLoader] Server online:', isOnline, '| Previous state:', onlineState);
         if (isOnline === onlineState) return; // no change
         onlineState = isOnline;
         // clear wrapper
@@ -202,11 +227,13 @@
         if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
 
         if (isOnline) {
+            console.log('[AniLoader] ✅ Server ONLINE - Zeige Download-Button');
             // show button and start periodic refresh
             buttonWrapper.appendChild(exportButton);
             await refreshButton();
             refreshTimer = setInterval(refreshButton, 15000);
         } else {
+            console.log('[AniLoader] ❌ Server OFFLINE - Zeige Offline-Hinweis');
             // show offline info
             buttonWrapper.appendChild(offlineInfo);
         }
@@ -215,10 +242,15 @@
     // mount wrapper next to stream container and start polling server state
     streamContainer.insertAdjacentElement("afterend", buttonWrapper);
 
+    console.log('[AniLoader] 🚀 Skript gestartet');
+    console.log('[AniLoader] Server:', `http://${SERVER_IP}:${SERVER_PORT}`);
+    console.log('[AniLoader] URL:', getAnimeBaseUrl());
+
     // Show offline placeholder immediately (do not wait for /health)
     buttonWrapper.appendChild(offlineInfo);
 
     // Then check server status and update UI accordingly
+    console.log('[AniLoader] Starte Server-Check...');
     renderByServerState();
     setInterval(renderByServerState, 10000);
 })();

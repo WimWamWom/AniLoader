@@ -922,14 +922,35 @@ class DnsOverride:
                 pass
         return False
 
-def get_base_path_for_content(is_film=False):
+def get_base_path_for_content(content_type='anime', is_film=False):
     """
-    Gibt den Basis-Pfad für Downloads zurück, basierend auf storage_mode.
-    - 'standard': Verwendet DOWNLOAD_DIR für alles
-    - 'separate': Verwendet MOVIES_PATH für Filme, SERIES_PATH für Serien
+    Gibt den Basis-Pfad für Downloads zurück, basierend auf storage_mode, content_type und is_film.
+    
+    Args:
+        content_type: 'anime' für aniworld.to, 'serie' für s.to
+        is_film: True wenn es sich um einen Film handelt (Season 0)
+    
+    Returns:
+        Path object für den Download-Pfad
     """
     if STORAGE_MODE == 'separate':
-        if is_film and MOVIES_PATH:
+        # Content-Type basierte Pfade
+        if content_type == 'anime' and ANIME_PATH:
+            base_path = Path(ANIME_PATH)
+            # Wenn Film-Separation aktiviert ist
+            if is_film and ANIME_SEPARATE_MOVIES:
+                base_path = base_path / 'Filme'
+            base_path.mkdir(parents=True, exist_ok=True)
+            return base_path
+        elif content_type == 'serie' and SERIEN_PATH:
+            base_path = Path(SERIEN_PATH)
+            # Wenn Film-Separation aktiviert ist
+            if is_film and SERIEN_SEPARATE_MOVIES:
+                base_path = base_path / 'Filme'
+            base_path.mkdir(parents=True, exist_ok=True)
+            return base_path
+        # Fallback zu alten MOVIES_PATH/SERIES_PATH (deprecated, für Kompatibilität)
+        elif is_film and MOVIES_PATH:
             path = Path(MOVIES_PATH)
             path.mkdir(parents=True, exist_ok=True)
             return path
@@ -1048,9 +1069,18 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     except Exception:
         pass
     
+    # Bestimme Content-Type anhand der URL (anime vs serie)
+    content_type = 'anime'  # Default
+    try:
+        hostname = urlparse(episode_url).hostname
+        if hostname and 's.to' in hostname.lower():
+            content_type = 'serie'
+    except Exception:
+        pass
+    
     # Bestimme den richtigen Basis-Pfad basierend auf Inhalt (Film vs. Serie)
     is_film = (season == 0)
-    base_path = get_base_path_for_content(is_film)
+    base_path = get_base_path_for_content(content_type, is_film)
     
     # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
     try:
@@ -1197,7 +1227,7 @@ def deleted_check():
     Prüft, welche Animes in der DB als complete markiert sind,
     aber nicht mehr im Downloads-Ordner existieren.
     Setzt diese Animes anschließend auf Initialwerte zurück und markiert deleted = 1.
-    Berücksichtigt beide Pfade wenn separate Mode aktiv ist.
+    Berücksichtigt alle konfigurierten Pfade (ANIME_PATH, SERIEN_PATH, DOWNLOAD_DIR).
     """
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -1207,30 +1237,44 @@ def deleted_check():
         c.execute("SELECT id, title FROM anime WHERE complete = 1")
         complete_animes_in_db = c.fetchall() # Liste von Tupeln: [(id, title), ...]
 
-        # --- Alle Ordnernamen im Downloads-Verzeichnis lesen (erste Ebene) ---
+        # --- Alle Ordnernamen aus allen relevanten Pfaden sammeln ---
         local_animes = []
         
-        # Sammle alle lokalen Anime-Ordner aus allen relevanten Pfaden
-        # Standard-Pfad oder Serien-Pfad prüfen
-        if STORAGE_MODE == 'separate' and SERIES_PATH:
-            series_path = Path(SERIES_PATH)
-            if series_path.exists():
-                local_animes.extend([folder.name for folder in series_path.iterdir() if folder.is_dir()])
+        # Alle möglichen Pfade sammeln (ohne Duplikate)
+        paths_to_check = set()
         
-        # Film-Pfad im separate Mode prüfen
-        if STORAGE_MODE == 'separate' and MOVIES_PATH:
-            movies_path = Path(MOVIES_PATH)
-            if movies_path.exists():
-                local_animes.extend([folder.name for folder in movies_path.iterdir() if folder.is_dir()])
+        if STORAGE_MODE == 'separate':
+            # Anime-Pfad (aniworld.to Inhalte)
+            if ANIME_PATH and ANIME_PATH.strip():
+                paths_to_check.add(Path(ANIME_PATH))
+            # Serien-Pfad (s.to Inhalte)
+            if SERIEN_PATH and SERIEN_PATH.strip():
+                paths_to_check.add(Path(SERIEN_PATH))
+            # Legacy: MOVIES_PATH und SERIES_PATH falls noch gesetzt
+            if MOVIES_PATH and MOVIES_PATH.strip():
+                paths_to_check.add(Path(MOVIES_PATH))
+            if SERIES_PATH and SERIES_PATH.strip():
+                paths_to_check.add(Path(SERIES_PATH))
         
-        # Im standard Mode nur DOWNLOAD_DIR prüfen
-        if STORAGE_MODE == 'standard':
-            downloads_path = Path(DOWNLOAD_DIR)
-            if downloads_path.exists():
-                local_animes = [folder.name for folder in downloads_path.iterdir() if folder.is_dir()]
+        # Im standard Mode oder als Fallback: DOWNLOAD_DIR prüfen
+        if STORAGE_MODE == 'standard' or not paths_to_check:
+            paths_to_check.add(Path(DOWNLOAD_DIR))
+        
+        # Alle Ordner aus allen Pfaden sammeln
+        for path in paths_to_check:
+            if path.exists() and path.is_dir():
+                try:
+                    folder_names = [folder.name for folder in path.iterdir() if folder.is_dir()]
+                    local_animes.extend(folder_names)
+                    log(f"[CHECK] Prüfe Pfad: {path} - {len(folder_names)} Ordner gefunden")
+                except Exception as e:
+                    log(f"[CHECK-WARN] Fehler beim Lesen von {path}: {e}")
+        
+        # Duplikate entfernen (falls ein Ordnername in mehreren Pfaden existiert)
+        local_animes = list(set(local_animes))
 
         log(f"[CHECK] Gefundene complete-Animes in DB: {len(complete_animes_in_db)}")
-        log(f"[CHECK] Gefundene lokale Animes: {len(local_animes)}")
+        log(f"[CHECK] Gefundene lokale Animes (gesamt): {len(local_animes)}")
 
         deleted_anime = []
 
@@ -2488,7 +2532,35 @@ def api_counts():
                 'films': 0
             })
 
-        base = Path(DOWNLOAD_DIR) / series_title
+        # Suche in allen möglichen Pfaden
+        possible_paths = []
+        
+        if STORAGE_MODE == 'separate':
+            if ANIME_PATH and ANIME_PATH.strip():
+                possible_paths.append(Path(ANIME_PATH))
+            if SERIEN_PATH and SERIEN_PATH.strip():
+                possible_paths.append(Path(SERIEN_PATH))
+            if MOVIES_PATH and MOVIES_PATH.strip():
+                possible_paths.append(Path(MOVIES_PATH))
+            if SERIES_PATH and SERIES_PATH.strip():
+                possible_paths.append(Path(SERIES_PATH))
+        
+        # Fallback zu DOWNLOAD_DIR
+        if not possible_paths or STORAGE_MODE == 'standard':
+            possible_paths = [Path(DOWNLOAD_DIR)]
+        
+        # Suche nach dem Serien-Ordner in allen möglichen Pfaden
+        base = None
+        for path in possible_paths:
+            candidate = path / series_title
+            if candidate.exists() and candidate.is_dir():
+                base = candidate
+                break
+        
+        # Fallback: Direkt im DOWNLOAD_DIR suchen
+        if not base:
+            base = Path(DOWNLOAD_DIR) / series_title
+        
         per_season = {}
         total_eps = 0
         films = 0
