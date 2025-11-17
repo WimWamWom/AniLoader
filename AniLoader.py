@@ -772,7 +772,8 @@ def get_headers():
 
 def sanitize_title(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*]', '', name)
-    name = re.sub(r'\.', '#', name)
+    # Punkte sind in Windows-Ordnernamen erlaubt und sollten nicht ersetzt werden
+    # name = re.sub(r'\.', '#', name)
     return name
 
 def check_length(dest_folder: Path, base_name: str, title: str, lang_suffix: str, extension: str = ".mp4") -> str:
@@ -809,6 +810,11 @@ def check_length(dest_folder: Path, base_name: str, title: str, lang_suffix: str
 
 def sanitize_episode_title(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*]', '', name)
+    # Entferne "Movie", "[Movie]" oder "The Movie" aus dem Titel
+    name = re.sub(r'\s*\[?The\s+Movie\]?\s*', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'\s*\[?Movie\]?\s*', '', name, flags=re.IGNORECASE)
+    # Entferne doppelte Leerzeichen und trimme
+    name = re.sub(r'\s+', ' ', name).strip()
     return name
 
 def freier_speicher_mb(pfad: str) -> float:
