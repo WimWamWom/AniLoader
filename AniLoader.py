@@ -968,15 +968,30 @@ def get_base_path_for_content(content_type='anime', is_film=False):
     return DOWNLOAD_DIR
 
 def episode_already_downloaded(series_folder, season, episode):
-    if not os.path.exists(series_folder):
-        return False
+    # Prüfe beide Varianten des Ordnernamens (mit . und mit #)
+    folders_to_check = [series_folder]
+    
+    # Wenn der Ordner einen Punkt enthält, prüfe auch die #-Variante
+    if '.' in series_folder:
+        alt_folder = series_folder.replace('.', '#')
+        folders_to_check.append(alt_folder)
+    # Wenn der Ordner eine Raute enthält, prüfe auch die .-Variante
+    elif '#' in series_folder:
+        alt_folder = series_folder.replace('#', '.')
+        folders_to_check.append(alt_folder)
+    
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
     else:
         pattern = f"Film{episode:02d}"
-    for file in Path(series_folder).rglob("*.mp4"):
-        if pattern.lower() in file.name.lower():
-            return True
+    
+    # Prüfe alle Ordner-Varianten
+    for folder in folders_to_check:
+        if not os.path.exists(folder):
+            continue
+        for file in Path(folder).rglob("*.mp4"):
+            if pattern.lower() in file.name.lower():
+                return True
     return False
 
 def delete_old_non_german_versions(series_folder, season, episode):
