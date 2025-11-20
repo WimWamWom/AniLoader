@@ -1428,18 +1428,12 @@ def full_check_anime(series_title, base_url, anime_id):
         elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
             in_dedicated_movies_folder = True
     
-    # Lade aktuelle fehlende_deutsch_folgen aus DB
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
-    row = c.fetchone()
-    conn.close()
-    fehlende_urls = json.loads(row[0]) if row and row[0] else []
-    
     # === 1. FILME PRÜFEN ===
     log(f"[FULL-CHECK] Prüfe Filme für '{series_title}'")
     film_num = 1
     consecutive_missing_films = 0
+    last_found_film = 0  # Track letzten gefundenen Film
+    films_complete = False  # Track ob alle Filme durchgelaufen sind (keine weiteren verfügbar)
     
     while consecutive_missing_films < 3:  # Stoppe nach 3 fehlenden Filmen
         film_url = f"{base_url}/filme/film-{film_num}"
@@ -1447,6 +1441,7 @@ def full_check_anime(series_title, base_url, anime_id):
         # Prüfe ob Film lokal existiert (nutze episode_already_downloaded)
         if episode_already_downloaded(series_folder, 0, film_num, in_dedicated_movies_folder):
             log(f"[FULL-CHECK] Film{film_num:02d} existiert lokal")
+            last_found_film = film_num  # Update last_found_film
             
             # Prüfe ob Film deutsch ist
             is_german = False
@@ -1481,17 +1476,10 @@ def full_check_anime(series_title, base_url, anime_id):
                     log(f"[FULL-CHECK] Film{film_num:02d} erfolgreich auf deutsch geladen")
                     # Lösche nicht-deutsche Version
                     delete_old_non_german_versions(series_folder, 0, film_num, in_dedicated_movies_folder)
-                    # Entferne aus fehlende_deutsch_folgen falls vorhanden
-                    fehlende_urls = [url for url in fehlende_urls if f"/film-{film_num}" not in url]
                 elif result == "LANGUAGE_ERROR":
-                    log(f"[FULL-CHECK] Film{film_num:02d} nicht auf deutsch verfügbar")
-                    # Füge zu fehlende_deutsch_folgen hinzu wenn nicht schon vorhanden
-                    if film_url not in fehlende_urls:
-                        fehlende_urls.append(film_url)
+                    log(f"[FULL-CHECK] Film{film_num:02d} nicht auf deutsch verfügbar - wird von download_episode zur DB hinzugefügt")
             elif is_german:
                 log(f"[FULL-CHECK] Film{film_num:02d} ist bereits deutsch")
-                # Entferne aus fehlende_deutsch_folgen falls vorhanden
-                fehlende_urls = [url for url in fehlende_urls if f"/film-{film_num}" not in url]
             
             consecutive_missing_films = 0
         else:
@@ -1507,6 +1495,7 @@ def full_check_anime(series_title, base_url, anime_id):
                 consecutive_missing_films += 1
             elif result == "OK":
                 log(f"[FULL-CHECK] Film{film_num:02d} erfolgreich geladen")
+                last_found_film = film_num  # Update last_found_film
                 consecutive_missing_films = 0
             else:
                 consecutive_missing_films += 1
@@ -1514,12 +1503,19 @@ def full_check_anime(series_title, base_url, anime_id):
         film_num += 1
         time.sleep(0.5)
     
-    log(f"[FULL-CHECK] Film-Prüfung abgeschlossen bei Film{film_num-1}")
+    # Wenn wir hier ankommen, wurden 3 aufeinanderfolgende Filme nicht gefunden
+    if consecutive_missing_films >= 3:
+        films_complete = True
+    
+    log(f"[FULL-CHECK] Film-Prüfung abgeschlossen bei Film{film_num-1}, films_complete={films_complete}")
     
     # === 2. STAFFELN PRÜFEN ===
     log(f"[FULL-CHECK] Prüfe Staffeln für '{series_title}'")
     season = 1
     consecutive_empty_seasons = 0
+    last_found_season = 0  # Track letzte gefundene Staffel
+    last_found_episode = 0  # Track letzte gefundene Episode
+    seasons_complete = False  # Track ob alle Staffeln durchgelaufen sind (keine weiteren verfügbar)
     
     while consecutive_empty_seasons < 2:  # Stoppe nach 2 leeren Staffeln
         episode = 1
@@ -1535,6 +1531,8 @@ def full_check_anime(series_title, base_url, anime_id):
             if episode_already_downloaded(series_folder, season, episode, False):
                 log(f"[FULL-CHECK] S{season:02d}E{episode:03d} existiert lokal")
                 found_episode_in_season = True
+                last_found_season = season  # Update last_found_season
+                last_found_episode = episode  # Update last_found_episode
                 
                 # Prüfe ob Episode deutsch ist
                 is_german = False
@@ -1562,17 +1560,10 @@ def full_check_anime(series_title, base_url, anime_id):
                         log(f"[FULL-CHECK] S{season:02d}E{episode:03d} erfolgreich auf deutsch geladen")
                         # Lösche nicht-deutsche Version
                         delete_old_non_german_versions(series_folder, season, episode, False)
-                        # Entferne aus fehlende_deutsch_folgen falls vorhanden
-                        fehlende_urls = [url for url in fehlende_urls if f"/staffel-{season}/episode-{episode}" not in url]
                     elif result == "LANGUAGE_ERROR":
-                        log(f"[FULL-CHECK] S{season:02d}E{episode:03d} nicht auf deutsch verfügbar")
-                        # Füge zu fehlende_deutsch_folgen hinzu wenn nicht schon vorhanden
-                        if episode_url not in fehlende_urls:
-                            fehlende_urls.append(episode_url)
+                        log(f"[FULL-CHECK] S{season:02d}E{episode:03d} nicht auf deutsch verfügbar - wird von download_episode zur DB hinzugefügt")
                 elif is_german:
                     log(f"[FULL-CHECK] S{season:02d}E{episode:03d} ist bereits deutsch")
-                    # Entferne aus fehlende_deutsch_folgen falls vorhanden
-                    fehlende_urls = [url for url in fehlende_urls if f"/staffel-{season}/episode-{episode}" not in url]
                 
                 consecutive_missing_episodes = 0
             else:
@@ -1589,6 +1580,8 @@ def full_check_anime(series_title, base_url, anime_id):
                 elif result == "OK":
                     log(f"[FULL-CHECK] S{season:02d}E{episode:03d} erfolgreich geladen")
                     found_episode_in_season = True
+                    last_found_season = season  # Update last_found_season
+                    last_found_episode = episode  # Update last_found_episode
                     consecutive_missing_episodes = 0
                 else:
                     consecutive_missing_episodes += 1
@@ -1605,14 +1598,81 @@ def full_check_anime(series_title, base_url, anime_id):
         
         season += 1
     
-    log(f"[FULL-CHECK] Staffel-Prüfung abgeschlossen bei Staffel {season-1}")
+    # Wenn wir hier ankommen, wurden 2 aufeinanderfolgende leere Staffeln gefunden
+    if consecutive_empty_seasons >= 2:
+        seasons_complete = True
+    
+    log(f"[FULL-CHECK] Staffel-Prüfung abgeschlossen bei Staffel {season-1}, seasons_complete={seasons_complete}")
     
     # === 3. DATENBANK AKTUALISIEREN ===
-    update_anime(anime_id, fehlende_deutsch_folgen=fehlende_urls)
-    log(f"[FULL-CHECK] Datenbank aktualisiert: {len(fehlende_urls)} fehlende deutsche Folgen")
+    # Lade aktuelle fehlende_deutsch_folgen aus DB (wurde während des Checks durch download_episode aktualisiert)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
+    row = c.fetchone()
+    conn.close()
+    final_fehlende_urls = json.loads(row[0]) if row and row[0] else []
+    
+    log(f"[FULL-CHECK] Aktuelle fehlende deutsche Folgen in DB: {len(final_fehlende_urls)}")
+    
+    # Aktualisiere last_film, last_season, last_episode
+    if last_found_film > 0:
+        update_anime(anime_id, last_film=last_found_film)
+        log(f"[FULL-CHECK] last_film aktualisiert: {last_found_film}")
+    
+    if last_found_season > 0 and last_found_episode > 0:
+        update_anime(anime_id, last_season=last_found_season, last_episode=last_found_episode)
+        log(f"[FULL-CHECK] last_season={last_found_season}, last_episode={last_found_episode} aktualisiert")
     
     # Prüfe ob jetzt komplett deutsch
-    check_deutsch_komplett(anime_id)
+    if len(final_fehlende_urls) == 0:
+        update_anime(anime_id, deutsch_komplett=1)
+        log(f"[FULL-CHECK] '{series_title}' ist komplett auf Deutsch - deutsch_komplett=1 gesetzt")
+    else:
+        update_anime(anime_id, deutsch_komplett=0)
+        log(f"[FULL-CHECK] '{series_title}' hat noch {len(final_fehlende_urls)} fehlende deutsche Folgen - deutsch_komplett=0")
+    
+    # Prüfe ob complete gesetzt werden soll:
+    # 1. Es müssen lokale Inhalte vorhanden sein
+    # 2. Es dürfen keine weiteren Downloads verfügbar sein
+    has_content = False
+    if os.path.exists(series_folder):
+        # Zähle mp4 Dateien im Ordner
+        mp4_files = list(Path(series_folder).rglob("*.mp4"))
+        if len(mp4_files) > 0:
+            has_content = True
+            log(f"[FULL-CHECK] '{series_title}' hat {len(mp4_files)} Dateien im series_folder")
+    
+    # Auch in dedizierten Film-Ordnern prüfen
+    if not has_content and in_dedicated_movies_folder:
+        if STORAGE_MODE == 'separate':
+            if content_type == 'anime' and ANIME_MOVIES_PATH:
+                movie_base = Path(ANIME_MOVIES_PATH)
+            elif content_type == 'anime' and ANIME_PATH:
+                movie_base = Path(ANIME_PATH) / 'Filme'
+            elif content_type == 'serie' and SERIEN_MOVIES_PATH:
+                movie_base = Path(SERIEN_MOVIES_PATH)
+            elif content_type == 'serie' and SERIEN_PATH:
+                movie_base = Path(SERIEN_PATH) / 'Filme'
+            else:
+                movie_base = None
+            
+            if movie_base and movie_base.exists():
+                mp4_files = list(movie_base.rglob("*.mp4"))
+                if len(mp4_files) > 0:
+                    has_content = True
+                    log(f"[FULL-CHECK] '{series_title}' hat {len(mp4_files)} Filme in dediziertem Ordner")
+    
+    # Setze complete nur wenn Inhalte vorhanden UND keine weiteren Downloads verfügbar
+    is_complete = has_content and films_complete and seasons_complete
+    
+    if is_complete:
+        update_anime(anime_id, complete=1)
+        log(f"[FULL-CHECK] '{series_title}' markiert als complete=1 (Inhalte vorhanden, keine weiteren Downloads)")
+    elif has_content:
+        log(f"[FULL-CHECK] '{series_title}' hat Inhalte, aber es könnten noch weitere Downloads verfügbar sein - complete bleibt unverändert")
+    else:
+        log(f"[FULL-CHECK] '{series_title}' hat keine Inhalte - complete bleibt unverändert")
     
     log(f"[FULL-CHECK] Vollständige Prüfung für '{series_title}' abgeschlossen")
     return "OK"
