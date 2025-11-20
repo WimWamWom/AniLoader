@@ -245,39 +245,75 @@ const minFreeInput = document.getElementById('min-free');
 const autostartSelect = document.getElementById('autostart-mode');
 const downloadPathInput = document.getElementById('download-path');
 const chooseDownloadPathBtn = document.getElementById('choose-download-path');
-const storageModeSelect = document.getElementById('storage-mode');
+const storageModeStandard = document.getElementById('storage-mode-standard');
+const storageModeSeparate = document.getElementById('storage-mode-separate');
 const moviesPathInput = document.getElementById('movies-path');
 const seriesPathInput = document.getElementById('series-path');
 const animePathInput = document.getElementById('anime-path');
 const serienPathInput = document.getElementById('serien-path');
 const animeSeparateMoviesChk = document.getElementById('anime-separate-movies');
 const serienSeparateMoviesChk = document.getElementById('serien-separate-movies');
+const animeMoviesPathInput = document.getElementById('anime-movies-path');
+const serienMoviesPathInput = document.getElementById('serien-movies-path');
 const chooseMoviesPathBtn = document.getElementById('choose-movies-path');
 const chooseSeriesPathBtn = document.getElementById('choose-series-path');
 const chooseAnimePathBtn = document.getElementById('choose-anime-path');
 const chooseSerienPathBtn = document.getElementById('choose-serien-path');
+const chooseAnimeMoviesPathBtn = document.getElementById('choose-anime-movies-path');
+const chooseSerienMoviesPathBtn = document.getElementById('choose-serien-movies-path');
 const dataFolderPathInput = document.getElementById('data-folder-path');
 const chooseDataFolderBtn = document.getElementById('choose-data-folder');
 const standardPathContainer = document.getElementById('standard-path-container');
 const separatePathsContainer = document.getElementById('separate-paths-container');
+const animeMoviesPathContainer = document.getElementById('anime-movies-path-container');
+const serienMoviesPathContainer = document.getElementById('serien-movies-path-container');
 const saveConfigBtn = document.getElementById('save-config');
 const resetConfigBtn = document.getElementById('reset-config');
 const refreshTitlesChk = document.getElementById('refresh-titles');
 
 // Toggle path containers based on storage mode
 function updateStorageModeVisibility() {
-  const mode = storageModeSelect ? storageModeSelect.value : 'standard';
+  const mode = storageModeStandard?.checked ? 'standard' : 'separate';
   if (standardPathContainer) {
     standardPathContainer.style.display = (mode === 'standard') ? 'block' : 'none';
   }
   if (separatePathsContainer) {
     separatePathsContainer.style.display = (mode === 'separate') ? 'block' : 'none';
   }
+  // Update movie path visibility based on checkboxes
+  updateMoviePathVisibility();
+}
+
+// Toggle movie path containers based on separate movie checkboxes
+function updateMoviePathVisibility() {
+  const mode = storageModeStandard?.checked ? 'standard' : 'separate';
+  if (mode === 'separate') {
+    if (animeMoviesPathContainer) {
+      animeMoviesPathContainer.style.display = animeSeparateMoviesChk?.checked ? 'block' : 'none';
+    }
+    if (serienMoviesPathContainer) {
+      serienMoviesPathContainer.style.display = serienSeparateMoviesChk?.checked ? 'block' : 'none';
+    }
+  } else {
+    if (animeMoviesPathContainer) animeMoviesPathContainer.style.display = 'none';
+    if (serienMoviesPathContainer) serienMoviesPathContainer.style.display = 'none';
+  }
 }
 
 // Listen for storage mode changes
-if (storageModeSelect) {
-  storageModeSelect.addEventListener('change', updateStorageModeVisibility);
+if (storageModeStandard) {
+  storageModeStandard.addEventListener('change', updateStorageModeVisibility);
+}
+if (storageModeSeparate) {
+  storageModeSeparate.addEventListener('change', updateStorageModeVisibility);
+}
+
+// Listen for separate movies checkbox changes
+if (animeSeparateMoviesChk) {
+  animeSeparateMoviesChk.addEventListener('change', updateMoviePathVisibility);
+}
+if (serienSeparateMoviesChk) {
+  serienSeparateMoviesChk.addEventListener('change', updateMoviePathVisibility);
 }
 
 async function fetchConfig() {
@@ -287,13 +323,17 @@ async function fetchConfig() {
     minFreeInput.value = cfg.min_free_gb ?? '';
     if (autostartSelect) autostartSelect.value = (cfg.autostart_mode ?? '') || '';
     if (downloadPathInput) downloadPathInput.value = cfg.download_path || '';
-    if (storageModeSelect) storageModeSelect.value = cfg.storage_mode || 'standard';
+    const storageMode = cfg.storage_mode || 'standard';
+    if (storageModeStandard) storageModeStandard.checked = (storageMode === 'standard');
+    if (storageModeSeparate) storageModeSeparate.checked = (storageMode === 'separate');
     if (moviesPathInput) moviesPathInput.value = cfg.movies_path || '';
     if (seriesPathInput) seriesPathInput.value = cfg.series_path || '';
     if (animePathInput) animePathInput.value = cfg.anime_path || '';
     if (serienPathInput) serienPathInput.value = cfg.serien_path || '';
     if (animeSeparateMoviesChk) animeSeparateMoviesChk.checked = !!cfg.anime_separate_movies;
     if (serienSeparateMoviesChk) serienSeparateMoviesChk.checked = !!cfg.serien_separate_movies;
+    if (animeMoviesPathInput) animeMoviesPathInput.value = cfg.anime_movies_path || '';
+    if (serienMoviesPathInput) serienMoviesPathInput.value = cfg.serien_movies_path || '';
     if (dataFolderPathInput) dataFolderPathInput.value = cfg.data_folder_path || '';
     if (refreshTitlesChk) refreshTitlesChk.checked = !!cfg.refresh_titles;
     updateStorageModeVisibility();
@@ -377,13 +417,15 @@ async function saveConfig() {
   const min_free_gb = parseFloat(minFreeInput.value) || 0;
   const autostart_mode = autostartSelect ? (autostartSelect.value || null) : null;
   const download_path = downloadPathInput ? downloadPathInput.value.trim() : '';
-  const storage_mode = storageModeSelect ? storageModeSelect.value : 'standard';
+  const storage_mode = storageModeStandard?.checked ? 'standard' : 'separate';
   const movies_path = moviesPathInput ? moviesPathInput.value.trim() : '';
   const series_path = seriesPathInput ? seriesPathInput.value.trim() : '';
   const anime_path = animePathInput ? animePathInput.value.trim() : '';
   const serien_path = serienPathInput ? serienPathInput.value.trim() : '';
   const anime_separate_movies = animeSeparateMoviesChk ? animeSeparateMoviesChk.checked : false;
   const serien_separate_movies = serienSeparateMoviesChk ? serienSeparateMoviesChk.checked : false;
+  const anime_movies_path = animeMoviesPathInput ? animeMoviesPathInput.value.trim() : '';
+  const serien_movies_path = serienMoviesPathInput ? serienMoviesPathInput.value.trim() : '';
   const data_folder_path = dataFolderPathInput ? dataFolderPathInput.value.trim() : '';
   
   try {
@@ -397,7 +439,9 @@ async function saveConfig() {
       anime_path,
       serien_path,
       anime_separate_movies,
-      serien_separate_movies
+      serien_separate_movies,
+      anime_movies_path,
+      serien_movies_path
     };
     if (download_path) payload.download_path = download_path;
     if (data_folder_path) payload.data_folder_path = data_folder_path;
@@ -524,6 +568,48 @@ chooseSerienPathBtn?.addEventListener('click', async () => {
     alert('Ordnerauswahl fehlgeschlagen.');
   } finally {
     chooseSerienPathBtn.disabled = false;
+  }
+});
+
+chooseAnimeMoviesPathBtn?.addEventListener('click', async () => {
+  if (!chooseAnimeMoviesPathBtn) return;
+  chooseAnimeMoviesPathBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (animeMoviesPathInput) animeMoviesPathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseAnimeMoviesPathBtn.disabled = false;
+  }
+});
+
+chooseSerienMoviesPathBtn?.addEventListener('click', async () => {
+  if (!chooseSerienMoviesPathBtn) return;
+  chooseSerienMoviesPathBtn.disabled = true;
+  try {
+    const res = await fetch('/pick_folder');
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.selected) {
+      if (serienMoviesPathInput) serienMoviesPathInput.value = data.selected;
+    } else if (data && data.status === 'canceled') {
+      // silently ignore
+    } else {
+      alert('Ordnerauswahl nicht möglich' + (data && data.error ? `: ${data.error}` : ''));
+    }
+  } catch (e) {
+    console.error('pick folder failed', e);
+    alert('Ordnerauswahl fehlgeschlagen.');
+  } finally {
+    chooseSerienMoviesPathBtn.disabled = false;
   }
 });
 

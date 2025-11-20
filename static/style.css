@@ -93,3 +93,203 @@ summary { cursor:pointer; }
 
 /* Logs toolbar tweaks */
 #copyLogs { white-space: nowrap; }
+
+/* Settings page styles */
+.settings-nav .nav-link {
+  border-radius: .5rem;
+  padding: .75rem 1.5rem;
+  font-weight: 500;
+  color: #9fb0ff;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all .2s ease;
+}
+
+.settings-nav .nav-link:hover {
+  background: rgba(159, 176, 255, .08);
+  border-color: rgba(159, 176, 255, .15);
+}
+
+.settings-nav .nav-link.active {
+  background: rgba(83, 105, 255, .15);
+  color: #fff;
+  border-color: rgba(83, 105, 255, .3);
+}
+
+.card-header {
+  background: rgba(15, 23, 32, .6);
+  border-bottom: 1px solid #1f2937;
+  padding: 1.25rem 1.5rem;
+}
+
+.card-header h5 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #dbe7ff;
+}
+
+.settings-section {
+  margin-bottom: 2rem;
+}
+
+.settings-section:last-child {
+  margin-bottom: 0;
+}
+
+.settings-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #9fb0ff;
+  margin-bottom: 1rem;
+  padding-bottom: .5rem;
+  border-bottom: 2px solid rgba(159, 176, 255, .15);
+}
+
+.settings-divider {
+  border-color: rgba(31, 41, 55, .5);
+  margin: 2rem 0;
+}
+
+.storage-mode-option {
+  padding: 1rem;
+  border: 2px solid #1f2937;
+  border-radius: .75rem;
+  transition: all .2s ease;
+  cursor: pointer;
+}
+
+.storage-mode-option:hover {
+  border-color: rgba(83, 105, 255, .4);
+  background: rgba(83, 105, 255, .05);
+}
+
+.storage-mode-option .form-check-input:checked ~ .form-check-label {
+  color: #fff;
+}
+
+.storage-mode-option .form-check-input:checked {
+  background-color: #5369ff;
+  border-color: #5369ff;
+}
+
+.storage-mode-option .form-check-label {
+  cursor: pointer;
+  width: 100%;
+}
+
+.storage-mode-option .form-check-label strong {
+  display: block;
+  font-size: 1.1rem;
+  margin-bottom: .25rem;
+}
+
+.input-group-text {
+  background: rgba(31, 41, 55, .6);
+  border-color: #1f2937;
+  color: #9fb0ff;
+  font-size: 1rem;
+  padding: .75rem 1rem;
+}
+
+.input-group-lg .input-group-text {
+  font-size: 1rem;
+  padding: .75rem 1rem;
+}
+
+.input-group .form-control,
+.input-group-lg .form-control {
+  font-size: 1rem;
+  padding: .75rem 1rem;
+  height: auto;
+}
+
+.input-group .btn,
+.input-group-lg .btn {
+  font-size: 1rem;
+  padding: .75rem 1rem;
+}
+
+/* Einheitliche Größe für alle Form-Elemente in Settings */
+#settings .form-control,
+#settings .form-select {
+  font-size: 1rem;
+  padding: .75rem 1rem;
+  height: auto;
+}
+
+#settings .form-select-lg {
+  font-size: 1rem;
+  padding: .75rem 1rem;
+}
+
+#settings .btn {
+  font-size: 1rem;
+  padding: .75rem 1rem;
+}
+
+#settings .btn-lg {
+  font-size: 1rem;
+  padding: .75rem 1.5rem;
+}
+
+#settings .form-text {
+  font-size: 0.875rem;
+  margin-top: .5rem;
+}
+
+#settings .form-check-label {
+  font-size: 1rem;
+}
+
+.form-switch-lg .form-check-input {
+  width: 3rem;
+  height: 1.5rem;
+}
+
+.form-switch-lg .form-check-label {
+  padding-left: .5rem;
+  font-size: 1rem;
+}
+
+.list-group-flush .list-group-item {
+  background: rgba(15, 23, 32, .3);
+  border-color: #1f2937;
+  padding: 1rem 1.25rem;
+  cursor: move;
+  transition: all .2s ease;
+}
+
+.list-group-flush .list-group-item:hover {
+  background: rgba(83, 105, 255, .08);
+  border-color: rgba(83, 105, 255, .2);
+}
+
+.list-group-flush .badge {
+  font-size: .9rem;
+  padding: .4rem .7rem;
+  min-width: 2.5rem;
+}
+
+.alert {
+  border-radius: .75rem;
+  border: 1px solid;
+}
+
+.alert-warning {
+  background: rgba(255, 184, 107, .1);
+  border-color: rgba(255, 184, 107, .3);
+  color: #ffb86b;
+}
+
+.alert-info {
+  background: rgba(99, 179, 237, .1);
+  border-color: rgba(99, 179, 237, .3);
+  color: #63b3ed;
+}
+
+.alert code {
+  background: rgba(0, 0, 0, .3);
+  padding: .2rem .4rem;
+  border-radius: .3rem;
+  color: #9fb0ff;
+}

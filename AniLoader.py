@@ -37,6 +37,8 @@ SERIEN_PATH = ""  # Pfad für Serien (s.to)
 # Film/Staffel Organisation
 ANIME_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Animes
 SERIEN_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Serien
+ANIME_MOVIES_PATH = ""  # Separater Pfad für Anime-Filme (optional)
+SERIEN_MOVIES_PATH = ""  # Separater Pfad für Serien-Filme (optional)
 # Server port (configurable only via config.json)
 SERVER_PORT = 5050
 
@@ -87,7 +89,7 @@ def update_data_paths(new_data_folder):
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, data_folder
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, ANIME_MOVIES_PATH, SERIEN_MOVIES_PATH, data_folder
     try:
         # First, check if there's a data_folder_path override in the config
         if CONFIG_PATH.exists():
@@ -198,6 +200,10 @@ def load_config():
                 if 'serien_separate_movies' not in cfg:
                     cfg['serien_separate_movies'] = False
                     changed = True
+                
+                # Separate Film-Pfade (optional)
+                ANIME_MOVIES_PATH = cfg.get('anime_movies_path', '')
+                SERIEN_MOVIES_PATH = cfg.get('serien_movies_path', '')
                 # port (only from config; keep default if invalid)
                 try:
                     port_val = cfg.get('port', SERVER_PORT)
@@ -253,6 +259,8 @@ def save_config():
             'serien_path': SERIEN_PATH,
             'anime_separate_movies': ANIME_SEPARATE_MOVIES,
             'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
+            'anime_movies_path': ANIME_MOVIES_PATH,
+            'serien_movies_path': SERIEN_MOVIES_PATH,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
             'refresh_titles': REFRESH_TITLES,
@@ -941,33 +949,57 @@ def get_base_path_for_content(content_type='anime', is_film=False):
     """
     if STORAGE_MODE == 'separate':
         # Content-Type basierte Pfade
-        if content_type == 'anime' and ANIME_PATH:
-            base_path = Path(ANIME_PATH)
-            # Wenn Film-Separation aktiviert ist
+        if content_type == 'anime':
+            # Bei Filmen prüfen ob separate Film-Speicherung aktiviert ist
             if is_film and ANIME_SEPARATE_MOVIES:
-                base_path = base_path / 'Filme'
-            base_path.mkdir(parents=True, exist_ok=True)
-            return base_path
-        elif content_type == 'serie' and SERIEN_PATH:
-            base_path = Path(SERIEN_PATH)
-            # Wenn Film-Separation aktiviert ist
+                # Wenn separater Film-Pfad gesetzt ist, verwende diesen
+                if ANIME_MOVIES_PATH and ANIME_MOVIES_PATH.strip():
+                    base_path = Path(ANIME_MOVIES_PATH)
+                    base_path.mkdir(parents=True, exist_ok=True)
+                    return base_path
+                # Sonst: Filme im Unterordner "Filme" des Anime-Pfads
+                if ANIME_PATH:
+                    base_path = Path(ANIME_PATH) / 'Filme'
+                    base_path.mkdir(parents=True, exist_ok=True)
+                    return base_path
+            # Standard Anime-Pfad (für Serien oder wenn Filme nicht separat)
+            if ANIME_PATH:
+                base_path = Path(ANIME_PATH)
+                base_path.mkdir(parents=True, exist_ok=True)
+                return base_path
+                
+        elif content_type == 'serie':
+            # Bei Filmen prüfen ob separate Film-Speicherung aktiviert ist
             if is_film and SERIEN_SEPARATE_MOVIES:
-                base_path = base_path / 'Filme'
-            base_path.mkdir(parents=True, exist_ok=True)
-            return base_path
+                # Wenn separater Film-Pfad gesetzt ist, verwende diesen
+                if SERIEN_MOVIES_PATH and SERIEN_MOVIES_PATH.strip():
+                    base_path = Path(SERIEN_MOVIES_PATH)
+                    base_path.mkdir(parents=True, exist_ok=True)
+                    return base_path
+                # Sonst: Filme im Unterordner "Filme" des Serien-Pfads
+                if SERIEN_PATH:
+                    base_path = Path(SERIEN_PATH) / 'Filme'
+                    base_path.mkdir(parents=True, exist_ok=True)
+                    return base_path
+            # Standard Serien-Pfad (für Serien oder wenn Filme nicht separat)
+            if SERIEN_PATH:
+                base_path = Path(SERIEN_PATH)
+                base_path.mkdir(parents=True, exist_ok=True)
+                return base_path
+                
         # Fallback zu alten MOVIES_PATH/SERIES_PATH (deprecated, für Kompatibilität)
-        elif is_film and MOVIES_PATH:
+        if is_film and MOVIES_PATH:
             path = Path(MOVIES_PATH)
             path.mkdir(parents=True, exist_ok=True)
             return path
-        elif not is_film and SERIES_PATH:
+        if not is_film and SERIES_PATH:
             path = Path(SERIES_PATH)
             path.mkdir(parents=True, exist_ok=True)
             return path
     # Fallback zu DOWNLOAD_DIR (standard mode oder wenn separate Pfade nicht gesetzt sind)
     return DOWNLOAD_DIR
 
-def episode_already_downloaded(series_folder, season, episode):
+def episode_already_downloaded(series_folder, season, episode, in_dedicated_movies_folder=False):
     # Prüfe beide Varianten des Ordnernamens (mit . und mit #)
     folders_to_check = [series_folder]
     
@@ -983,25 +1015,62 @@ def episode_already_downloaded(series_folder, season, episode):
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
     else:
-        pattern = f"Film{episode:02d}"
+        # Suche sowohl nach "Movie" (CLI-Format) als auch nach "Film" (umbenannt)
+        pattern_movie = f"Movie{episode:02d}"
+        pattern_film = f"Film{episode:02d}"
     
-    # Prüfe alle Ordner-Varianten
-    for folder in folders_to_check:
-        if not os.path.exists(folder):
-            continue
-        for file in Path(folder).rglob("*.mp4"):
-            if pattern.lower() in file.name.lower():
-                return True
+    # Bei dedizierten Film-Ordnern: Suche im parent-Ordner rekursiv
+    # (weil jeder Film in eigenem Unterordner liegt)
+    if season == 0 and in_dedicated_movies_folder:
+        # series_folder ist z.B. D:\Filme\SerienName
+        # Aber die Filme liegen in D:\Filme\Filmtitel1\, D:\Filme\Filmtitel2\ etc.
+        # Wir suchen im parent-Ordner rekursiv
+        parent_folder = Path(series_folder).parent
+        if parent_folder.exists():
+            for file in parent_folder.rglob("*.mp4"):
+                if pattern_movie.lower() in file.name.lower() or pattern_film.lower() in file.name.lower():
+                    return True
+    else:
+        # Normale Prüfung für Staffeln oder Filme im Serien-Ordner
+        for folder in folders_to_check:
+            if not os.path.exists(folder):
+                continue
+            for file in Path(folder).rglob("*.mp4"):
+                if season > 0:
+                    if pattern.lower() in file.name.lower():
+                        return True
+                else:
+                    # Prüfe beide Patterns für Filme
+                    if pattern_movie.lower() in file.name.lower() or pattern_film.lower() in file.name.lower():
+                        return True
     return False
 
-def delete_old_non_german_versions(series_folder, season, episode):
+def delete_old_non_german_versions(series_folder, season, episode, in_dedicated_movies_folder=False):
     if isinstance(series_folder, str):
         base = Path(series_folder)
     else:
         base = Path(DOWNLOAD_DIR) / series_folder
-    pattern = f"S{season:02d}E{episode:03d}" if season > 0 else f"Film{episode:02d}"
+    
+    if season > 0:
+        pattern = f"S{season:02d}E{episode:03d}"
+    else:
+        # Suche sowohl nach "Movie" (CLI-Format) als auch nach "Film" (umbenannt)
+        pattern = f"Film{episode:02d}"
+        pattern_movie = f"Movie{episode:02d}"
+    
+    # Bei dedizierten Film-Ordnern: Suche im parent-Ordner rekursiv
+    # (weil Filme in Filmtitel-Unterordnern liegen)
+    if season == 0 and in_dedicated_movies_folder and base.exists():
+        base = base.parent
+    
     for file in base.rglob("*.mp4"):
-        if pattern.lower() in file.name.lower():
+        # Prüfe ob Datei zum Pattern passt
+        if season > 0:
+            matches = pattern.lower() in file.name.lower()
+        else:
+            matches = pattern.lower() in file.name.lower() or pattern_movie.lower() in file.name.lower()
+        
+        if matches:
             if "[sub]" in file.name.lower() or "[english dub]" in file.name.lower() or "[english sub]" in file.name.lower():
                 try:
                     os.remove(file)
@@ -1009,7 +1078,7 @@ def delete_old_non_german_versions(series_folder, season, episode):
                 except Exception as e:
                     log(f"[FEHLER] Konnte Datei nicht löschen: {file.name} -> {e}")
 
-def rename_downloaded_file(series_folder, season, episode, title, language):
+def rename_downloaded_file(series_folder, season, episode, title, language, in_dedicated_movies_folder=False):
     # Always use a string suffix to avoid len() TypeError in check_length
     lang_suffix = {
         "German Dub": "",
@@ -1018,29 +1087,85 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
         "English Sub": "[English Sub]"
     }.get(language, "")
 
+    # Prüfe beide Varianten des Ordnernamens (mit . und mit #)
+    folders_to_check = [series_folder]
+    
+    # Wenn der Ordner einen Punkt enthält, prüfe auch die #-Variante
+    if '.' in series_folder:
+        alt_folder = series_folder.replace('.', '#')
+        folders_to_check.append(alt_folder)
+    # Wenn der Ordner eine Raute enthält, prüfe auch die .-Variante
+    elif '#' in series_folder:
+        alt_folder = series_folder.replace('#', '.')
+        folders_to_check.append(alt_folder)
+    
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
-        matching_files = [f for f in Path(series_folder).rglob("*.mp4") if pattern.lower() in f.name.lower()]
+        # Suche in allen Ordner-Varianten
+        matching_files = []
+        for folder in folders_to_check:
+            if os.path.exists(folder):
+                matching_files.extend([f for f in Path(folder).rglob("*.mp4") if pattern.lower() in f.name.lower()])
         if not matching_files:
-            print(f"[WARN] Keine Datei gefunden für {pattern}")
+            print(f"[WARN] Keine Datei gefunden für {pattern} in {folders_to_check}")
             return False
         file_to_rename = matching_files[0]
     else:
-        pattern = f"Movie {episode:03d}"
-        matching_files = [f for f in Path(series_folder).rglob("*.mp4") if pattern.lower() in f.name.lower()]
+        # Suche nach 'Movie' (CLI speichert so), aber finaler Name wird 'Film'
+        # Suche auch nach alternativen Patterns (Episode, Film)
+        search_patterns = [
+            f"Movie {episode:03d}",
+            f"Movie{episode:03d}",
+            f"Episode {episode:03d}",
+            f"Episode{episode:03d}",
+        ]
+        
+        # Suche in allen Ordner-Varianten mit allen Patterns
+        matching_files = []
+        for folder in folders_to_check:
+            if os.path.exists(folder):
+                for file in Path(folder).rglob("*.mp4"):
+                    filename_lower = file.name.lower()
+                    for search_pattern in search_patterns:
+                        if search_pattern.lower() in filename_lower:
+                            matching_files.append(file)
+                            break
+        
         if not matching_files:
-            print(f"[WARN] Keine Datei gefunden für Film {episode}")
+            print(f"[WARN] Keine Datei gefunden für Film/Movie/Episode {episode} in {folders_to_check}")
             return False
         file_to_rename = matching_files[0]
+        # Finaler Pattern für Umbenennung zu 'Film'
         pattern = f"Film{episode:02d}"
 
     safe_title = sanitize_episode_title(title) if title else ""
 
-    # Im separate Modus keinen "Filme" Unterordner erstellen, da wir bereits im Filme-Ordner sind
-    if STORAGE_MODE == 'separate' and season == 0:
-        dest_folder = Path(series_folder)
+    # Bestimme den Zielordner für die Datei
+    # Die Datei wurde in series_folder oder einer seiner Varianten heruntergeladen
+    # Wir müssen den Zielordner basierend auf series_folder bestimmen, nicht auf dem Fundort
+    
+    # Bei dedizierten Film-Ordnern (z.B. D:\Filme\) landet jeder Film in einem eigenen Unterordner
+    # Der Unterordner ist nach dem Filmtitel benannt (ohne FilmXX)
+    # Bei normalem Pfad (z.B. Downloads\AnimeName\) landen Filme in Unterordner "Filme"
+    if season == 0 and in_dedicated_movies_folder:
+        # In dediziertem Film-Ordner: Jeder Film in eigenem Ordner
+        # series_folder ist z.B. D:\Filme\SerienName (wird durch die CLI erstellt)
+        # Wir wollen aber: D:\Filme\Filmtitel\
+        # Der Ordner wird nach dem Filmtitel benannt (ohne FilmXX)
+        parent_folder = Path(series_folder).parent  # D:\Filme
+        if safe_title:
+            dest_folder = parent_folder / safe_title  # D:\Filme\Filmtitel
+        else:
+            # Fallback: Wenn kein Titel, verwende SerienName/FilmXX
+            dest_folder = Path(series_folder) / f"Film{episode:02d}"
+    elif season == 0:
+        # Im normalen Pfad: Filme im "Filme" Unterordner
+        # series_folder ist z.B. Downloads\AnimeName
+        dest_folder = Path(series_folder) / "Filme"
     else:
-        dest_folder = Path(series_folder) / ("Filme" if season == 0 else f"Staffel {season}")
+        # Normale Staffeln: series_folder\Staffel N
+        dest_folder = Path(series_folder) / f"Staffel {season}"
+    
     dest_folder.mkdir(parents=True, exist_ok=True)
 
     safe_title = check_length(dest_folder, pattern, safe_title, lang_suffix)
@@ -1057,6 +1182,21 @@ def rename_downloaded_file(series_folder, season, episode, title, language):
     try:
         shutil.move(file_to_rename, new_path)
         log(f"[OK] Umbenannt: {file_to_rename.name} -> {new_name}")
+        
+        # Bei dedizierten Film-Ordnern: Aufräumen des leeren SerienName-Ordners
+        if season == 0 and in_dedicated_movies_folder:
+            # Prüfe ob der ursprüngliche series_folder leer ist und lösche ihn
+            for folder in folders_to_check:
+                folder_path = Path(folder)
+                if folder_path.exists() and folder_path.is_dir():
+                    try:
+                        # Prüfe ob Ordner leer ist (keine Dateien/Unterordner)
+                        if not any(folder_path.iterdir()):
+                            folder_path.rmdir()
+                            log(f"[CLEANUP] Leerer Ordner gelöscht: {folder}")
+                    except Exception as e:
+                        log(f"[CLEANUP-WARN] Konnte Ordner nicht löschen: {folder} -> {e}")
+        
         return True
     except Exception as e:
         log(f"[FEHLER] Umbenennen fehlgeschlagen: {e}")
@@ -1103,6 +1243,18 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     is_film = (season == 0)
     base_path = get_base_path_for_content(content_type, is_film)
     
+    # Bestimme ob wir in einem dedizierten Film-Ordner sind
+    # Dies ist der Fall wenn:
+    # 1. ANIME_SEPARATE_MOVIES aktiv und ANIME_MOVIES_PATH gesetzt ist (dann ist base_path = ANIME_MOVIES_PATH)
+    # 2. ANIME_SEPARATE_MOVIES aktiv und ANIME_MOVIES_PATH leer (dann ist base_path = ANIME_PATH/Filme)
+    # In beiden Fällen landen Filme NICHT im Serien-Unterordner/Filme, sondern direkt
+    in_dedicated_movies_folder = False
+    if is_film and STORAGE_MODE == 'separate':
+        if content_type == 'anime' and ANIME_SEPARATE_MOVIES:
+            in_dedicated_movies_folder = True
+        elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
+            in_dedicated_movies_folder = True
+    
     # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
     try:
         free_gb = freier_speicher_mb(base_path)
@@ -1120,9 +1272,12 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             pass
         return "NO_SPACE"
     
+    # Erstelle series_folder
+    # Bei dedizierten Film-Ordnern: base_path/SerienName/
+    # Bei normalem Pfad: base_path/SerienName/
     series_folder = os.path.join(base_path, series_title)
     if not german_only:
-        if episode_already_downloaded(series_folder, season, episode):
+        if episode_already_downloaded(series_folder, season, episode, in_dedicated_movies_folder):
             log(f"[SKIP] Episode bereits vorhanden: {series_title} - " + (f"S{season}E{episode}" if season > 0 else f"Film {episode}"))
             try:
                 with download_lock:
@@ -1145,11 +1300,11 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             return "NO_STREAMS"
         elif result == "OK":
             title = get_episode_title(episode_url)
-            rename_downloaded_file(series_folder, season, episode, title, lang)
+            rename_downloaded_file(series_folder, season, episode, title, lang, in_dedicated_movies_folder)
             if lang == "German Dub":
                 german_available = True
                 if german_only == True:
-                    delete_old_non_german_versions(series_folder=series_folder, season=season, episode=episode)
+                    delete_old_non_german_versions(series_folder=series_folder, season=season, episode=episode, in_dedicated_movies_folder=in_dedicated_movies_folder)
             episode_downloaded = True
             log(f"[OK] {lang} erfolgreich geladen: {episode_url}")
             break
@@ -1242,6 +1397,227 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
         start_episode = 1
 
 
+def full_check_anime(series_title, base_url, anime_id):
+    """
+    Vollständige systematische Prüfung eines Animes von Anfang an:
+    1. Geht systematisch durch alle Filme (Film01, Film02, ...) und Staffeln (S01E01, S01E02, ...)
+    2. Prüft ob Episode/Film existiert und ob sie deutsch ist
+    3. Versucht nicht-deutsche Versionen durch deutsche zu ersetzen
+    4. Aktualisiert fehlende_deutsch_folgen in der Datenbank
+    """
+    log(f"[FULL-CHECK] Starte vollständige Prüfung für '{series_title}'")
+    
+    # Bestimme Content-Type anhand der URL
+    content_type = 'anime'
+    try:
+        hostname = urlparse(base_url).hostname
+        if hostname and 's.to' in hostname.lower():
+            content_type = 'serie'
+    except Exception:
+        pass
+    
+    # Bestimme den richtigen Basis-Pfad
+    base_path = get_base_path_for_content(content_type, is_film=False)
+    series_folder = os.path.join(base_path, series_title)
+    
+    # Bestimme ob dedizierter Film-Ordner
+    in_dedicated_movies_folder = False
+    if STORAGE_MODE == 'separate':
+        if content_type == 'anime' and ANIME_SEPARATE_MOVIES:
+            in_dedicated_movies_folder = True
+        elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
+            in_dedicated_movies_folder = True
+    
+    # Lade aktuelle fehlende_deutsch_folgen aus DB
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
+    row = c.fetchone()
+    conn.close()
+    fehlende_urls = json.loads(row[0]) if row and row[0] else []
+    
+    # === 1. FILME PRÜFEN ===
+    log(f"[FULL-CHECK] Prüfe Filme für '{series_title}'")
+    film_num = 1
+    consecutive_missing_films = 0
+    
+    while consecutive_missing_films < 3:  # Stoppe nach 3 fehlenden Filmen
+        film_url = f"{base_url}/filme/film-{film_num}"
+        
+        # Prüfe ob Film lokal existiert (nutze episode_already_downloaded)
+        if episode_already_downloaded(series_folder, 0, film_num, in_dedicated_movies_folder):
+            log(f"[FULL-CHECK] Film{film_num:02d} existiert lokal")
+            
+            # Prüfe ob Film deutsch ist
+            is_german = False
+            is_non_german = False
+            
+            # Finde die Datei und prüfe Sprache
+            if in_dedicated_movies_folder:
+                parent_folder = Path(series_folder).parent if os.path.exists(series_folder) else Path(base_path)
+                search_path = parent_folder
+            else:
+                search_path = Path(series_folder)
+            
+            if search_path.exists():
+                for file in search_path.rglob("*.mp4"):
+                    filename = file.name.lower()
+                    if f"film{film_num:02d}" in filename:
+                        if '[sub]' in filename or '[english' in filename:
+                            is_non_german = True
+                        else:
+                            is_german = True
+                        break
+            
+            # Wenn nicht-deutsch, versuche deutsche Version zu laden
+            if is_non_german and not is_german:
+                log(f"[FULL-CHECK] Film{film_num:02d} ist nicht-deutsch, versuche deutsche Version")
+                result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=True)
+                
+                if result == "NO_SPACE":
+                    log("[ERROR] Abbruch wegen fehlendem Speicher (full-check).")
+                    return "NO_SPACE"
+                elif result == "OK":
+                    log(f"[FULL-CHECK] Film{film_num:02d} erfolgreich auf deutsch geladen")
+                    # Lösche nicht-deutsche Version
+                    delete_old_non_german_versions(series_folder, 0, film_num, in_dedicated_movies_folder)
+                    # Entferne aus fehlende_deutsch_folgen falls vorhanden
+                    fehlende_urls = [url for url in fehlende_urls if f"/film-{film_num}" not in url]
+                elif result == "LANGUAGE_ERROR":
+                    log(f"[FULL-CHECK] Film{film_num:02d} nicht auf deutsch verfügbar")
+                    # Füge zu fehlende_deutsch_folgen hinzu wenn nicht schon vorhanden
+                    if film_url not in fehlende_urls:
+                        fehlende_urls.append(film_url)
+            elif is_german:
+                log(f"[FULL-CHECK] Film{film_num:02d} ist bereits deutsch")
+                # Entferne aus fehlende_deutsch_folgen falls vorhanden
+                fehlende_urls = [url for url in fehlende_urls if f"/film-{film_num}" not in url]
+            
+            consecutive_missing_films = 0
+        else:
+            # Film existiert nicht lokal, versuche zu laden
+            log(f"[FULL-CHECK] Film{film_num:02d} nicht vorhanden, versuche Download")
+            result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
+            
+            if result == "NO_SPACE":
+                log("[ERROR] Abbruch wegen fehlendem Speicher (full-check).")
+                return "NO_SPACE"
+            elif result == "NO_STREAMS":
+                log(f"[FULL-CHECK] Film{film_num:02d} existiert nicht")
+                consecutive_missing_films += 1
+            elif result == "OK":
+                log(f"[FULL-CHECK] Film{film_num:02d} erfolgreich geladen")
+                consecutive_missing_films = 0
+            else:
+                consecutive_missing_films += 1
+        
+        film_num += 1
+        time.sleep(0.5)
+    
+    log(f"[FULL-CHECK] Film-Prüfung abgeschlossen bei Film{film_num-1}")
+    
+    # === 2. STAFFELN PRÜFEN ===
+    log(f"[FULL-CHECK] Prüfe Staffeln für '{series_title}'")
+    season = 1
+    consecutive_empty_seasons = 0
+    
+    while consecutive_empty_seasons < 2:  # Stoppe nach 2 leeren Staffeln
+        episode = 1
+        found_episode_in_season = False
+        consecutive_missing_episodes = 0
+        
+        log(f"[FULL-CHECK] Prüfe Staffel {season}")
+        
+        while consecutive_missing_episodes < 3:  # Stoppe nach 3 fehlenden Episoden
+            episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
+            
+            # Prüfe ob Episode lokal existiert
+            if episode_already_downloaded(series_folder, season, episode, False):
+                log(f"[FULL-CHECK] S{season:02d}E{episode:03d} existiert lokal")
+                found_episode_in_season = True
+                
+                # Prüfe ob Episode deutsch ist
+                is_german = False
+                is_non_german = False
+                
+                if os.path.exists(series_folder):
+                    for file in Path(series_folder).rglob("*.mp4"):
+                        filename = file.name.lower()
+                        if f"s{season:02d}e{episode:03d}" in filename:
+                            if '[sub]' in filename or '[english' in filename:
+                                is_non_german = True
+                            else:
+                                is_german = True
+                            break
+                
+                # Wenn nicht-deutsch, versuche deutsche Version zu laden
+                if is_non_german and not is_german:
+                    log(f"[FULL-CHECK] S{season:02d}E{episode:03d} ist nicht-deutsch, versuche deutsche Version")
+                    result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=True)
+                    
+                    if result == "NO_SPACE":
+                        log("[ERROR] Abbruch wegen fehlendem Speicher (full-check).")
+                        return "NO_SPACE"
+                    elif result == "OK":
+                        log(f"[FULL-CHECK] S{season:02d}E{episode:03d} erfolgreich auf deutsch geladen")
+                        # Lösche nicht-deutsche Version
+                        delete_old_non_german_versions(series_folder, season, episode, False)
+                        # Entferne aus fehlende_deutsch_folgen falls vorhanden
+                        fehlende_urls = [url for url in fehlende_urls if f"/staffel-{season}/episode-{episode}" not in url]
+                    elif result == "LANGUAGE_ERROR":
+                        log(f"[FULL-CHECK] S{season:02d}E{episode:03d} nicht auf deutsch verfügbar")
+                        # Füge zu fehlende_deutsch_folgen hinzu wenn nicht schon vorhanden
+                        if episode_url not in fehlende_urls:
+                            fehlende_urls.append(episode_url)
+                elif is_german:
+                    log(f"[FULL-CHECK] S{season:02d}E{episode:03d} ist bereits deutsch")
+                    # Entferne aus fehlende_deutsch_folgen falls vorhanden
+                    fehlende_urls = [url for url in fehlende_urls if f"/staffel-{season}/episode-{episode}" not in url]
+                
+                consecutive_missing_episodes = 0
+            else:
+                # Episode existiert nicht lokal, versuche zu laden
+                log(f"[FULL-CHECK] S{season:02d}E{episode:03d} nicht vorhanden, versuche Download")
+                result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
+                
+                if result == "NO_SPACE":
+                    log("[ERROR] Abbruch wegen fehlendem Speicher (full-check).")
+                    return "NO_SPACE"
+                elif result == "NO_STREAMS":
+                    log(f"[FULL-CHECK] S{season:02d}E{episode:03d} existiert nicht")
+                    consecutive_missing_episodes += 1
+                elif result == "OK":
+                    log(f"[FULL-CHECK] S{season:02d}E{episode:03d} erfolgreich geladen")
+                    found_episode_in_season = True
+                    consecutive_missing_episodes = 0
+                else:
+                    consecutive_missing_episodes += 1
+            
+            episode += 1
+            time.sleep(0.5)
+        
+        if found_episode_in_season:
+            log(f"[FULL-CHECK] Staffel {season} abgeschlossen mit {episode-1} Episoden")
+            consecutive_empty_seasons = 0
+        else:
+            log(f"[FULL-CHECK] Staffel {season} ist leer")
+            consecutive_empty_seasons += 1
+        
+        season += 1
+    
+    log(f"[FULL-CHECK] Staffel-Prüfung abgeschlossen bei Staffel {season-1}")
+    
+    # === 3. DATENBANK AKTUALISIEREN ===
+    update_anime(anime_id, fehlende_deutsch_folgen=fehlende_urls)
+    log(f"[FULL-CHECK] Datenbank aktualisiert: {len(fehlende_urls)} fehlende deutsche Folgen")
+    
+    # Prüfe ob jetzt komplett deutsch
+    check_deutsch_komplett(anime_id)
+    
+    log(f"[FULL-CHECK] Vollständige Prüfung für '{series_title}' abgeschlossen")
+    return "OK"
+
+
 # -------------------- deleted_check --------------------
 def deleted_check():
     """
@@ -1271,6 +1647,11 @@ def deleted_check():
             # Serien-Pfad (s.to Inhalte)
             if SERIEN_PATH and SERIEN_PATH.strip():
                 paths_to_check.add(Path(SERIEN_PATH))
+            # Dedizierte Film-Pfade (dort liegen Filme in Unterordnern nach Filmtitel)
+            if ANIME_MOVIES_PATH and ANIME_MOVIES_PATH.strip():
+                paths_to_check.add(Path(ANIME_MOVIES_PATH))
+            if SERIEN_MOVIES_PATH and SERIEN_MOVIES_PATH.strip():
+                paths_to_check.add(Path(SERIEN_MOVIES_PATH))
             # Legacy: MOVIES_PATH und SERIES_PATH falls noch gesetzt
             if MOVIES_PATH and MOVIES_PATH.strip():
                 paths_to_check.add(Path(MOVIES_PATH))
@@ -1845,16 +2226,11 @@ def run_mode(mode="default"):
                     current_download["current_id"] = anime_id
                     current_download["current_url"] = base_url
                     current_download["episode_started_at"] = None
-                    # Start immer bei 1 (Filme und Staffeln)
-                    r = download_films(series_title, base_url, anime_id, start_film=1)
+                    # Verwende neue full_check_anime Funktion
+                    r = full_check_anime(series_title, base_url, anime_id)
                     if r == "NO_SPACE":
                         log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
                         return
-                    r2 = download_seasons(series_title, base_url, anime_id, start_season=1, start_episode=1)
-                    if r2 == "NO_SPACE":
-                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
-                        return
-                    check_deutsch_komplett(anime_id)
                     # Entferne aus Queue
                     queue_delete_by_anime_id(anime_id)
 
@@ -1873,15 +2249,10 @@ def run_mode(mode="default"):
                 current_download["current_id"] = anime_id
                 current_download["current_url"] = base_url
                 current_download["episode_started_at"] = None
-                r = download_films(series_title, base_url, anime_id, start_film=1)
+                r = full_check_anime(series_title, base_url, anime_id)
                 if r == "NO_SPACE":
                     log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
                     return
-                r2 = download_seasons(series_title, base_url, anime_id, start_season=1, start_episode=1)
-                if r2 == "NO_SPACE":
-                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
-                    return
-                check_deutsch_komplett(anime_id)
                 # Nach jedem DB-Eintrag: Queue erneut prüfen und abarbeiten
                 try:
                     queue_prune_completed()
@@ -1904,13 +2275,9 @@ def run_mode(mode="default"):
                             current_download["current_id"] = q_anime_id
                             current_download["current_url"] = base_url
                             current_download["episode_started_at"] = None
-                            r = download_films(q_series_title, base_url, q_anime_id, start_film=1)
+                            r = full_check_anime(q_series_title, base_url, q_anime_id)
                             if r == 'NO_SPACE':
                                 return
-                            r2 = download_seasons(q_series_title, base_url, q_anime_id, start_season=1, start_episode=1)
-                            if r2 == 'NO_SPACE':
-                                return
-                            check_deutsch_komplett(q_anime_id)
                             queue_delete_by_anime_id(q_anime_id)
 
                 except Exception as _e:
@@ -2152,7 +2519,7 @@ def api_health():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, data_folder
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, ANIME_MOVIES_PATH, SERIEN_MOVIES_PATH, data_folder
     if request.method == 'GET':
         try:
             # Reload to reflect persisted file state
@@ -2168,6 +2535,8 @@ def api_config():
                 'serien_path': SERIEN_PATH,
                 'anime_separate_movies': ANIME_SEPARATE_MOVIES,
                 'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
+                'anime_movies_path': ANIME_MOVIES_PATH,
+                'serien_movies_path': SERIEN_MOVIES_PATH,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
                 'refresh_titles': REFRESH_TITLES,
@@ -2190,6 +2559,8 @@ def api_config():
     serien_path = data.get('serien_path')
     anime_separate_movies = data.get('anime_separate_movies')
     serien_separate_movies = data.get('serien_separate_movies')
+    anime_movies_path = data.get('anime_movies_path')
+    serien_movies_path = data.get('serien_movies_path')
     refresh_titles_val = data.get('refresh_titles')
     new_data_folder = data.get('data_folder_path')
     # Support both 'autostart_mode' and 'autostart' as input
@@ -2268,6 +2639,16 @@ def api_config():
         if serien_separate_movies is not None:
             SERIEN_SEPARATE_MOVIES = bool(serien_separate_movies)
             changed = True
+        
+        # Anime Movies Path
+        if anime_movies_path is not None:
+            ANIME_MOVIES_PATH = anime_movies_path
+            changed = True
+        
+        # Serien Movies Path
+        if serien_movies_path is not None:
+            SERIEN_MOVIES_PATH = serien_movies_path
+            changed = True
             
         if autostart_key_present:
             allowed = {'default', 'german', 'new', 'check-missing'}
@@ -2314,6 +2695,8 @@ def api_config():
                 'serien_path': SERIEN_PATH,
                 'anime_separate_movies': ANIME_SEPARATE_MOVIES,
                 'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
+                'anime_movies_path': ANIME_MOVIES_PATH,
+                'serien_movies_path': SERIEN_MOVIES_PATH,
                 'port': SERVER_PORT,
                 'autostart_mode': AUTOSTART_MODE,
                 'refresh_titles': REFRESH_TITLES,
@@ -2330,6 +2713,8 @@ def api_config():
             'serien_path': SERIEN_PATH,
             'anime_separate_movies': ANIME_SEPARATE_MOVIES,
             'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
+            'anime_movies_path': ANIME_MOVIES_PATH,
+            'serien_movies_path': SERIEN_MOVIES_PATH,
             'port': SERVER_PORT,
             'autostart_mode': AUTOSTART_MODE,
             'refresh_titles': REFRESH_TITLES,
@@ -2447,15 +2832,13 @@ def api_database():
     """
     DB endpoint with optional filtering:
       q=search string
-      complete=0|1
-      deleted=0|1
-            deutsch=0|1 (filter on deutsch_komplett)
+      complete=0|1|deleted (if 'deleted', show only deleted items)
+      deutsch=0|1 (filter on deutsch_komplett)
       sort_by, order, limit, offset
     """
-    q = request.args.get("q")
-    complete = request.args.get("complete")
-    deleted = request.args.get("deleted")
-    deutsch = request.args.get("deutsch")
+    q = request.args.get("q", "").strip()
+    complete = request.args.get("complete", "").strip()
+    deutsch = request.args.get("deutsch", "").strip()
     sort_by = request.args.get("sort_by", "id")
     order = request.args.get("order", "asc").lower()
     limit = request.args.get("limit")
@@ -2470,15 +2853,24 @@ def api_database():
     params = []
     where_clauses = []
 
+    # Suchstring-Filter
     if q:
         where_clauses.append("(title LIKE ? OR url LIKE ?)")
         params.extend([f"%{q}%", f"%{q}%"])
-    if complete in ("0", "1"):
+    
+    # Complete-Filter mit Sonderfall für 'deleted'
+    if complete == "deleted":
+        where_clauses.append("deleted = 1")
+    elif complete in ("0", "1"):
         where_clauses.append("complete = ?")
         params.append(int(complete))
-    if deleted in ("0", "1"):
-        where_clauses.append("deleted = ?")
-        params.append(int(deleted))
+        # Wenn complete gesetzt ist, standardmäßig nicht-gelöschte anzeigen
+        where_clauses.append("deleted = 0")
+    elif complete == "":
+        # Wenn kein complete-Filter, standardmäßig nicht-gelöschte anzeigen
+        where_clauses.append("deleted = 0")
+    
+    # Deutsch-Filter
     if deutsch in ("0", "1"):
         where_clauses.append("deutsch_komplett = ?")
         params.append(int(deutsch))

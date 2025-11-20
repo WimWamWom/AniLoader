@@ -102,10 +102,10 @@
         </div>
         <div class="col-md-2">
           <select id="db-complete" class="form-select form-select-sm">
-            <option value="">Alle</option>
+            <option value="">Status: Alle</option>
             <option value="1">Komplett</option>
             <option value="0">Nicht komplett</option>
-            <option value="1">Gelöscht</option>
+            <option value="deleted">Gelöscht</option>
           </select>
         </div>
         <div class="col-md-2">
@@ -170,121 +170,326 @@
 
     <!-- Settings Tab -->
     <div class="tab-pane fade" id="settings" role="tabpanel" aria-labelledby="settings-tab">
-      <div class="row g-3 mb-2">
-        <div class="col-md-6">
-          <div class="card h-100">
-            <div class="card-body">
-              <h6 class="card-title">Sprachreihenfolge (Drag &amp; Drop)</h6>
-              <p class="text-secondary small mb-3">1 = höchste Priorität, danach 2, 3, 4 …</p>
-              <ul id="lang-list" class="list-group">
-                <!-- languages inserted by JS -->
-              </ul>
+      
+      <!-- Settings Navigation -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <ul class="nav nav-pills settings-nav" id="settings-pills" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="storage-pill" data-bs-toggle="pill" data-bs-target="#storage-settings" type="button" role="tab">
+                📁 Speicherorte
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="download-pill" data-bs-toggle="pill" data-bs-target="#download-settings" type="button" role="tab">
+                ⚙️ Download
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="system-pill" data-bs-toggle="pill" data-bs-target="#system-settings" type="button" role="tab">
+                🖥️ System
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Settings Content -->
+      <div class="tab-content" id="settings-pills-content">
+        
+        <!-- Storage Settings -->
+        <div class="tab-pane fade show active" id="storage-settings" role="tabpanel">
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h5 class="mb-0">📁 Speicherorganisation</h5>
+                  <p class="text-muted small mb-0">Konfiguriere, wo deine Downloads gespeichert werden</p>
+                </div>
+                <div class="card-body">
+                  
+                  <!-- Storage Mode -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">Speichermodus</h6>
+                    <div class="row">
+                      <div class="col-lg-6">
+                        <div class="form-check storage-mode-option">
+                          <input class="form-check-input" type="radio" name="storage-mode-radio" id="storage-mode-standard" value="standard">
+                          <label class="form-check-label" for="storage-mode-standard">
+                            <strong>Standard</strong>
+                            <span class="d-block text-muted small">Alle Downloads in einem gemeinsamen Ordner</span>
+                          </label>
+                        </div>
+                      </div>
+                      <div class="col-lg-6">
+                        <div class="form-check storage-mode-option">
+                          <input class="form-check-input" type="radio" name="storage-mode-radio" id="storage-mode-separate" value="separate">
+                          <label class="form-check-label" for="storage-mode-separate">
+                            <strong>Separat</strong>
+                            <span class="d-block text-muted small">Getrennte Ordner für Animes und Serien</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Standard Mode Settings -->
+                  <div id="standard-path-container" class="settings-section">
+                    <h6 class="settings-section-title">Download-Verzeichnis</h6>
+                    <div class="input-group input-group-lg">
+                      <span class="input-group-text">📂</span>
+                      <input id="download-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\Downloads" />
+                      <button id="choose-download-path" class="btn btn-outline-secondary" type="button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                          <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                        </svg>
+                        Durchsuchen
+                      </button>
+                    </div>
+                    <div class="form-text">Alle Animes und Serien werden in diesem Ordner gespeichert.</div>
+                  </div>
+
+                  <!-- Separate Mode Settings -->
+                  <div id="separate-paths-container" style="display: none;">
+                    
+                    <!-- Anime Path -->
+                    <div class="settings-section">
+                      <h6 class="settings-section-title">🎌 Anime-Speicherort</h6>
+                      <div class="input-group input-group-lg">
+                        <span class="input-group-text">📂</span>
+                        <input id="anime-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\Animes" />
+                        <button id="choose-anime-path" class="btn btn-outline-secondary" type="button">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                            <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                          </svg>
+                          Durchsuchen
+                        </button>
+                      </div>
+                      <div class="form-text">Basisordner für alle Animes von aniworld.to. Filme landen im Unterordner "Filme".</div>
+                      
+                      <!-- Anime Movies Checkbox -->
+                      <div class="mt-3">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" id="anime-separate-movies">
+                          <label class="form-check-label" for="anime-separate-movies">
+                            Anime-Filme in separatem Ordner speichern
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <!-- Anime Movies Path (conditional) -->
+                      <div id="anime-movies-path-container" class="mt-3" style="display: none;">
+                        <div class="input-group">
+                          <span class="input-group-text">🎬</span>
+                          <input id="anime-movies-path" type="text" class="form-control" placeholder="z.B. D:\Anime-Filme" />
+                          <button id="choose-anime-movies-path" class="btn btn-outline-secondary" type="button">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                              <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                            </svg>
+                            Durchsuchen
+                          </button>
+                        </div>
+                        <div class="form-text">Alle Anime-Filme werden in diesem zentralen Ordner gespeichert.</div>
+                      </div>
+                    </div>
+
+                    <hr class="settings-divider">
+
+                    <!-- Serien Path -->
+                    <div class="settings-section">
+                      <h6 class="settings-section-title">📺 Serien-Speicherort</h6>
+                      <div class="input-group input-group-lg">
+                        <span class="input-group-text">📂</span>
+                        <input id="serien-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\Serien" />
+                        <button id="choose-serien-path" class="btn btn-outline-secondary" type="button">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                            <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                          </svg>
+                          Durchsuchen
+                        </button>
+                      </div>
+                      <div class="form-text">Basisordner für alle Serien von s.to. Filme landen im Unterordner "Filme".</div>
+                      
+                      <!-- Serien Movies Checkbox -->
+                      <div class="mt-3">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" id="serien-separate-movies">
+                          <label class="form-check-label" for="serien-separate-movies">
+                            Serien-Filme in separatem Ordner speichern
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <!-- Serien Movies Path (conditional) -->
+                      <div id="serien-movies-path-container" class="mt-3" style="display: none;">
+                        <div class="input-group">
+                          <span class="input-group-text">🎬</span>
+                          <input id="serien-movies-path" type="text" class="form-control" placeholder="z.B. E:\Serien-Filme" />
+                          <button id="choose-serien-movies-path" class="btn btn-outline-secondary" type="button">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                              <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                            </svg>
+                            Durchsuchen
+                          </button>
+                        </div>
+                        <div class="form-text">Alle Serien-Filme werden in diesem zentralen Ordner gespeichert.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <div class="col-md-6">
-          <div class="card h-100">
-            <div class="card-body">
-              <h6 class="card-title">Systemeinstellungen</h6>
-              
-              <!-- Storage Mode Auswahl -->
-              <div class="mb-3">
-                <label class="form-label small">Speichermodus</label>
-                <select id="storage-mode" class="form-select">
-                  <option value="standard">Standard (ein gemeinsamer Ordner)</option>
-                  <option value="separate">Separat (getrennte Ordner für Animes und Serien)</option>
-                </select>
-                <div class="form-text">Wähle, ob Animes und Serien im gleichen oder in getrennten Ordnern gespeichert werden sollen.</div>
-              </div>
-              
-              <!-- Standard Download Path (nur bei standard mode sichtbar) -->
-              <div class="mb-3" id="standard-path-container">
-                <label for="download-path" class="form-label small">Speicherort (Download-Verzeichnis)</label>
-                <div class="input-group">
-                  <input id="download-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Downloads" />
-                  <button id="choose-download-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
-                </div>
-                <div class="form-text">Du kannst den Pfad eingeben oder über den Explorer auswählen. Der Ordner wird bei Bedarf erstellt.</div>
-              </div>
-              
-              <!-- Separate Paths (nur bei separate mode sichtbar) -->
-              <div id="separate-paths-container" style="display: none;">
-                <div class="mb-3">
-                  <label for="anime-path" class="form-label small">Anime-Speicherort</label>
-                  <div class="input-group">
-                    <input id="anime-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Animes" />
-                    <button id="choose-anime-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
-                  </div>
-                  <div class="form-text">Speicherort für alle Animes (aniworld.to).</div>
-                </div>
-                
-                <div class="mb-3">
-                  <label for="serien-path" class="form-label small">Serien-Speicherort</label>
-                  <div class="input-group">
-                    <input id="serien-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\Serien" />
-                    <button id="choose-serien-path" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
-                  </div>
-                  <div class="form-text">Speicherort für alle Serien (s.to).</div>
-                </div>
-                
-                <div class="mb-3">
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="anime-separate-movies">
-                    <label class="form-check-label small" for="anime-separate-movies">Anime-Filme separat speichern</label>
-                  </div>
-                  <div class="form-text">Wenn aktiviert: Filme in eigenem Unterordner "Filme" getrennt von Staffeln.</div>
-                </div>
-                
-                <div class="mb-3">
-                  <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="serien-separate-movies">
-                    <label class="form-check-label small" for="serien-separate-movies">Serien-Filme separat speichern</label>
-                  </div>
-                  <div class="form-text">Wenn aktiviert: Filme in eigenem Unterordner "Filme" getrennt von Staffeln.</div>
-                </div>
-              </div>
 
-              <div class="mb-3">
-                <label for="data-folder-path" class="form-label small">Data-Ordner (Konfiguration & Datenbank)</label>
-                <div class="input-group">
-                  <input id="data-folder-path" type="text" class="form-control" placeholder="z.B. C:\\Aniloader\\data" />
-                  <button id="choose-data-folder" class="btn btn-outline-secondary" type="button">Ordner wählen…</button>
+        <!-- Download Settings -->
+        <div class="tab-pane fade" id="download-settings" role="tabpanel">
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h5 class="mb-0">⚙️ Download-Einstellungen</h5>
+                  <p class="text-muted small mb-0">Konfiguriere Sprachen und Download-Verhalten</p>
                 </div>
-                <div class="form-text">Speicherort für config.json, AniLoader.db und Logs. Änderungen erfordern einen Server-Neustart.</div>
-              </div>
-              
-              <div class="mb-3">
-                <label for="min-free" class="form-label small">Speicher-Schwelle</label>
-                <div class="input-group">
-                  <input id="min-free" type="number" step="0.1" class="form-control" />
-                  <span class="input-group-text">GB</span>
+                <div class="card-body">
+                  
+                  <!-- Language Priority -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🌐 Sprachreihenfolge</h6>
+                    <p class="text-muted small mb-3">Bestimme die Priorität der Sprachen für Downloads. Ziehe die Einträge per Drag & Drop.</p>
+                    <ul id="lang-list" class="list-group list-group-flush">
+                      <!-- languages inserted by JS -->
+                    </ul>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Autostart Mode -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🚀 Autostart-Modus</h6>
+                    <select id="autostart-mode" class="form-select form-select-lg">
+                      <option value="">Kein Autostart</option>
+                      <option value="default">Standard-Download</option>
+                      <option value="german">German-Download</option>
+                      <option value="new">Neue Episoden prüfen</option>
+                      <option value="check-missing">Fehlende Episoden prüfen</option>
+                    </select>
+                    <div class="form-text">Dieser Modus wird automatisch beim Serverstart ausgeführt.</div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Title Refresh -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🔄 Titelaktualisierung</h6>
+                    <div class="form-check form-switch form-switch-lg">
+                      <input class="form-check-input" type="checkbox" id="refresh-titles">
+                      <label class="form-check-label" for="refresh-titles">
+                        Anime-Titel beim Start automatisch aktualisieren
+                      </label>
+                    </div>
+                    <div class="form-text">Aktualisiert alle Titel in der Datenbank beim Serverstart.</div>
+                  </div>
+
                 </div>
-                <div class="form-text">Downloads stoppen, wenn weniger freier Speicher verfügbar ist.</div>
-              </div>
-              <div class="mb-2">
-                <label for="autostart-mode" class="form-label small">Autostart-Modus</label>
-                <select id="autostart-mode" class="form-select">
-                  <option value="">Keiner</option>
-                  <option value="default">Standard</option>
-                  <option value="german">German</option>
-                  <option value="new">Neue Episoden</option>
-                  <option value="check-missing">Fehlende Episoden</option>
-                </select>
-                <div class="form-text">Wird beim Serverstart automatisch ausgeführt (optional).</div>
-                <div class="form-text text-secondary">Hinweis: Der Server-Port kann nur direkt in der config.json geändert werden.</div>
-              </div>
-              <div class="form-check form-switch mt-3">
-                <input class="form-check-input" type="checkbox" id="refresh-titles">
-                <label class="form-check-label small" for="refresh-titles">Titelaktualisierung beim Start aktivieren</label>
               </div>
             </div>
-            <div class="card-footer text-end">
-              <button id="save-config" class="btn btn-primary">Speichern</button>
-              <button id="reset-config" class="btn btn-outline-secondary">Zurücksetzen</button>
+          </div>
+        </div>
+
+        <!-- System Settings -->
+        <div class="tab-pane fade" id="system-settings" role="tabpanel">
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h5 class="mb-0">🖥️ System-Einstellungen</h5>
+                  <p class="text-muted small mb-0">Allgemeine Systemkonfiguration</p>
+                </div>
+                <div class="card-body">
+                  
+                  <!-- Data Folder -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">💾 Daten-Ordner</h6>
+                    <div class="input-group input-group-lg">
+                      <span class="input-group-text">📂</span>
+                      <input id="data-folder-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\data" />
+                      <button id="choose-data-folder" class="btn btn-outline-secondary" type="button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                          <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                        </svg>
+                        Durchsuchen
+                      </button>
+                    </div>
+                    <div class="form-text">Speicherort für config.json, AniLoader.db und Log-Dateien.</div>
+                    <div class="alert alert-warning mt-2 mb-0" role="alert">
+                      <small>⚠️ Änderungen am Daten-Ordner erfordern einen Server-Neustart.</small>
+                    </div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Storage Threshold -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">💿 Speicher-Schwelle</h6>
+                    <div class="input-group input-group-lg">
+                      <span class="input-group-text">⚠️</span>
+                      <input id="min-free" type="number" step="0.1" class="form-control" />
+                      <span class="input-group-text">GB</span>
+                    </div>
+                    <div class="form-text">Downloads werden automatisch gestoppt, wenn weniger freier Speicher verfügbar ist.</div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Server Info -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🌐 Server-Konfiguration</h6>
+                    <div class="alert alert-info mb-0" role="alert">
+                      <small>
+                        <strong>ℹ️ Hinweis:</strong> Der Server-Port kann nur direkt in der <code>config.json</code> Datei geändert werden.
+                      </small>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
             </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Save/Reset Buttons -->
+      <div class="row mt-4">
+        <div class="col-12">
+          <div class="d-flex justify-content-end gap-2">
+            <button id="reset-config" class="btn btn-lg btn-outline-secondary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              </svg>
+              Zurücksetzen
+            </button>
+            <button id="save-config" class="btn btn-lg btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
+              </svg>
+              Einstellungen speichern
+            </button>
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </div>
