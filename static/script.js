@@ -19,10 +19,20 @@ const startNew = document.getElementById('start-new');
 const startGerman = document.getElementById('start-german');
 const startMissing = document.getElementById('start-missing');
 const startFullCheck = document.getElementById('start-full-check');
+const stopDownloadBtn = document.getElementById('stop-download');
 
 const txtFileUpload = document.getElementById('txtFileUpload');
 const uploadTxtBtn = document.getElementById('uploadTxtBtn');
 const uploadStatus = document.getElementById('uploadStatus');
+
+const directLinkInput = document.getElementById('directLinkInput');
+const addLinkBtn = document.getElementById('addLinkBtn');
+const linkAddStatus = document.getElementById('linkAddStatus');
+
+const searchQuery = document.getElementById('searchQuery');
+const searchBtn = document.getElementById('searchBtn');
+const searchStatus = document.getElementById('searchStatus');
+const searchResults = document.getElementById('searchResults');
 
 const downloadStatus = document.getElementById('download-status');
 // removed current card; info now shown in overview card
@@ -38,8 +48,11 @@ function setStartButtonsDisabled(disabled) {
   [startDefault, startNew, startGerman, startMissing, startFullCheck].forEach(btn => {
     if (btn) btn.disabled = !!disabled;
   });
+  // Stop-Button zeigen/verstecken
+  if (stopDownloadBtn) {
+    stopDownloadBtn.style.display = disabled ? 'inline-block' : 'none';
+  }
 }
-// stop button removed
 
 async function apiGet(path) {
   const res = await fetch(path);
@@ -134,8 +147,11 @@ function renderOverview(items) {
         const tgt = document.getElementById(`counts-${item.id}`);
         if (!counts || !counts.per_season) return; // keep old
         const entries = Object.keys(counts.per_season).sort((a,b)=>Number(a)-Number(b)).map(s => `S${String(s).padStart(2,'0')}: ${counts.per_season[s]} Ep.`);
-        const filmsTxt = typeof counts.films === 'number' && counts.films > 0 ? ` • Filme: ${counts.films}` : '';
-        const txt = entries.length ? `Geladen pro Staffel: ${entries.join(' | ')}${filmsTxt}` : (filmsTxt ? `Geladen pro Staffel: -${filmsTxt}` : '');
+        const filmsTxt = typeof counts.films === 'number' && counts.films > 0 ? `${counts.films}` : '0';
+        const totalFiles = (counts.total_episodes || 0) + (counts.films || 0);
+        const txt = entries.length 
+          ? `Dateien: ${totalFiles} (${entries.join(', ')} • Filme: ${filmsTxt})` 
+          : (counts.films > 0 ? `Dateien: ${totalFiles} (Filme: ${filmsTxt})` : '');
         if (txt) {
           countsCache[item.id] = txt;
           if (tgt) tgt.textContent = txt;
@@ -892,7 +908,21 @@ startGerman.addEventListener('click', () => startDownload('german'));
 startMissing.addEventListener('click', () => startDownload('check-missing'));
 startFullCheck?.addEventListener('click', () => startDownload('full-check'));
 uploadTxtBtn?.addEventListener('click', uploadTxtFile);
-// no stop button
+stopDownloadBtn?.addEventListener('click', stopDownload);
+addLinkBtn?.addEventListener('click', addDirectLink);
+searchBtn?.addEventListener('click', searchAnime);
+// Live-Suche bei Eingabe
+searchQuery?.addEventListener('input', handleSearchInput);
+// Enter-Taste triggert sofortige Suche
+searchQuery?.addEventListener('keyup', (e) => {
+  if (e.key === 'Enter') {
+    // Lösche Debounce-Timer und suche sofort
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+    }
+    searchAnime();
+  }
+});
 refreshBtn.addEventListener('click', () => { fetchOverview(); fetchDatabase(); fetchStatus(); });
 clearFilter.addEventListener('click', () => { logFilter.value=''; });
 dbRefresh.addEventListener('click', fetchDatabase);
@@ -901,6 +931,251 @@ dbComplete.addEventListener('change', fetchDatabase);
 dbDeutsch?.addEventListener('change', fetchDatabase);
 dbSort.addEventListener('change', fetchDatabase);
 dbOrder.addEventListener('change', fetchDatabase);
+
+/* Stop-Download Funktion */
+async function stopDownload() {
+  try {
+    stopDownloadBtn.disabled = true;
+    const res = await fetch('/stop_download', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'}
+    });
+    const data = await res.json();
+    if (res.ok) {
+      console.log('Stop-Anforderung gesendet');
+    }
+  } catch (e) {
+    console.error('stopDownload', e);
+  } finally {
+    stopDownloadBtn.disabled = false;
+  }
+}
+
+/* Link direkt hinzufügen */
+async function addDirectLink() {
+  const url = directLinkInput?.value?.trim();
+  if (!url) {
+    linkAddStatus.textContent = 'Bitte URL eingeben';
+    linkAddStatus.className = 'small text-warning';
+    return;
+  }
+  
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    linkAddStatus.textContent = 'Ungültige URL';
+    linkAddStatus.className = 'small text-danger';
+    return;
+  }
+  
+  try {
+    linkAddStatus.textContent = 'Hinzufügen...';
+    linkAddStatus.className = 'small text-info';
+    addLinkBtn.disabled = true;
+    
+    const res = await apiPost('/add_link', { url: url });
+    
+    if (res.status === 'ok') {
+      linkAddStatus.textContent = res.msg || 'Erfolgreich hinzugefügt';
+      linkAddStatus.className = 'small text-success';
+      directLinkInput.value = ''; // Clear input
+      // Refresh overview and database
+      setTimeout(() => {
+        fetchOverview();
+        fetchDatabase();
+        linkAddStatus.textContent = '';
+      }, 3000);
+    } else {
+      linkAddStatus.textContent = res.msg || 'Fehler beim Hinzufügen';
+      linkAddStatus.className = 'small text-danger';
+    }
+  } catch (e) {
+    console.error('addDirectLink', e);
+    linkAddStatus.textContent = 'Fehler beim Hinzufügen';
+    linkAddStatus.className = 'small text-danger';
+  } finally {
+    addLinkBtn.disabled = false;
+  }
+}
+
+/* Anime/Serie suchen */
+async function searchAnime(isLiveSearch = false) {
+  const query = searchQuery?.value?.trim();
+  
+  if (!query) {
+    searchResults.innerHTML = '';
+    searchResults.style.display = 'none';
+    searchStatus.textContent = '';
+    return;
+  }
+  
+  try {
+    searchStatus.textContent = 'Durchsuche AniWorld.to + S.to...';
+    searchStatus.className = 'small text-info';
+    searchBtn.disabled = true;
+    searchResults.innerHTML = '<div class="text-center p-3"><div class="spinner-border spinner-border-sm text-primary" role="status"></div> Suche läuft...</div>';
+    searchResults.style.display = 'block';
+    
+    const res = await apiPost('/search', { query: query });
+    
+    if (res.status === 'ok') {
+      displaySearchResults(res.results || [], isLiveSearch);
+      const totalText = isLiveSearch && res.count > 5 ? ` (Top 5 von ${res.count})` : '';
+      searchStatus.textContent = `${res.count || 0} Ergebnis(se) gefunden${totalText}`;
+      searchStatus.className = 'small text-success';
+      setTimeout(() => {
+        searchStatus.textContent = '';
+      }, 5000);
+    } else {
+      searchStatus.textContent = res.msg || 'Suche fehlgeschlagen';
+      searchStatus.className = 'small text-danger';
+      searchResults.style.display = 'none';
+    }
+  } catch (e) {
+    console.error('searchAnime', e);
+    searchStatus.textContent = 'Fehler bei der Suche';
+    searchStatus.className = 'small text-danger';
+    searchResults.style.display = 'none';
+  } finally {
+    searchBtn.disabled = false;
+  }
+}
+
+/* Live-Suche mit Debounce */
+let searchDebounceTimer = null;
+
+function handleSearchInput() {
+  const query = searchQuery?.value?.trim();
+  
+  // Lösche vorherigen Timer
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+  
+  // Leere Eingabe oder zu kurz = keine Suche
+  if (!query || query.length < 2) {
+    searchResults.innerHTML = '';
+    searchResults.style.display = 'none';
+    searchStatus.textContent = '';
+    return;
+  }
+  
+  // Setze neuen Timer für 300ms (schnellere Echtzeit-Suche)
+  searchDebounceTimer = setTimeout(() => {
+    searchAnime(true); // true = Live-Suche (limitiert auf Top-5)
+  }, 300);
+}
+
+function displaySearchResults(results, limitToFive = false) {
+  searchResults.innerHTML = '';
+  
+  if (!results || results.length === 0) {
+    searchResults.innerHTML = '<div class="search-no-results">Keine Ergebnisse gefunden</div>';
+    searchResults.style.display = 'block';
+    return;
+  }
+  
+  const fragment = document.createDocumentFragment();
+  
+  // Zeige maximal 5 Ergebnisse bei Live-Suche, sonst alle
+  const displayResults = limitToFive ? results.slice(0, 5) : results;
+  
+  displayResults.forEach(result => {
+    const item = document.createElement('div');
+    item.className = 'search-result-item';
+    
+    // Cover-Bild hinzufügen falls vorhanden
+    if (result.cover) {
+      const coverImg = document.createElement('img');
+      coverImg.className = 'search-result-cover';
+      coverImg.src = result.cover;
+      coverImg.alt = result.name + ' Cover';
+      coverImg.onerror = () => { coverImg.style.display = 'none'; }; // Verstecke bei Fehler
+      item.appendChild(coverImg);
+    }
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'search-result-content';
+    
+    const title = document.createElement('div');
+    title.className = 'search-result-title';
+    title.textContent = result.title;
+    
+    // Provider Badge hinzufügen
+    if (result.provider) {
+      const badge = document.createElement('span');
+      badge.className = result.provider === 'aniworld' ? 'badge bg-primary ms-2' : 'badge bg-success ms-2';
+      badge.textContent = result.provider === 'aniworld' ? 'AniWorld' : 'S.to';
+      badge.style.fontSize = '0.7rem';
+      title.appendChild(badge);
+    }
+    
+    const url = document.createElement('div');
+    url.className = 'search-result-url small text-muted';
+    url.textContent = result.url;
+    
+    const btnContainer = document.createElement('div');
+    btnContainer.className = 'search-result-actions';
+    
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-sm btn-primary';
+    addBtn.textContent = '➕ Hinzufügen';
+    addBtn.onclick = () => addSearchResult(result.url, result.title);
+    
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-sm btn-outline-secondary';
+    copyBtn.textContent = '📋 URL kopieren';
+    copyBtn.onclick = () => copyToClipboard(result.url);
+    
+    btnContainer.appendChild(addBtn);
+    btnContainer.appendChild(copyBtn);
+    
+    contentDiv.appendChild(title);
+    contentDiv.appendChild(url);
+    contentDiv.appendChild(btnContainer);
+    
+    item.appendChild(contentDiv);
+    
+    fragment.appendChild(item);
+  });
+  
+  searchResults.appendChild(fragment);
+  searchResults.style.display = 'block';
+}
+
+async function addSearchResult(url, title) {
+  try {
+    const res = await apiPost('/add_link', { url: url });
+    if (res.status === 'ok') {
+      searchStatus.textContent = `"${title}" erfolgreich hinzugefügt`;
+      searchStatus.className = 'small text-success';
+      fetchOverview();
+      fetchDatabase();
+      setTimeout(() => {
+        searchStatus.textContent = '';
+      }, 3000);
+    } else {
+      searchStatus.textContent = res.msg || 'Fehler beim Hinzufügen';
+      searchStatus.className = 'small text-danger';
+    }
+  } catch (e) {
+    console.error('addSearchResult', e);
+    searchStatus.textContent = 'Fehler beim Hinzufügen';
+    searchStatus.className = 'small text-danger';
+  }
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    searchStatus.textContent = 'URL in Zwischenablage kopiert';
+    searchStatus.className = 'small text-success';
+    setTimeout(() => {
+      searchStatus.textContent = '';
+    }, 2000);
+  }).catch(e => {
+    console.error('copyToClipboard', e);
+    searchStatus.textContent = 'Kopieren fehlgeschlagen';
+    searchStatus.className = 'small text-danger';
+  });
+}
 
 /* start polling */
 fetchOverview();

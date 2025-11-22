@@ -31,6 +31,9 @@
       <button class="nav-link active" id="download-tab" data-bs-toggle="tab" data-bs-target="#download" type="button" role="tab">📥 Download</button>
     </li>
     <li class="nav-item" role="presentation">
+      <button class="nav-link" id="add-tab" data-bs-toggle="tab" data-bs-target="#add" type="button" role="tab">➕ Hinzufügen</button>
+    </li>
+    <li class="nav-item" role="presentation">
       <button class="nav-link" id="database-tab" data-bs-toggle="tab" data-bs-target="#database" type="button" role="tab">📂 Datenbank</button>
     </li>
     <li class="nav-item" role="presentation">
@@ -51,27 +54,11 @@
           <button id="start-new" class="btn btn-warning">🆕 Überprüfe auf neue Episoden</button>
           <button id="start-missing" class="btn btn-info">🔄️ Überprüfe auf fehlende Episoden</button>
           <button id="start-full-check" class="btn btn-secondary">✅ Kompletter Check</button>
-          
+          <button id="stop-download" class="btn btn-danger" style="display: none;">⏹️ Stop</button>
         </div>
         <div class="col-md-4 text-md-end">
           <span id="download-status" class="small text-secondary">Status: idle</span>
           <span id="disk-free" class="small text-secondary ms-3">Freier Speicher: -</span>
-        </div>
-      </div>
-
-      <div class="row mb-3">
-        <div class="col-md-12">
-          <div class="card">
-            <div class="card-body">
-              <h6 class="card-title">📄 TXT-Datei hochladen</h6>
-              <div class="d-flex gap-2 align-items-center">
-                <input type="file" id="txtFileUpload" class="form-control" accept=".txt" style="max-width: 300px;">
-                <button id="uploadTxtBtn" class="btn btn-primary">Hochladen & Importieren</button>
-                <span id="uploadStatus" class="small text-secondary"></span>
-              </div>
-              <small class="text-muted">Lade eine TXT-Datei mit Anime-URLs hoch (eine URL pro Zeile). Die URLs werden in die Datenbank importiert.</small>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -90,6 +77,57 @@
             </thead>
             <tbody id="queue-body"></tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Tab -->
+    <div class="tab-pane fade" id="add" role="tabpanel" aria-labelledby="add-tab">
+      <div class="row">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title mb-4">➕ Anime/Serie hinzufügen</h5>
+              
+              <!-- Suche nach Anime/Serie -->
+              <div class="mb-4">
+                <h6 class="text-muted mb-3">🔍 Suche nach Anime/Serie</h6>
+                <p class="small text-muted">Durchsuche AniWorld.to und S.to gleichzeitig nach Anime und Serien.</p>
+                <div class="d-flex gap-2 align-items-center mb-2">
+                  <input type="text" id="searchQuery" class="form-control" placeholder="z.B. One Piece, Attack on Titan..." style="max-width: 500px;">
+                  <button id="searchBtn" class="btn btn-primary">🔍 Suchen</button>
+                  <span id="searchStatus" class="small text-secondary"></span>
+                </div>
+                <div id="searchResults" class="search-results-container" style="display: none;"></div>
+              </div>
+
+              <hr>
+
+              <!-- Link direkt hinzufügen -->
+              <div class="mb-4">
+                <h6 class="text-muted mb-3">🔗 Link direkt hinzufügen</h6>
+                <p class="small text-muted">Füge einen direkten Link zu einem Anime/Serie hinzu.</p>
+                <div class="d-flex gap-2 align-items-center">
+                  <input type="text" id="directLinkInput" class="form-control" placeholder="https://aniworld.to/anime/stream/... oder https://s.to/serie/stream/..." style="max-width: 600px;">
+                  <button id="addLinkBtn" class="btn btn-primary">Link hinzufügen</button>
+                  <span id="linkAddStatus" class="small text-secondary"></span>
+                </div>
+              </div>
+
+              <hr>
+
+              <!-- TXT-Datei hochladen -->
+              <div>
+                <h6 class="text-muted mb-3">📄 TXT-Datei hochladen</h6>
+                <p class="small text-muted">Lade eine TXT-Datei mit Anime-URLs hoch (eine URL pro Zeile). Die URLs werden automatisch in die Datenbank importiert.</p>
+                <div class="d-flex gap-2 align-items-center mb-2">
+                  <input type="file" id="txtFileUpload" class="form-control" accept=".txt" style="max-width: 400px;">
+                  <button id="uploadTxtBtn" class="btn btn-primary">Hochladen & Importieren</button>
+                  <span id="uploadStatus" class="small text-secondary"></span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -155,15 +193,17 @@
 
     <!-- Logs Tab -->
     <div class="tab-pane fade" id="logs" role="tabpanel" aria-labelledby="logs-tab">
-      <div class="d-flex align-items-center gap-2 mb-2">
-        <input id="logFilter" class="form-control form-control-sm" placeholder="Log filtern (Regex, z.B. SUCCESS|FEHLER)" />
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <input id="logFilter" class="form-control form-control-sm" placeholder="Log filtern (Regex, z.B. SUCCESS|FEHLER)" style="max-width: 320px;" />
         <button id="clearFilter" class="btn btn-sm btn-outline-secondary">Filter löschen</button>
-        <div class="form-check form-switch ms-2">
-          <input class="form-check-input" type="checkbox" id="autoScroll" checked>
-          <label class="form-check-label small" for="autoScroll">Auto-Scroll</label>
-        </div>
         <button id="copyLogs" class="btn btn-sm btn-outline-secondary">Kopieren</button>
-        <div class="ms-auto small text-secondary">Zeilen: <span id="log-count">0</span></div>
+        <div class="form-check ms-auto mb-0">
+          <input class="form-check-input" type="checkbox" id="autoScroll" checked>
+          <label class="form-check-label" for="autoScroll">
+            Autoscroll aktivieren
+          </label>
+        </div>
+        <div class="small text-secondary">Zeilen: <span id="log-count">0</span></div>
       </div>
       <div id="logBox" class="log-box mono">Noch keine Logs...</div>
     </div>

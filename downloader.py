@@ -573,6 +573,9 @@ def rename_downloaded_file(series_folder, season, episode, title, language, cont
         "English Sub": "English Sub"
     }.get(language, "")
 
+    # Extrahiere Serienname aus series_folder
+    series_name = Path(series_folder).name
+
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
         matching_files = [f for f in Path(series_folder).rglob("*.mp4") if pattern.lower() in f.name.lower()]
@@ -590,7 +593,23 @@ def rename_downloaded_file(series_folder, season, episode, title, language, cont
         pattern = f"Film{episode:02d}"
 
     safe_title = sanitize_filename(title) if title else ""
-    new_name = f"{pattern}"
+    
+    # Prüfe ob Film-Separation für diesen Content-Type aktiv ist
+    is_film = (season == 0)
+    separate_movies = False
+    if content_type == 'anime' and ANIME_SEPARATE_MOVIES:
+        separate_movies = True
+    elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
+        separate_movies = True
+    
+    # Bei Filmen im separaten Pfad: Serienname hinzufügen
+    if is_film and separate_movies and STORAGE_MODE == 'separate':
+        # Format: "Serienname - Film01 - Filmname"
+        new_name = f"{series_name} - {pattern}"
+    else:
+        # Normales Format ohne Serienname
+        new_name = f"{pattern}"
+    
     if safe_title:
         new_name += f" - {safe_title}"
     if lang_suffix:
@@ -598,15 +617,6 @@ def rename_downloaded_file(series_folder, season, episode, title, language, cont
     new_name += ".mp4"
 
     # Bestimme Zielordner basierend auf STORAGE_MODE und Film-Separation
-    is_film = (season == 0)
-    
-    # Prüfe ob Film-Separation für diesen Content-Type aktiv ist
-    separate_movies = False
-    if content_type == 'anime' and ANIME_SEPARATE_MOVIES:
-        separate_movies = True
-    elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
-        separate_movies = True
-    
     if STORAGE_MODE == 'separate' and is_film and separate_movies:
         # Filme sind bereits im separaten Filme-Ordner, keine weitere Unterteilung
         dest_folder = Path(series_folder)
@@ -682,8 +692,36 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             print(f"[INFO] Kein Stream verfügbar: {episode_url} -> Abbruch")
             return "NO_STREAMS"
         elif result == "OK":
+            # Prüfe ob Datei tatsächlich erstellt wurde
+            download_verified = False
+            if season > 0:
+                search_pattern = f"S{season:02d}E{episode:03d}"
+            else:
+                search_pattern = None
+            
+            # Prüfe ob eine neue Datei existiert
+            if search_pattern:
+                for file in Path(base_path).rglob("*.mp4"):
+                    if search_pattern.lower() in file.name.lower():
+                        download_verified = True
+                        break
+            else:
+                # Für Filme: prüfe Movie/Episode pattern
+                for file in Path(base_path).rglob("*.mp4"):
+                    if f"movie {episode:03d}" in file.name.lower() or f"movie{episode:03d}" in file.name.lower() or f"episode {episode:03d}" in file.name.lower() or f"episode{episode:03d}" in file.name.lower():
+                        download_verified = True
+                        break
+            
+            if not download_verified:
+                print(f"[WARN] Download-CLI gab OK zurück, aber keine Datei gefunden für {lang}. Versuche nächste Sprache.")
+                continue
+            
+            print(f"[VERIFY] Datei für {lang} wurde erfolgreich erstellt")
             title = get_episode_title(episode_url)
-            rename_downloaded_file(series_folder, season, episode, title, lang, content_type)
+            rename_success = rename_downloaded_file(series_folder, season, episode, title, lang, content_type)
+            if not rename_success:
+                print(f"[WARN] Umbenennung fehlgeschlagen für {episode_url}, überspringe.")
+                continue
             if lang == "German Dub":
                 german_available = True
                 delete_old_non_german_versions(series_folder, season, episode)
@@ -770,7 +808,13 @@ def download_films(series_title, base_url, anime_id, german_only=False, start_fi
         if result in ["NO_STREAMS", "FAILED"]:
             print(f"[INFO] Keine weiteren Filme gefunden bei Film {film_num}.")
             break
-        update_anime(anime_id, last_film=film_num)
+        # Bei NO_SPACE abbrechen
+        if result == "NO_SPACE":
+            print(f"[ERROR] Zu wenig Speicherplatz - Filmdownload abgebrochen bei Film {film_num}")
+            return "NO_SPACE"
+        # Nur last_film aktualisieren wenn Download erfolgreich war oder übersprungen wurde
+        if result in ["OK", "SKIPPED"]:
+            update_anime(anime_id, last_film=film_num)
         film_num += 1
         time.sleep(1)
 

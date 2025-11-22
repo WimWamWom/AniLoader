@@ -18,6 +18,7 @@ from flask_cors import CORS
 import random
 import socket
 from urllib.parse import urlparse
+import html
 
 
 # -------------------- Konfiguration --------------------
@@ -287,7 +288,7 @@ USER_AGENTS = [
 # -------------------- Logging-System --------------------
 log_lines = []
 log_lock = threading.Lock()
-MAX_LOG_LINES = 2000
+# No log limit - store all logs
 # Separate lock to serialize config writes on Windows
 CONFIG_WRITE_LOCK = threading.Lock()
 
@@ -297,8 +298,7 @@ def log(msg):
     line = f"{ts} {msg}"
     with log_lock:
         log_lines.append(line)
-        if len(log_lines) > MAX_LOG_LINES:
-            del log_lines[: len(log_lines) - MAX_LOG_LINES]
+        # No limit - keep all log lines
     try:
         print(line, flush=True)
     except Exception:
@@ -923,7 +923,10 @@ class DnsOverride:
                     return results
             except Exception:
                 pass
-            return self._orig(host, port, family, type, proto, flags)
+            # self._orig ist garantiert gesetzt (durch __enter__), aber Type-Checker weiß das nicht
+            if self._orig is not None:
+                return self._orig(host, port, family, type, proto, flags)
+            return []  # Fallback (wird nie erreicht)
 
         socket.getaddrinfo = _patched_getaddrinfo
         return self
@@ -1205,14 +1208,64 @@ def rename_downloaded_file(series_folder, season, episode, title, language, in_d
 def run_download(cmd):
     """Startet externes CLI-Tool (aniworld) und interpretiert Ausgabe."""
     try:
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        outs, _ = process.communicate()
+        # Zeige Argumente mit Anführungszeichen für Debugging
+        cmd_display = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in cmd])
+        log(f"[CLI] Starte CLI-Prozess: {cmd_display}")
+        
+        # Setze Umgebungsvariablen für UTF-8 Encoding (gegen charmap-Fehler)
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+        
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                                   text=True, encoding='utf-8', errors='replace', env=env)
+        
+        # Warte auf Prozessende und sammle Ausgabe
+        outs, _ = process.communicate(timeout=600)  # 10 Minuten Timeout
         out = outs or ""
+        
+        log(f"[CLI] Prozess beendet mit Return-Code: {process.returncode}")
+        
+        # CLI-Ausgabe wird nicht mehr geloggt, nur für Fehler-Erkennung genutzt
+        
+        # Prüfe Ausgabe auf Fehlermeldungen (wichtiger als Return-Code!)
         if "No streams available for episode" in out:
+            log(f"[CLI] Keine Streams verfügbar gefunden")
             return "NO_STREAMS"
         if "No provider found for language" in out:
+            log(f"[CLI] Sprache nicht gefunden")
             return "LANGUAGE_ERROR"
-        return "OK" if process.returncode == 0 else "FAILED"
+        
+        # Prüfe auf weitere Fehlermeldungen die einen erfolglosen Download anzeigen
+        error_indicators = [
+            "Something went wrong",
+            "No direct link found",
+            "Failed to execute any anime actions",
+            "Invalid action configuration",
+            "charmap' codec can't encode",
+            "Unexpected download error"
+        ]
+        
+        has_error = any(indicator in out for indicator in error_indicators)
+        
+        if has_error:
+            log(f"[CLI] Download-Fehler erkannt in Ausgabe")
+            return "FAILED"
+        
+        if process.returncode == 0:
+            log(f"[CLI] Download erfolgreich abgeschlossen")
+            # Warte zusätzlich 3 Sekunden damit Dateien vollständig geschrieben werden
+            time.sleep(3)
+            return "OK"
+        else:
+            log(f"[CLI] Download fehlgeschlagen (Code: {process.returncode})")
+            return "FAILED"
+    except subprocess.TimeoutExpired:
+        log(f"[FEHLER] CLI-Timeout nach 600 Sekunden")
+        try:
+            process.kill()
+        except:
+            pass
+        return "FAILED"
     except Exception as e:
         log(f"[FEHLER] run_download: {e}")
         return "FAILED"
@@ -1257,7 +1310,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     
     # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
     try:
-        free_gb = freier_speicher_mb(base_path)
+        free_gb = freier_speicher_mb(str(base_path))
     except Exception as e:
         log(f"[ERROR] Konnte freien Speicher nicht ermitteln: {e}")
         return "FAILED"
@@ -1292,15 +1345,59 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
 
     for lang in langs_to_try:
         log(f"[DOWNLOAD] Versuche {lang} -> {episode_url}")
+        # Sprache muss als einzelnes Argument übergeben werden (mit Leerzeichen)
         cmd = ["aniworld", "--language", lang, "-o", str(base_path), "--episode", episode_url]
         result = run_download(cmd)
+        log(f"[DOWNLOAD-RESULT] {lang} -> {result}")
         
         if result == "NO_STREAMS":
             log(f"[INFO] Kein Stream verfügbar: {episode_url} -> Abbruch")
             return "NO_STREAMS"
         elif result == "OK":
+            # Prüfe ob Datei tatsächlich erstellt wurde
+            # Suche nach der heruntergeladenen Datei (sollte Movie/Episode pattern haben)
+            download_verified = False
+            if season > 0:
+                search_pattern = f"S{season:02d}E{episode:03d}"
+            else:
+                # Filme könnten als "Movie {episode:03d}" oder "Episode {episode:03d}" gespeichert werden
+                search_pattern = None
+            
+            # Retry-Logik: Versuche mehrfach die Datei zu finden (falls Schreibvorgang noch läuft)
+            max_retries = 5
+            for retry in range(max_retries):
+                if retry > 0:
+                    log(f"[VERIFY] Suche Datei, Versuch {retry+1}/{max_retries}...")
+                    time.sleep(2)  # Warte zwischen Versuchen
+                
+                # Prüfe ob eine neue Datei existiert
+                if search_pattern:
+                    for file in Path(base_path).rglob("*.mp4"):
+                        if search_pattern.lower() in file.name.lower():
+                            download_verified = True
+                            log(f"[VERIFY] Datei gefunden: {file.name}")
+                            break
+                else:
+                    # Für Filme: prüfe Movie/Episode pattern
+                    for file in Path(base_path).rglob("*.mp4"):
+                        if f"movie {episode:03d}" in file.name.lower() or f"movie{episode:03d}" in file.name.lower() or f"episode {episode:03d}" in file.name.lower() or f"episode{episode:03d}" in file.name.lower():
+                            download_verified = True
+                            log(f"[VERIFY] Datei gefunden: {file.name}")
+                            break
+                
+                if download_verified:
+                    break
+            
+            if not download_verified:
+                log(f"[WARN] Download-CLI gab OK zurück, aber keine Datei gefunden für {lang} nach {max_retries} Versuchen. Versuche nächste Sprache.")
+                continue
+            
+            log(f"[VERIFY] Datei für {lang} wurde erfolgreich erstellt")
             title = get_episode_title(episode_url)
-            rename_downloaded_file(series_folder, season, episode, title, lang, in_dedicated_movies_folder)
+            rename_success = rename_downloaded_file(series_folder, season, episode, title, lang, in_dedicated_movies_folder)
+            if not rename_success:
+                log(f"[WARN] Umbenennung fehlgeschlagen für {episode_url}, überspringe.")
+                continue
             if lang == "German Dub":
                 german_available = True
                 if german_only == True:
@@ -1310,7 +1407,11 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             break
         elif result == "LANGUAGE_ERROR":
             log(f"[INFO] Sprache {lang} nicht gefunden für {episode_url}, prüfe nächste Sprache.")
+            time.sleep(2)  # Warte zwischen Sprach-Versuchen
             continue
+        else:
+            # Bei unbekanntem Status auch warten
+            time.sleep(2)
 
     if not german_available:
         try:
@@ -1322,7 +1423,7 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
             if episode_url not in fehlende:
                 # Nur in DB schreiben, wenn noch genug Speicher zur Verfügung steht
                 try:
-                    free_after_gb = freier_speicher_mb(base_path)
+                    free_after_gb = freier_speicher_mb(str(base_path))
                 except Exception:
                     free_after_gb = 0
                 if free_after_gb >= MIN_FREE_GB:
@@ -1353,7 +1454,9 @@ def download_films(series_title, base_url, anime_id, german_only=False, start_fi
         if result in ["NO_STREAMS", "FAILED"]:
             log(f"[INFO] Keine weiteren Filme gefunden bei Film {film_num}.")
             break
-        update_anime(anime_id, last_film=film_num)
+        # Nur last_film aktualisieren wenn Download erfolgreich war oder übersprungen wurde
+        if result in ["OK", "SKIPPED"]:
+            update_anime(anime_id, last_film=film_num)
         film_num += 1
         time.sleep(1)
 
@@ -1364,6 +1467,7 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
     while True:
         episode = start_episode
         found_episode_in_season = False
+        consecutive_failed = 0  # Zähler für aufeinanderfolgende Fehler
         log(f"[DOWNLOAD] Prüfe Staffel {season} von '{series_title}'")
         while True:
             episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
@@ -1373,12 +1477,20 @@ def download_seasons(series_title, base_url, anime_id, german_only=False, start_
                 log(f"[ERROR] Abbruch aller Staffel-Downloads wegen fehlendem Speicher.")
                 return "NO_SPACE"
             if result in ["NO_STREAMS", "FAILED"]:
+                consecutive_failed += 1
                 if episode == start_episode:
                     log(f"[INFO] Keine Episoden gefunden in Staffel {season}.")
                     break
-                else:
-                    log(f"[INFO] Staffel {season} beendet nach {episode-1} Episoden.")
+                elif consecutive_failed >= 3:
+                    log(f"[INFO] Staffel {season} beendet nach 3 aufeinanderfolgenden Fehlern bei Episode {episode}.")
                     break
+                else:
+                    log(f"[WARN] Episode {episode} fehlgeschlagen ({consecutive_failed}/3), versuche nächste Episode.")
+                    episode += 1
+                    time.sleep(1)
+                    continue
+            # Download erfolgreich oder übersprungen
+            consecutive_failed = 0  # Reset bei Erfolg
             found_episode_in_season = True
             update_anime(anime_id, last_episode=episode, last_season=season)
             episode += 1
@@ -1783,9 +1895,15 @@ current_download = {
     "current_episode": None,
     "current_is_film": None,
     "current_id": None,
-    "current_url": None
+    "current_url": None,
+    "stop_requested": False  # Flag für sanftes Stoppen
 }
 download_lock = threading.Lock()
+
+def check_stop_requested():
+    """Prüft ob ein Stop angefordert wurde."""
+    with download_lock:
+        return current_download.get("stop_requested", False)
 
 def run_mode(mode="default"):
     global current_download
@@ -1805,7 +1923,8 @@ def run_mode(mode="default"):
             "current_episode": None,
             "current_is_film": None,
             "current_id": None,
-            "current_url": None
+            "current_url": None,
+            "stop_requested": False
         })
     
     try:
@@ -1828,6 +1947,10 @@ def run_mode(mode="default"):
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
                 log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (German)")
                 for idx, anime in enumerate(work_list):
+                    # Stop-Überprüfung
+                    if check_stop_requested():
+                        log("[STOP] Download gestoppt (nach aktueller Episode)")
+                        return
                     current_download["current_index"] = idx
                     # Überspringen wenn als deleted markiert
                     if anime.get("deleted"):
@@ -1847,6 +1970,10 @@ def run_mode(mode="default"):
                     log(f"[GERMAN] '{series_title}': {len(fehlende)} Folgen zu testen.")
                     verbleibend = fehlende.copy()
                     for url in fehlende:
+                        # Stop-Überprüfung nach jeder Episode
+                        if check_stop_requested():
+                            log("[STOP] Download gestoppt (nach aktueller Episode)")
+                            return
                         match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
                         if match:
                             season = int(match.group(1))
@@ -1860,13 +1987,18 @@ def run_mode(mode="default"):
                             verbleibend.remove(url)
                             update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
                             log(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
-                            delete_old_non_german_versions(series_folder=os.path.join(DOWNLOAD_DIR, series_title), season=season, episode=episode)
+                            if series_title:  # Type-Guard
+                                delete_old_non_german_versions(series_folder=os.path.join(str(DOWNLOAD_DIR), series_title), season=season, episode=episode)
                     check_deutsch_komplett(anime_id)
                     # Entferne diesen Eintrag aus der Queue (falls vorhanden)
 
             # 2) Danach restliche DB-Einträge
             rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
             for idx, anime in enumerate(rest_list):
+                # Stop-Überprüfung
+                if check_stop_requested():
+                    log("[STOP] Download gestoppt (nach aktueller Episode)")
+                    return
                 current_download["current_index"] = idx
                 # Überspringen wenn als deleted markiert
                 if anime.get("deleted"):
@@ -1886,6 +2018,10 @@ def run_mode(mode="default"):
                 log(f"[GERMAN] '{series_title}': {len(fehlende)} Folgen zu testen.")
                 verbleibend = fehlende.copy()
                 for url in fehlende:
+                    # Stop-Überprüfung nach jeder Episode
+                    if check_stop_requested():
+                        log("[STOP] Download gestoppt (nach aktueller Episode)")
+                        return
                     match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
                     if match:
                         season = int(match.group(1))
@@ -1900,7 +2036,8 @@ def run_mode(mode="default"):
                         verbleibend.remove(url)
                         update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
                         log(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
-                        delete_old_non_german_versions(series_folder=os.path.join(DOWNLOAD_DIR, series_title), season=season, episode=episode)
+                        if series_title:  # Type-Guard
+                            delete_old_non_german_versions(series_folder=os.path.join(str(DOWNLOAD_DIR), series_title), season=season, episode=episode)
                 check_deutsch_komplett(anime_id)
                 # Nach jedem DB-Eintrag: Queue erneut prüfen und sofort abarbeiten
                 try:
@@ -1940,7 +2077,8 @@ def run_mode(mode="default"):
                                 if r == 'OK' and url in verbleibend:
                                     verbleibend.remove(url)
                                     update_anime(q_anime_id, fehlende_deutsch_folgen=verbleibend)
-                                    delete_old_non_german_versions(series_folder=os.path.join(DOWNLOAD_DIR, q_series_title), season=s, episode=e)
+                                    if q_series_title:  # Type-Guard
+                                        delete_old_non_german_versions(series_folder=os.path.join(str(DOWNLOAD_DIR), q_series_title), season=s, episode=e)
                             check_deutsch_komplett(q_anime_id)
                             queue_delete_by_anime_id(q_anime_id)
                 except Exception as _e:
@@ -1953,6 +2091,10 @@ def run_mode(mode="default"):
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
                 log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (New)")
                 for idx, anime in enumerate(work_list):
+                    # Stop-Überprüfung
+                    if check_stop_requested():
+                        log("[STOP] Download gestoppt (nach aktueller Episode)")
+                        return
                     current_download["current_index"] = idx
                     if anime.get("deleted"):
                         log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
@@ -1984,6 +2126,10 @@ def run_mode(mode="default"):
             # 2) Danach restliche DB-Einträge
             rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
             for idx, anime in enumerate(rest_list):
+                # Stop-Überprüfung
+                if check_stop_requested():
+                    log("[STOP] Download gestoppt (nach aktueller Episode)")
+                    return
                 
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
@@ -2059,6 +2205,10 @@ def run_mode(mode="default"):
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
                 log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Check-Missing)")
                 for anime in work_list:
+                    # Stop-Überprüfung
+                    if check_stop_requested():
+                        log("[STOP] Download gestoppt (nach aktueller Episode)")
+                        return
                     # Deleted ignorieren
                     if anime.get("deleted"):
                         log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
@@ -2082,7 +2232,7 @@ def run_mode(mode="default"):
                     film_num = 1
                     while True:
                         film_url = f"{base_url}/filme/film-{film_num}"
-                        if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), 0, film_num):
+                        if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), 0, film_num):
                             log(f"[OK] Film {film_num} bereits vorhanden.")
                         else:
                             log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
@@ -2098,7 +2248,7 @@ def run_mode(mode="default"):
                         found_episode = False
                         while True:
                             episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
-                            if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), season, episode):
+                            if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), season, episode):
                                 log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
                                 episode += 1
                                 continue
@@ -2157,7 +2307,7 @@ def run_mode(mode="default"):
                 film_num = 1
                 while True:
                     film_url = f"{base_url}/filme/film-{film_num}"
-                    if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), 0, film_num):
+                    if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), 0, film_num):
                         log(f"[OK] Film {film_num} bereits vorhanden.")
                     else:
                         log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
@@ -2173,7 +2323,7 @@ def run_mode(mode="default"):
                     found_episode = False
                     while True:
                         episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
-                        if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, series_title), season, episode):
+                        if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), season, episode):
                             log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
                             episode += 1
                             continue
@@ -2227,7 +2377,7 @@ def run_mode(mode="default"):
                             film_num = 1
                             while True:
                                 film_url = f"{base_url}/filme/film-{film_num}"
-                                if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, q_series_title), 0, film_num):
+                                if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(q_series_title or '')), 0, film_num):
                                     pass
                                 else:
                                     result = download_episode(q_series_title, film_url, 0, film_num, q_anime_id, german_only=False)
@@ -2242,7 +2392,7 @@ def run_mode(mode="default"):
                                 found_episode = False
                                 while True:
                                     episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
-                                    if episode_already_downloaded(os.path.join(DOWNLOAD_DIR, q_series_title), season, episode):
+                                    if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(q_series_title or '')), season, episode):
                                         episode += 1
                                         continue
                                     result = download_episode(q_series_title, episode_url, season, episode, q_anime_id, german_only=False)
@@ -2274,6 +2424,10 @@ def run_mode(mode="default"):
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
                 log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Full-Check)")
                 for idx, anime in enumerate(work_list):
+                    # Stop-Überprüfung
+                    if check_stop_requested():
+                        log("[STOP] Download gestoppt (nach aktueller Episode)")
+                        return
                     current_download["current_index"] = idx
                     if anime.get("deleted"):
                         log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
@@ -2297,6 +2451,10 @@ def run_mode(mode="default"):
             # 2) Danach restliche DB-Einträge
             rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
             for idx, anime in enumerate(rest_list):
+                # Stop-Überprüfung
+                if check_stop_requested():
+                    log("[STOP] Download gestoppt (nach aktueller Episode)")
+                    return
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
                     log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
@@ -2351,6 +2509,10 @@ def run_mode(mode="default"):
                 work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
                 log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Default)")
                 for idx, anime in enumerate(work_list):
+                    # Stop-Überprüfung
+                    if check_stop_requested():
+                        log("[STOP] Download gestoppt (nach aktueller Episode)")
+                        return
                     
                     current_download["current_index"] = idx
                     if anime.get("deleted"):
@@ -2387,6 +2549,10 @@ def run_mode(mode="default"):
             # 2) Danach restliche DB-Einträge
             rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
             for idx, anime in enumerate(rest_list):
+                # Stop-Überprüfung
+                if check_stop_requested():
+                    log("[STOP] Download gestoppt (nach aktueller Episode)")
+                    return
                 
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
@@ -2517,7 +2683,7 @@ def api_upload_txt():
         if file.filename == '':
             return jsonify({"status": "error", "msg": "Keine Datei ausgewählt"}), 400
         
-        if not file.filename.endswith('.txt'):
+        if not file.filename or not file.filename.endswith('.txt'):
             return jsonify({"status": "error", "msg": "Nur TXT-Dateien erlaubt"}), 400
         
         # Datei lesen
@@ -2562,6 +2728,16 @@ def api_start_download():
     thread = threading.Thread(target=run_mode, args=(mode,), daemon=True)
     thread.start()
     return jsonify({"status": "started", "mode": mode})
+
+@app.route("/stop_download", methods=["POST"])
+def api_stop_download():
+    """Stoppt den Download nach der aktuellen Episode."""
+    with download_lock:
+        if current_download["status"] != "running":
+            return jsonify({"status": "not_running"}), 400
+        current_download["stop_requested"] = True
+        log("[STOP] Stop-Anforderung erhalten - Download wird nach aktueller Episode gestoppt")
+    return jsonify({"status": "ok", "msg": "Download wird nach aktueller Episode gestoppt"})
 
 @app.route("/status")
 def api_status():
@@ -2867,6 +3043,8 @@ def api_queue():
                 return jsonify({'status': 'ok' if ok else 'failed'})
             ok = queue_clear()
             return jsonify({'status': 'ok' if ok else 'failed'})
+        # Fallback für unerwartete Methoden
+        return jsonify({'status': 'failed', 'error': 'Method not allowed'}), 405
     except Exception as e:
         log(f"[ERROR] api_queue: {e}")
         return jsonify({'status': 'failed', 'error': str(e)}), 500
@@ -2876,7 +3054,7 @@ def api_queue():
 @app.route('/disk')
 def api_disk():
     try:
-        free_gb = freier_speicher_mb(DOWNLOAD_DIR)
+        free_gb = freier_speicher_mb(str(DOWNLOAD_DIR))
         return jsonify({'free_gb': free_gb})
     except Exception as e:
         log(f"[ERROR] api_disk: {e}")
@@ -3070,6 +3248,176 @@ def api_export():
         return jsonify({"status": "error", "msg": "Keine URL angegeben"}), 400
     ok = insert_anime(url)
     return jsonify({"status": "ok" if ok else "failed"})
+
+@app.route("/add_link", methods=["POST"])
+def api_add_link():
+    """Fügt einen einzelnen Link direkt zur Datenbank hinzu."""
+    try:
+        body = request.get_json(silent=True) or {}
+        url = body.get('url', '').strip()
+        
+        if not url:
+            return jsonify({"status": "error", "msg": "Keine URL angegeben"}), 400
+        
+        if not (url.startswith('http://') or url.startswith('https://')):
+            return jsonify({"status": "error", "msg": "Ungültige URL"}), 400
+        
+        # URL in Datenbank einfügen
+        success = insert_anime(url=url)
+        
+        if success:
+            log(f"[ADD_LINK] URL hinzugefügt: {url}")
+            return jsonify({"status": "ok", "msg": "URL erfolgreich hinzugefügt"})
+        else:
+            return jsonify({"status": "error", "msg": "URL bereits vorhanden oder Fehler beim Hinzufügen"}), 400
+            
+    except Exception as e:
+        log(f"[ERROR] api_add_link: {e}")
+        return jsonify({"status": "error", "msg": str(e)}), 500
+
+def search_provider(query, provider_name, base_url):
+    """Hilfsfunktion um einen einzelnen Provider zu durchsuchen"""
+    try:
+        from urllib.parse import quote
+        search_url = f"{base_url}/ajax/seriesSearch?keyword={quote(query)}"
+        
+        headers = {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": base_url
+        }
+        
+        # DNS-Auflösung über Cloudflare
+        hostname = urlparse(base_url).hostname
+        if not hostname:
+            return []
+        
+        ips = resolve_ips_via_cloudflare(hostname)
+        
+        with DnsOverride(hostname, ips):
+            response = requests.get(search_url, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            log(f"[SEARCH-{provider_name.upper()}] HTTP {response.status_code}")
+            return []
+        
+        # Parse JSON-Antwort
+        clean_text = response.text.strip()
+        
+        # Prüfe, ob die Response vollständig ist
+        if not clean_text.endswith(']') and not clean_text.endswith('}'):
+            log(f"[SEARCH-{provider_name.upper()}] Unvollständige JSON-Response")
+            if clean_text.endswith(','):
+                clean_text = clean_text[:-1] + ']'
+            elif '[' in clean_text and ']' not in clean_text:
+                clean_text = clean_text + ']'
+        
+        clean_text = clean_text.encode("utf-8").decode("utf-8-sig")
+        clean_text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]", "", clean_text)
+        
+        anime_list = json.loads(html.unescape(clean_text))
+        
+        if not isinstance(anime_list, list):
+            return []
+        
+        results = []
+        for anime in anime_list:
+            if not isinstance(anime, dict):
+                continue
+            
+            name = anime.get('name', '').strip()
+            link = anime.get('link', '').strip()
+            year = anime.get('productionYear', '')
+            cover = anime.get('cover', '').strip()
+            
+            if not name or not link:
+                continue
+            
+            # Erstelle vollständige URL
+            if link.startswith('http'):
+                full_url = link
+            elif link.startswith('/'):
+                full_url = base_url + link
+            else:
+                path_prefix = '/serie/stream/' if provider_name == 'sto' else '/anime/stream/'
+                full_url = f"{base_url}{path_prefix}{link}"
+            
+            # Erstelle vollständige Cover-URL
+            cover_url = ''
+            if cover:
+                if cover.startswith('http'):
+                    cover_url = cover
+                elif cover.startswith('/'):
+                    cover_url = base_url + cover
+                else:
+                    cover_url = f"{base_url}/public/img/cover/{cover}"
+            
+            display_title = name
+            if year:
+                display_title = f"{name} ({year})"
+            
+            results.append({
+                'title': display_title,
+                'url': full_url,
+                'name': name,
+                'year': year,
+                'cover': cover_url,
+                'provider': provider_name
+            })
+        
+        return results
+        
+    except Exception as e:
+        log(f"[SEARCH-{provider_name.upper()}-ERROR] {e}")
+        return []
+
+@app.route("/search", methods=["POST"])
+def api_search():
+    """Sucht gleichzeitig auf AniWorld.to UND S.to mittels ajax/seriesSearch API"""
+    try:
+        body = request.get_json(silent=True) or {}
+        query = body.get('query', '').strip()
+        
+        if not query:
+            return jsonify({"status": "ok", "results": [], "count": 0})
+        
+        # Suche parallel auf beiden Plattformen
+        import concurrent.futures
+        
+        providers = [
+            ('aniworld', 'https://aniworld.to'),
+            ('sto', 'https://s.to')
+        ]
+        
+        all_results = []
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            # Starte beide Suchen parallel
+            futures = {
+                executor.submit(search_provider, query, name, url): name 
+                for name, url in providers
+            }
+            
+            for future in concurrent.futures.as_completed(futures):
+                provider_name = futures[future]
+                try:
+                    results = future.result()
+                    all_results.extend(results)
+                    log(f"[SEARCH] {len(results)} Ergebnisse von {provider_name}")
+                except Exception as e:
+                    log(f"[SEARCH-ERROR] {provider_name}: {e}")
+        
+        # Gebe alle Ergebnisse zurück, Frontend entscheidet über Limit
+        log(f"[SEARCH] Gesamt: {len(all_results)} Ergebnisse für '{query}'")
+        return jsonify({"status": "ok", "results": all_results, "count": len(all_results), "total": len(all_results)})
+        
+    except Exception as e:
+        log(f"[ERROR] api_search: {e}")
+        import traceback
+        log(f"[ERROR] Traceback: {traceback.format_exc()}")
+        return jsonify({"status": "error", "msg": str(e)}), 500
 
 @app.route("/anime", methods=["DELETE"])
 def api_anime_delete():
