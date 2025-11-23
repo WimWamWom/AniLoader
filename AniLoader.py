@@ -49,20 +49,20 @@ DEFAULT_DATA_FOLDER = os.path.join(os.path.dirname(__file__), 'data')
 data_folder = DEFAULT_DATA_FOLDER
 config_path = os.path.join(data_folder, 'config.json')
 db_path = os.path.join(data_folder, 'AniLoader.db')
-log_path = os.path.join(data_folder, 'last_run.log')
+log_path = os.path.join(data_folder, 'last_run.txt')
 
 # Ensure the data folder exists
 os.makedirs(data_folder, exist_ok=True)
 
 # Function to save the last log
 def save_last_log(log_content):
-    with open(log_path, 'w') as log_file:
+    with open(log_path, 'w', encoding='utf-8') as log_file:
         log_file.write(log_content)
 
 # Function to read the last log
 def read_last_log():
     if os.path.exists(log_path):
-        with open(log_path, 'r') as log_file:
+        with open(log_path, 'r', encoding='utf-8') as log_file:
             return log_file.read()
     return "No previous log available."
 
@@ -82,7 +82,7 @@ def update_data_paths(new_data_folder):
     data_folder = new_data_folder
     config_path = os.path.join(data_folder, 'config.json')
     db_path = os.path.join(data_folder, 'AniLoader.db')
-    log_path = os.path.join(data_folder, 'last_run.log')
+    log_path = os.path.join(data_folder, 'last_run.txt')
     CONFIG_PATH = Path(config_path)
     DB_PATH = Path(db_path)
     # Ensure the new data folder exists
@@ -2644,6 +2644,14 @@ def run_mode(mode="default"):
     except Exception as e:
         log(f"[ERROR] Unhandled exception in run_mode: {e}")
     finally:
+        # Speichere Logs in Datei
+        try:
+            with log_lock:
+                log_content = "\n".join(log_lines)
+            save_last_log(log_content)
+        except Exception as e:
+            print(f"[ERROR] Konnte Logs nicht speichern: {e}")
+        
         # Wenn der Status bereits auf 'kein-speicher' gesetzt wurde, nicht überschreiben.
         with download_lock:
             if current_download.get("status") != "kein-speicher":
