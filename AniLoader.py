@@ -293,12 +293,18 @@ log_lock = threading.Lock()
 CONFIG_WRITE_LOCK = threading.Lock()
 
 def log(msg):
-    """Thread-safe log buffer + print."""
+    """Thread-safe log buffer + print + write to file immediately."""
     ts = time.strftime("[%Y-%m-%d %H:%M:%S]")
     line = f"{ts} {msg}"
     with log_lock:
         log_lines.append(line)
-        # No limit - keep all log lines
+        # Write immediately to file so it's available even on abort
+        try:
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(line + "\n")
+        except Exception as e:
+            # If file write fails, at least keep in memory
+            pass
     try:
         print(line, flush=True)
     except Exception:
@@ -1907,6 +1913,14 @@ def check_stop_requested():
 
 def run_mode(mode="default"):
     global current_download
+    
+    # Clear log file at start of new run
+    try:
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write("")  # Empty file
+    except Exception:
+        pass
+    
     with download_lock:
         if current_download["status"] == "running":
             log("[INFO] Download bereits laufend — start abgebrochen.")
@@ -2644,14 +2658,6 @@ def run_mode(mode="default"):
     except Exception as e:
         log(f"[ERROR] Unhandled exception in run_mode: {e}")
     finally:
-        # Speichere Logs in Datei
-        try:
-            with log_lock:
-                log_content = "\n".join(log_lines)
-            save_last_log(log_content)
-        except Exception as e:
-            print(f"[ERROR] Konnte Logs nicht speichern: {e}")
-        
         # Wenn der Status bereits auf 'kein-speicher' gesetzt wurde, nicht überschreiben.
         with download_lock:
             if current_download.get("status") != "kein-speicher":
