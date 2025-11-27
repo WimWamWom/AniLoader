@@ -44,7 +44,6 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Anwendungscode kopieren
 COPY AniLoader.py .
-COPY downloader.py .
 COPY AniLoader.txt .
 COPY static/ ./static/
 COPY templates/ ./templates/

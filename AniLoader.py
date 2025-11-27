@@ -1024,20 +1024,29 @@ def episode_already_downloaded(series_folder, season, episode, in_dedicated_movi
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
     else:
-        # Suche sowohl nach "Movie" (CLI-Format) als auch nach "Film" (umbenannt)
+        # Für Filme: Pattern abhängig von Speicherort
+        series_name = Path(series_folder).name
+        if in_dedicated_movies_folder:
+            # Separate Film-Speicherung: Mit Serienname
+            pattern_film = f"{series_name} - Film{episode:02d}"
+        else:
+            # Normale Speicherung: Ohne Serienname
+            pattern_film = f"Film{episode:02d}"
+        # Alternative Patterns für Rückwärtskompatibilität
         pattern_movie = f"Movie{episode:02d}"
-        pattern_film = f"Film{episode:02d}"
+        pattern_film_old = f"Film{episode:02d}"  # Altes Format
     
     # Bei dedizierten Film-Ordnern: Suche im parent-Ordner rekursiv
     # (weil jeder Film in eigenem Unterordner liegt)
     if season == 0 and in_dedicated_movies_folder:
         # series_folder ist z.B. D:\Filme\SerienName
         # Aber die Filme liegen in D:\Filme\Filmtitel1\, D:\Filme\Filmtitel2\ etc.
-        # Wir suchen im parent-Ordner rekursiv
+        # Wir suchen im parent-Ordner rekursiv nach "Serienname - Film##"
         parent_folder = Path(series_folder).parent
         if parent_folder.exists():
             for file in parent_folder.rglob("*.mp4"):
-                if pattern_movie.lower() in file.name.lower() or pattern_film.lower() in file.name.lower():
+                if (pattern_film.lower() in file.name.lower() or 
+                    pattern_movie.lower() in file.name.lower()):
                     return True
     else:
         # Normale Prüfung für Staffeln oder Filme im Serien-Ordner
@@ -1049,8 +1058,10 @@ def episode_already_downloaded(series_folder, season, episode, in_dedicated_movi
                     if pattern.lower() in file.name.lower():
                         return True
                 else:
-                    # Prüfe beide Patterns für Filme
-                    if pattern_movie.lower() in file.name.lower() or pattern_film.lower() in file.name.lower():
+                    # Prüfe Film-Patterns
+                    if (pattern_film.lower() in file.name.lower() or 
+                        pattern_movie.lower() in file.name.lower() or 
+                        pattern_film_old.lower() in file.name.lower()):
                         return True
     return False
 
@@ -1063,9 +1074,12 @@ def delete_old_non_german_versions(series_folder, season, episode, in_dedicated_
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
     else:
-        # Suche sowohl nach "Movie" (CLI-Format) als auch nach "Film" (umbenannt)
-        pattern = f"Film{episode:02d}"
+        # Für Filme: Serienname + Film-Nummer Pattern
+        series_name = Path(series_folder).name if isinstance(series_folder, str) else series_folder
+        pattern = f"{series_name} - Film{episode:02d}"
+        # Alternative Patterns
         pattern_movie = f"Movie{episode:02d}"
+        pattern_film_old = f"Film{episode:02d}"
     
     # Bei dedizierten Film-Ordnern: Suche im parent-Ordner rekursiv
     # (weil Filme in Filmtitel-Unterordnern liegen)
@@ -1077,7 +1091,9 @@ def delete_old_non_german_versions(series_folder, season, episode, in_dedicated_
         if season > 0:
             matches = pattern.lower() in file.name.lower()
         else:
-            matches = pattern.lower() in file.name.lower() or pattern_movie.lower() in file.name.lower()
+            matches = (pattern.lower() in file.name.lower() or 
+                      pattern_movie.lower() in file.name.lower() or 
+                      pattern_film_old.lower() in file.name.lower())
         
         if matches:
             if "[sub]" in file.name.lower() or "[english dub]" in file.name.lower() or "[english sub]" in file.name.lower():
@@ -1145,7 +1161,13 @@ def rename_downloaded_file(series_folder, season, episode, title, language, in_d
             return False
         file_to_rename = matching_files[0]
         # Finaler Pattern für Umbenennung zu 'Film'
-        pattern = f"Film{episode:02d}"
+        if in_dedicated_movies_folder:
+            # Separate Film-Speicherung: Mit Serienname
+            series_name = Path(series_folder).name
+            pattern = f"{series_name} - Film{episode:02d}"
+        else:
+            # Normale Speicherung: Ohne Serienname
+            pattern = f"Film{episode:02d}"
 
     safe_title = sanitize_episode_title(title) if title else ""
 
