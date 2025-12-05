@@ -72,12 +72,12 @@
       <div class="mt-4">
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
           <h6 class="mb-0">Warteschlange</h6>
-          <button id="queue-clear" class="btn btn-sm btn-outline-danger">Leeren</button>
+          <button id="queue-clear" class="btn btn-sm btn-outline-danger">Warteschlange leeren</button>
         </div>
         <div class="table-responsive">
       <table class="table table-dark table-striped table-hover mt-1">
             <thead>
-        <tr><th>#</th><th class="d-none d-sm-table-cell">ID</th><th>Title</th><th>Aktion</th></tr>
+        <tr><th>#</th><th>ID</th><th>Title</th><th>Aktion</th></tr>
             </thead>
             <tbody id="queue-body"></tbody>
           </table>
@@ -166,8 +166,8 @@
             <option value="last_season">Letzte Staffel</option>
           </select>
           <select id="db-order" class="form-select form-select-sm">
-            <option value="asc">Auf</option>
-            <option value="desc">Ab</option>
+            <option value="asc">↑</option>
+            <option value="desc">↓</option>
           </select>
         </div>
         <div class="col-12 col-md-3 text-md-end">
@@ -180,14 +180,14 @@
           <thead>
             <tr>
               <th style="width:5ch">ID</th>
-              <th style="min-width:10rem">Title</th>
-              <th class="d-none d-lg-table-cell" style="min-width:14rem">URL</th>
-              <th class="d-none d-md-table-cell">Status</th>
-              <th class="d-none d-md-table-cell">DE</th>
-              <th class="d-none d-xl-table-cell">Del</th>
-              <th class="d-none d-xl-table-cell" style="min-width:12rem">Fehlende DE</th>
-              <th class="d-none d-lg-table-cell" style="width:10rem">S/E/F</th>
-              <th style="width:6rem">Aktion</th>
+              <th style="min-width:8rem">Title</th>
+              <th style="min-width:10rem">URL</th>
+              <th style="width:7ch">Status</th>
+              <th style="width:5ch">DE</th>
+              <th style="width:5ch">Del</th>
+              <th style="min-width:8rem">Fehlende DE</th>
+              <th style="width:8ch">S/E/F</th>
+              <th style="width:8ch">Aktion</th>
             </tr>
           </thead>
           <tbody id="db-table-body"></tbody>

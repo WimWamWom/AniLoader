@@ -853,7 +853,7 @@ summary:hover {
   }
   
   #lastUpdated {
-    display: none;
+    font-size: 0.7rem;
   }
   
   /* Tabs */
@@ -876,40 +876,35 @@ summary:hover {
     padding-top: 1rem;
   }
   
-  /* Download Buttons - Stack vertically */
-  #download .row .col-md-8 {
-    margin-bottom: 1rem;
-  }
-  
-  #download .d-flex.gap-2 {
-    flex-direction: column;
-    width: 100%;
-  }
-  
-  #download .d-flex.gap-2 .btn {
-    width: 100%;
-    justify-content: center;
-  }
-  
   /* Overview Container - Cards */
   #overviewContainer .col-md-6,
   #overviewContainer .col-lg-4 {
     padding: 0.375rem;
   }
   
-  /* Tables */
+  /* Tables - Kompakter aber alle Spalten sichtbar */
   .table-responsive {
-    font-size: 0.75rem;
+    font-size: 0.65rem;
+    overflow-x: auto;
   }
   
   .table th,
   .table td {
-    padding: 0.5rem 0.375rem;
+    padding: 0.4rem 0.25rem;
+    white-space: nowrap;
   }
   
   .table-dark th {
-    font-size: 0.7rem;
-    padding: 0.75rem 0.375rem;
+    font-size: 0.6rem;
+    padding: 0.6rem 0.25rem;
+  }
+  
+  /* Tabellen-Zellen mit scrollbarem Inhalt für lange Texte */
+  .table td:nth-child(2),
+  .table td:nth-child(3) {
+    max-width: 120px;
+    white-space: normal;
+    word-break: break-word;
   }
   
   /* Forms */
@@ -934,6 +929,7 @@ summary:hover {
   .log-line {
     gap: 0.5rem;
     padding: 0.375rem;
+    flex-wrap: wrap;
   }
   
   .log-tag {
@@ -989,33 +985,16 @@ summary:hover {
     border-radius: 10px !important;
   }
   
-  /* Database Filters */
-  #database .row.g-2 {
-    row-gap: 0.5rem;
-  }
-  
-  #database .col-md-2,
-  #database .col-md-3,
-  #database .col-md-4 {
-    width: 100%;
-  }
-  
   /* Alert Adjustments */
   .alert {
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
   }
   
-  /* Hide unnecessary columns on small screens */
-  .table-responsive th:nth-child(n+6),
-  .table-responsive td:nth-child(n+6) {
-    display: none;
-  }
-  
-  /* Keep only essential columns */
-  #db-table-body td:nth-child(7),
-  #db-table-body th:nth-child(7) {
-    display: table-cell;
+  /* Badge Größen anpassen */
+  .badge {
+    font-size: 0.65rem;
+    padding: 0.25rem 0.5rem;
   }
 }
 
@@ -1062,10 +1041,26 @@ summary:hover {
     font-size: 0.9rem;
   }
   
-  /* Table - Show only most important columns */
-  #queue-body td:nth-child(2),
-  #queue-body th:nth-child(2) {
-    display: none;
+  /* Tabellen noch kompakter */
+  .table-responsive {
+    font-size: 0.6rem;
+  }
+  
+  .table th,
+  .table td {
+    padding: 0.3rem 0.2rem;
+  }
+  
+  .table-dark th {
+    font-size: 0.55rem;
+    padding: 0.5rem 0.2rem;
+  }
+  
+  /* Tabellen-Spalten für Titel und URL */
+  .table td:nth-child(2),
+  .table td:nth-child(3) {
+    max-width: 100px;
+    font-size: 0.55rem;
   }
   
   /* Log filter controls */
@@ -1081,6 +1076,12 @@ summary:hover {
   #logFilter {
     width: 100% !important;
     max-width: 100% !important;
+  }
+  
+  /* Buttons in Tabellen */
+  .table .btn-sm {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.65rem;
   }
 }
 
