@@ -2,7 +2,7 @@
 <html lang="de" data-bs-theme="dark">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes" />
   <title>AniLoader</title>
   <link rel="icon" type="image/png" href="/static/AniLoader.png">
 
@@ -48,17 +48,21 @@
     <!-- Download Tab -->
     <div class="tab-pane fade show active" id="download" role="tabpanel" aria-labelledby="download-tab">
       <div class="row mb-3">
-        <div class="col-md-8 d-flex gap-2 align-items-center">
-          <button id="start-default" class="btn btn-primary">▶️ Standard</button>
-          <button id="start-german" class="btn btn-success">🇩🇪 German</button>
-          <button id="start-new" class="btn btn-warning">🆕 Überprüfe auf neue Episoden</button>
-          <button id="start-missing" class="btn btn-info">🔄️ Überprüfe auf fehlende Episoden</button>
-          <button id="start-full-check" class="btn btn-secondary">✅ Kompletter Check</button>
-          <button id="stop-download" class="btn btn-danger" style="display: none;">⏹️ Stop</button>
+        <div class="col-12 mb-2">
+          <div class="d-flex flex-wrap gap-2">
+            <button id="start-default" class="btn btn-primary flex-fill">▶️ Standard</button>
+            <button id="start-german" class="btn btn-success flex-fill">🇩🇪 German</button>
+            <button id="start-new" class="btn btn-warning flex-fill">🆕 Neue Episoden</button>
+            <button id="start-missing" class="btn btn-info flex-fill">🔄️ Fehlende Episoden</button>
+            <button id="start-full-check" class="btn btn-secondary flex-fill">✅ Check</button>
+            <button id="stop-download" class="btn btn-danger flex-fill" style="display: none;">⏹️ Stop</button>
+          </div>
         </div>
-        <div class="col-md-4 text-md-end">
-          <span id="download-status" class="small text-secondary">Status: idle</span>
-          <span id="disk-free" class="small text-secondary ms-3">Freier Speicher: -</span>
+        <div class="col-12">
+          <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <span id="download-status" class="small text-secondary">Status: idle</span>
+            <span id="disk-free" class="small text-secondary">Freier Speicher: -</span>
+          </div>
         </div>
       </div>
 
@@ -66,14 +70,14 @@
         <!-- Cards für alle Animes (kurze Übersicht) -->
       </div>
       <div class="mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
           <h6 class="mb-0">Warteschlange</h6>
-          <button id="queue-clear" class="btn btn-sm btn-outline-danger">Warteschlange leeren</button>
+          <button id="queue-clear" class="btn btn-sm btn-outline-danger">Leeren</button>
         </div>
         <div class="table-responsive">
       <table class="table table-dark table-striped table-hover mt-1">
             <thead>
-        <tr><th>#</th><th>ID</th><th>Title</th><th>Aktion</th></tr>
+        <tr><th>#</th><th class="d-none d-sm-table-cell">ID</th><th>Title</th><th>Aktion</th></tr>
             </thead>
             <tbody id="queue-body"></tbody>
           </table>
@@ -93,11 +97,11 @@
               <div class="mb-4">
                 <h6 class="text-muted mb-3">🔍 Suche nach Anime/Serie</h6>
                 <p class="small text-muted">Durchsuche AniWorld.to und S.to gleichzeitig nach Anime und Serien.</p>
-                <div class="d-flex gap-2 align-items-center mb-2">
-                  <input type="text" id="searchQuery" class="form-control" placeholder="z.B. One Piece, Attack on Titan..." style="max-width: 500px;">
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                  <input type="text" id="searchQuery" class="form-control flex-fill" placeholder="z.B. One Piece, Attack on Titan..." style="min-width: 200px;">
                   <button id="searchBtn" class="btn btn-primary">🔍 Suchen</button>
-                  <span id="searchStatus" class="small text-secondary"></span>
                 </div>
+                <span id="searchStatus" class="small text-secondary d-block"></span>
                 <div id="searchResults" class="search-results-container" style="display: none;"></div>
               </div>
 
@@ -107,11 +111,11 @@
               <div class="mb-4">
                 <h6 class="text-muted mb-3">🔗 Link direkt hinzufügen</h6>
                 <p class="small text-muted">Füge einen direkten Link zu einem Anime/Serie hinzu.</p>
-                <div class="d-flex gap-2 align-items-center">
-                  <input type="text" id="directLinkInput" class="form-control" placeholder="https://aniworld.to/anime/stream/... oder https://s.to/serie/stream/..." style="max-width: 600px;">
-                  <button id="addLinkBtn" class="btn btn-primary">Link hinzufügen</button>
-                  <span id="linkAddStatus" class="small text-secondary"></span>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                  <input type="text" id="directLinkInput" class="form-control flex-fill" placeholder="https://aniworld.to/anime/stream/..." style="min-width: 200px;">
+                  <button id="addLinkBtn" class="btn btn-primary">Hinzufügen</button>
                 </div>
+                <span id="linkAddStatus" class="small text-secondary d-block"></span>
               </div>
 
               <hr>
@@ -120,11 +124,11 @@
               <div>
                 <h6 class="text-muted mb-3">📄 TXT-Datei hochladen</h6>
                 <p class="small text-muted">Lade eine TXT-Datei mit Anime-URLs hoch (eine URL pro Zeile). Die URLs werden automatisch in die Datenbank importiert.</p>
-                <div class="d-flex gap-2 align-items-center mb-2">
-                  <input type="file" id="txtFileUpload" class="form-control" accept=".txt" style="max-width: 400px;">
-                  <button id="uploadTxtBtn" class="btn btn-primary">Hochladen & Importieren</button>
-                  <span id="uploadStatus" class="small text-secondary"></span>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                  <input type="file" id="txtFileUpload" class="form-control flex-fill" accept=".txt" style="min-width: 200px;">
+                  <button id="uploadTxtBtn" class="btn btn-primary">Hochladen</button>
                 </div>
+                <span id="uploadStatus" class="small text-secondary d-block"></span>
               </div>
             </div>
           </div>
@@ -135,10 +139,10 @@
     <!-- Database Tab -->
     <div class="tab-pane fade" id="database" role="tabpanel" aria-labelledby="database-tab">
       <div class="row g-2 mb-2">
-        <div class="col-md-4">
+        <div class="col-12 col-md-4">
           <input id="db-search" class="form-control form-control-sm" placeholder="Suchen (Title / URL)" />
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-2">
           <select id="db-complete" class="form-select form-select-sm">
             <option value="">Status: Alle</option>
             <option value="1">Komplett</option>
@@ -146,14 +150,14 @@
             <option value="deleted">Gelöscht</option>
           </select>
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-2">
           <select id="db-deutsch" class="form-select form-select-sm">
             <option value="">Deutsch: Alle</option>
             <option value="1">Deutsch komplett</option>
             <option value="0">Deutsch fehlt</option>
           </select>
         </div>
-        <div class="col-md-3 d-flex gap-2">
+        <div class="col-12 col-md-3 d-flex gap-2">
           <select id="db-sort" class="form-select form-select-sm">
             <option value="id">ID</option>
             <option value="title">Title</option>
@@ -162,12 +166,12 @@
             <option value="last_season">Letzte Staffel</option>
           </select>
           <select id="db-order" class="form-select form-select-sm">
-            <option value="asc">Aufsteigend</option>
-            <option value="desc">Absteigend</option>
+            <option value="asc">Auf</option>
+            <option value="desc">Ab</option>
           </select>
         </div>
-        <div class="col-md-3 text-md-end">
-          <button id="db-refresh" class="btn btn-sm btn-outline-light">Aktualisieren</button>
+        <div class="col-12 col-md-3 text-md-end">
+          <button id="db-refresh" class="btn btn-sm btn-outline-light w-100 w-md-auto">Aktualisieren</button>
         </div>
       </div>
 
@@ -176,14 +180,14 @@
           <thead>
             <tr>
               <th style="width:5ch">ID</th>
-              <th style="min-width:12rem">Title</th>
-              <th style="min-width:16rem">URL</th>
-              <th>Komplett</th>
-              <th>Deutsch</th>
-              <th>Deleted</th>
-              <th style="min-width:14rem">Fehlende deutsche Folgen</th>
-              <th style="width:10rem">Letzte S/E/F</th>
-              <th style="width:8rem">Aktion</th>
+              <th style="min-width:10rem">Title</th>
+              <th class="d-none d-lg-table-cell" style="min-width:14rem">URL</th>
+              <th class="d-none d-md-table-cell">Status</th>
+              <th class="d-none d-md-table-cell">DE</th>
+              <th class="d-none d-xl-table-cell">Del</th>
+              <th class="d-none d-xl-table-cell" style="min-width:12rem">Fehlende DE</th>
+              <th class="d-none d-lg-table-cell" style="width:10rem">S/E/F</th>
+              <th style="width:6rem">Aktion</th>
             </tr>
           </thead>
           <tbody id="db-table-body"></tbody>
@@ -193,14 +197,14 @@
 
     <!-- Logs Tab -->
     <div class="tab-pane fade" id="logs" role="tabpanel" aria-labelledby="logs-tab">
-      <div class="d-flex align-items-center gap-2 mb-3">
-        <input id="logFilter" class="form-control form-control-sm" placeholder="Log filtern (Regex, z.B. SUCCESS|FEHLER)" style="max-width: 320px;" />
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <input id="logFilter" class="form-control form-control-sm flex-fill" placeholder="Log filtern (Regex)" style="min-width: 150px; max-width: 320px;" />
         <button id="clearFilter" class="btn btn-sm btn-outline-secondary">Filter löschen</button>
         <button id="copyLogs" class="btn btn-sm btn-outline-secondary">Kopieren</button>
-        <div class="form-check ms-auto mb-0">
+        <div class="form-check mb-0 ms-auto">
           <input class="form-check-input" type="checkbox" id="autoScroll" checked>
           <label class="form-check-label" for="autoScroll">
-            Autoscroll aktivieren
+            Autoscroll
           </label>
         </div>
         <div class="small text-secondary">Zeilen: <span id="log-count">0</span></div>
@@ -214,19 +218,19 @@
       <!-- Settings Navigation -->
       <div class="row mb-3">
         <div class="col-12">
-          <ul class="nav nav-pills settings-nav" id="settings-pills" role="tablist">
+          <ul class="nav nav-pills settings-nav flex-column flex-md-row" id="settings-pills" role="tablist">
             <li class="nav-item" role="presentation">
-              <button class="nav-link active" id="storage-pill" data-bs-toggle="pill" data-bs-target="#storage-settings" type="button" role="tab">
+              <button class="nav-link active w-100" id="storage-pill" data-bs-toggle="pill" data-bs-target="#storage-settings" type="button" role="tab">
                 📁 Speicherorte
               </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link" id="download-pill" data-bs-toggle="pill" data-bs-target="#download-settings" type="button" role="tab">
+              <button class="nav-link w-100" id="download-pill" data-bs-toggle="pill" data-bs-target="#download-settings" type="button" role="tab">
                 ⚙️ Download
               </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link" id="system-pill" data-bs-toggle="pill" data-bs-target="#system-settings" type="button" role="tab">
+              <button class="nav-link w-100" id="system-pill" data-bs-toggle="pill" data-bs-target="#system-settings" type="button" role="tab">
                 🖥️ System
               </button>
             </li>
@@ -251,8 +255,8 @@
                   <!-- Storage Mode -->
                   <div class="settings-section">
                     <h6 class="settings-section-title">Speichermodus</h6>
-                    <div class="row">
-                      <div class="col-lg-6">
+                    <div class="row g-2">
+                      <div class="col-12 col-lg-6">
                         <div class="form-check storage-mode-option">
                           <input class="form-check-input" type="radio" name="storage-mode-radio" id="storage-mode-standard" value="standard">
                           <label class="form-check-label" for="storage-mode-standard">
@@ -261,7 +265,7 @@
                           </label>
                         </div>
                       </div>
-                      <div class="col-lg-6">
+                      <div class="col-12 col-lg-6">
                         <div class="form-check storage-mode-option">
                           <input class="form-check-input" type="radio" name="storage-mode-radio" id="storage-mode-separate" value="separate">
                           <label class="form-check-label" for="storage-mode-separate">
