@@ -201,6 +201,13 @@
         <input id="logFilter" class="form-control form-control-sm flex-fill" placeholder="Log filtern (Regex)" style="min-width: 150px; max-width: 320px;" />
         <button id="clearFilter" class="btn btn-sm btn-outline-secondary">Filter löschen</button>
         <button id="copyLogs" class="btn btn-sm btn-outline-secondary">Kopieren</button>
+        <div class="btn-group" role="group">
+          <input type="radio" class="btn-check" name="logSource" id="logSourceAll" value="all" checked>
+          <label class="btn btn-sm btn-outline-primary" for="logSourceAll">Alle Logs</label>
+          
+          <input type="radio" class="btn-check" name="logSource" id="logSourceLastRun" value="last_run">
+          <label class="btn btn-sm btn-outline-primary" for="logSourceLastRun">Letzter Run</label>
+        </div>
         <div class="form-check mb-0 ms-auto">
           <input class="form-check-input" type="checkbox" id="autoScroll" checked>
           <label class="form-check-label" for="autoScroll">

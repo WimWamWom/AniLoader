@@ -23,10 +23,13 @@ AniLoader ist ein Python-Tool mit optionalem Webinterface, das Animes von <a hre
   - [Dateistruktur](#dateistruktur)
 - [Konfiguration](#konfiguration)
 - [Web-UI Features](#web-ui-features)
+- [Unraid Integration & Automatisierung](#unraid-integration--automatisierung)
+- [Log-System](#log-system)
 - [API](#api)
   - [Start Download](#start-download)
   - [Status](#status)
   - [Logs](#logs)
+  - [Last Run](#last-run)
   - [Disk](#disk)
   - [Config](#config)
   - [Datenbank](#datenbank)
@@ -186,10 +189,166 @@ Hinweis: Wenn wirklich „alles“ (inkl. externem <code>aniworld</code>-CLI) ü
 - Start-Buttons für die Modi (inkl. „Kompletter Check“); während eines Laufs sind die Buttons deaktiviert
 - Status-Anzeige inkl. „kein Speicher“ (Einheit automatisch in TB/GB/MB)
 - Live-Logs mit Filter und Kopieren
-- Datenbank-Tab: filtern/sortieren, Liste der fehlenden deutschen Folgen, Knopf „Als nächstes“ (Queue)
+  - **Log-Ansicht umschalten**: Radio-Buttons zum Wechseln zwischen "Alle Logs" (seit Serverstart) und "Letzter Run" (nur aktueller Durchlauf)
+- Datenbank-Tab: filtern/sortieren, Liste der fehlenden deutschen Folgen, Knopf „Als nächstes" (Queue)
 - Warteschlangen-Tabellen-Ansicht inkl. Leeren/Einträge entfernen
-- Einstellungen: Download-Speicherort direkt setzen oder bequem per „Ordner wählen…“ über den Explorer auswählen; Port ist nur in der <code>config.json</code> änderbar
-  - Schalter: „Titelaktualisierung beim Start aktivieren“
+- Einstellungen: Download-Speicherort direkt setzen oder bequem per „Ordner wählen…" über den Explorer auswählen; Port ist nur in der <code>config.json</code> änderbar
+  - Schalter: „Titelaktualisierung beim Start aktivieren"
+
+## Unraid Integration & Automatisierung
+
+AniLoader kann vollautomatisch auf Unraid-Servern laufen und dich per Discord über neue Episoden benachrichtigen.
+
+### User Scripts Einrichtung
+
+**Voraussetzung:** Unraid Plugin "User Scripts" installieren
+
+Es gibt zwei vorgefertigte Bash-Scripts im Repository:
+
+#### check-german.sh
+Prüft **wöchentlich** auf neue deutsche Synchronisationen bereits vorhandener Episoden.
+
+**Empfohlener Zeitplan:** Sonntags 5:00 Uhr
+```
+0 5 * * 0
+```
+
+#### check-new.sh
+Prüft **täglich** auf komplett neue Episoden über alle verfolgten Serien.
+
+**Empfohlener Zeitplan:** Täglich 6:00 Uhr
+```
+0 6 * * *
+```
+
+### Features der Scripts
+
+- **API-Integration**: Kommuniziert mit deinem AniLoader-Server via REST-API
+- **Basic Auth**: Unterstützt passwortgeschützte Domains
+- **Wait-Logic**: Wartet bis zu 120 Minuten, falls ein anderer Job noch läuft (verhindert Konflikte)
+- **Discord Webhooks**: Automatische Benachrichtigungen mit allen gefundenen Episoden
+- **Multi-Embed Support**: Teilt lange Listen automatisch in mehrere Discord-Embeds auf (2048 Zeichen Limit)
+- **Mehrere Webhooks**: Sende Benachrichtigungen gleichzeitig an mehrere Discord-Kanäle
+- **Intelligente Filterung**: Nur Benachrichtigung wenn tatsächlich neue Episoden gefunden wurden
+
+### Discord Webhooks
+
+#### Webhook erstellen
+1. Discord-Server → Server-Einstellungen → Integrationen
+2. "Webhook erstellen" → Kanal auswählen
+3. Webhook-URL kopieren
+
+**Hinweis:** Webhooks funktionieren nur auf Discord-Servern, nicht in Gruppenchats oder DMs!
+
+#### Konfiguration in den Scripts
+
+Beide Scripts haben am Anfang einen Konfigurationsbereich:
+
+```bash
+# API Endpoint
+API_ENDPOINT="https://your-domain.example.com"
+API_AUTH="username:password"
+
+# Discord Webhooks (mehrere möglich)
+DISCORD_WEBHOOK_URLS=(
+    "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"  # Optional
+)
+```
+
+#### Discord Embed-Farben
+
+Die Scripts nutzen Farbcodes für Discord-Embeds:
+- `3066993` = Grün (Erfolg)
+- `15158332` = Rot (Fehler)
+- `3447003` = Blau (Info)
+
+### Schedule & Cron
+
+**Cron-Format:** `Minute Stunde Tag Monat Wochentag`
+
+```
+┌─── Minute (0-59)
+│ ┌─── Stunde (0-23)
+│ │ ┌─── Tag im Monat (1-31)
+│ │ │ ┌─── Monat (1-12)
+│ │ │ │ ┌─── Wochentag (0-7, 0&7=Sonntag)
+│ │ │ │ │
+* * * * *
+```
+
+**Beispiele:**
+- `0 6 * * *` = Täglich um 6:00 Uhr
+- `0 5 * * 0` = Jeden Sonntag um 5:00 Uhr
+- `*/30 * * * *` = Alle 30 Minuten
+- `0 8,20 * * *` = Täglich um 8:00 und 20:00 Uhr
+- `0 12 * * 1-5` = Montag bis Freitag um 12:00 Uhr
+
+**Warum 1 Stunde Abstand?**
+Der German-Check läuft Sonntags um 5:00 Uhr, der New-Check täglich um 6:00 Uhr. So kann der German-Check in Ruhe abschließen, bevor der New-Check startet. Die Wait-Logic sorgt dafür, dass bei Überschneidungen bis zu 2 Stunden gewartet wird.
+
+### Script-Anpassung für deine Umgebung
+
+1. **API_ENDPOINT**: Deine AniLoader-Domain oder IP
+2. **API_AUTH**: Falls Basic Auth aktiviert, Format `"username:password"`
+3. **DISCORD_WEBHOOK_URLS**: Ein oder mehrere Webhook-URLs
+
+Beispiel:
+```bash
+API_ENDPOINT="https://aniloader.meinedomain.de"
+API_AUTH="admin:meinPasswort123"
+DISCORD_WEBHOOK_URLS=(
+    "https://discord.com/api/webhooks/123456789/abcdefghijk"
+    "https://discord.com/api/webhooks/987654321/zyxwvutsrqp"
+)
+```
+
+**Wichtig:** Die Scripts verwenden den `/last_run` Endpoint, der nur in neueren AniLoader-Versionen verfügbar ist. Stelle sicher, dass dein Server aktualisiert ist!
+
+## Log-System
+
+AniLoader nutzt ein zweistufiges datei-basiertes Log-System.
+
+### Datei-basierte Logs
+
+**Vorteile:**
+- Kein RAM-Verbrauch bei langem Serverbetrieb
+- Logs überleben Server-Neustarts
+- Perfekt für automatisierte Scripts
+
+#### all_logs.txt
+- Speicherort: `data/all_logs.txt`
+- Inhalt: **Komplette Log-Historie** seit Installation
+- Wird kontinuierlich erweitert (kein automatisches Löschen)
+- API-Endpoint: `/logs`
+
+#### last_run.txt
+- Speicherort: `data/last_run.txt`
+- Inhalt: **Nur der letzte Durchlauf**
+- Wird bei jedem neuen Run geleert und neu geschrieben
+- API-Endpoint: `/last_run`
+- Ideal für Scripts: Verhindert Duplikate beim Zählen von Episoden
+
+### Web-UI Log-Ansicht
+
+Im Web-Interface kannst du zwischen beiden Log-Quellen umschalten:
+
+- **"Alle Logs"**: Zeigt `all_logs.txt` (komplette Historie)
+- **"Letzter Run"**: Zeigt `last_run.txt` (nur aktueller Durchlauf)
+
+Die Umschaltung erfolgt live ohne Seitenneuladung via Radio-Buttons oberhalb der Log-Anzeige.
+
+### Für Script-Entwickler
+
+**Wichtig:** Nutze immer `/last_run` statt `/logs` wenn du Episoden zählen willst!
+
+```bash
+# ❌ FALSCH - zählt historische Logs mehrfach
+LOG_CONTENT=$(curl -s "http://localhost:5050/logs")
+
+# ✅ RICHTIG - nur der aktuelle Run
+LOG_CONTENT=$(curl -s "http://localhost:5050/last_run")
+```
 
 ## API
 
@@ -222,7 +381,35 @@ Beispiel:
 ### Logs
 - URL: <code>/logs</code>
 - Methode: GET
-- Liefert die letzten Logzeilen als JSON-Array
+- Liefert **alle Logs seit Serverstart** aus `all_logs.txt` als JSON-Array
+- Nutze diesen Endpoint für die komplette Historie im Web-UI
+
+Beispiel:
+```json
+[
+  "[2026-01-06 10:30:15] [INFO] Server gestartet",
+  "[2026-01-06 10:31:20] [SUCCESS] Naruto: Episode 5 heruntergeladen",
+  "[2026-01-06 11:45:00] [GERMAN] One Piece: Episode 10 erfolgreich auf deutsch"
+]
+```
+
+### Last Run
+- URL: <code>/last_run</code>
+- Methode: GET
+- Liefert **nur Logs vom letzten Durchlauf** aus `last_run.txt` als JSON-Array
+- Ideal für automatisierte Scripts: Verhindert Duplikate beim Episodenzählen
+- Wird bei jedem neuen Run geleert
+
+**Wichtig für Scripts:** Nutze immer `/last_run` statt `/logs` zum Zählen neuer Episoden!
+
+Beispiel:
+```json
+[
+  "[2026-01-06 12:00:00] [INFO] Starte New-Check...",
+  "[2026-01-06 12:05:30] [SUCCESS] Demon Slayer: Episode 23 heruntergeladen",
+  "[2026-01-06 12:10:15] [INFO] Run abgeschlossen"
+]
+```
 
 ### Disk
 - URL: <code>/disk</code>

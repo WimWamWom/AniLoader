@@ -50,6 +50,7 @@ data_folder = DEFAULT_DATA_FOLDER
 config_path = os.path.join(data_folder, 'config.json')
 db_path = os.path.join(data_folder, 'AniLoader.db')
 log_path = os.path.join(data_folder, 'last_run.txt')
+all_logs_path = os.path.join(data_folder, 'all_logs.txt')
 
 # Ensure the data folder exists
 os.makedirs(data_folder, exist_ok=True)
@@ -78,11 +79,12 @@ REFRESH_TITLES = True  # Titelaktualisierung beim Start zulassen
 
 def update_data_paths(new_data_folder):
     """Updates the global data folder paths when the data_folder_path config changes."""
-    global data_folder, config_path, db_path, log_path, CONFIG_PATH, DB_PATH
+    global data_folder, config_path, db_path, log_path, all_logs_path, CONFIG_PATH, DB_PATH
     data_folder = new_data_folder
     config_path = os.path.join(data_folder, 'config.json')
     db_path = os.path.join(data_folder, 'AniLoader.db')
     log_path = os.path.join(data_folder, 'last_run.txt')
+    all_logs_path = os.path.join(data_folder, 'all_logs.txt')
     CONFIG_PATH = Path(config_path)
     DB_PATH = Path(db_path)
     # Ensure the new data folder exists
@@ -293,13 +295,17 @@ log_lock = threading.Lock()
 CONFIG_WRITE_LOCK = threading.Lock()
 
 def log(msg):
-    """Thread-safe log buffer + print + write to file immediately."""
+    """Thread-safe log to all_logs.txt + last_run.txt + print."""
     ts = time.strftime("[%Y-%m-%d %H:%M:%S]")
     line = f"{ts} {msg}"
     with log_lock:
-        log_lines.append(line)
-        # Write immediately to file so it's available even on abort
+        log_lines.append(line)  # Keep for backwards compatibility
+        # Write to both files immediately
         try:
+            # All logs (complete history)
+            with open(all_logs_path, 'a', encoding='utf-8') as f:
+                f.write(line + "\n")
+            # Last run logs (cleared on each run)
             with open(log_path, 'a', encoding='utf-8') as f:
                 f.write(line + "\n")
         except Exception as e:
@@ -3098,8 +3104,33 @@ def api_disk():
 
 @app.route("/logs")
 def api_logs():
-    with log_lock:
-        return jsonify(list(log_lines)) 
+    """Gibt alle Logs zurück (aus all_logs.txt)"""
+    try:
+        if os.path.exists(all_logs_path):
+            with open(all_logs_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            lines = content.split('\n') if content else []
+            # Entferne leere letzte Zeile falls vorhanden
+            if lines and lines[-1] == '':
+                lines = lines[:-1]
+            return jsonify(lines)
+        return jsonify([])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500 
+
+@app.route("/last_run")
+def api_last_run():
+    """Gibt nur die Logs vom letzten Run zurück (aus last_run.txt)"""
+    try:
+        if os.path.exists(log_path):
+            with open(log_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # Gebe als Array zurück (jede Zeile ein Element), konsistent mit /logs
+            lines = content.split('\n') if content else []
+            return jsonify(lines)
+        return jsonify([])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/database")
 def api_database():

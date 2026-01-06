@@ -6,6 +6,8 @@ const lastUpdated = document.getElementById('lastUpdated');
 const refreshBtn = document.getElementById('refreshBtn');
 const logFilter = document.getElementById('logFilter');
 const clearFilter = document.getElementById('clearFilter');
+const logSourceAll = document.getElementById('logSourceAll');
+const logSourceLastRun = document.getElementById('logSourceLastRun');
 const dbBody = document.getElementById('db-table-body');
 const dbRefresh = document.getElementById('db-refresh');
 const dbSearch = document.getElementById('db-search');
@@ -733,9 +735,13 @@ async function fetchDatabase() {
 let lastLogs = [];
 async function fetchLogs() {
   try {
-    const data = await apiGet('/logs');
+    // Prüfe welche Log-Quelle gewählt ist
+    const logSource = logSourceLastRun && logSourceLastRun.checked ? 'last_run' : 'all';
+    const endpoint = logSource === 'last_run' ? '/last_run' : '/logs';
+    
+    const data = await apiGet(endpoint);
     if (!Array.isArray(data)) return;
-    let lines = data.slice(-2000);
+    let lines = data; // Kein Limit mehr - zeige alle Logs
     const filterVal = logFilter.value.trim();
     if (filterVal) {
       try {
@@ -1207,6 +1213,19 @@ copyLogsBtn?.addEventListener('click', async () => {
     await navigator.clipboard.writeText(text);
   } catch (e) {
     console.error('copy logs failed', e);
+  }
+});
+
+// Log Source Radio Buttons - bei Änderung Logs neu laden
+logSourceAll?.addEventListener('change', () => {
+  if (logSourceAll.checked) {
+    fetchLogs();
+  }
+});
+
+logSourceLastRun?.addEventListener('change', () => {
+  if (logSourceLastRun.checked) {
+    fetchLogs();
   }
 });
 
