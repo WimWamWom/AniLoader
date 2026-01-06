@@ -60,6 +60,111 @@ EOF
     wait  # Warte auf alle parallelen Requests
 }
 
+# Gruppierte Discord Embed Funktion mit Fields
+send_discord_grouped_embed() {
+    local title="$1"
+    local summary="$2"
+    local color="$3"
+    local error_info="$4"
+    shift 4
+    # Rest sind Serie:Episode Paare
+    
+    if [ ${#DISCORD_WEBHOOK_URLS[@]} -eq 0 ]; then
+        return 0
+    fi
+    
+    # Baue Fields Array
+    local fields="["
+    local field_count=0
+    local MAX_FIELDS=25
+    
+    # Temporäre Arrays für Gruppierung
+    declare -A series_episodes
+    
+    # Gruppiere Episoden nach Serie
+    while [ $# -gt 0 ]; do
+        local episode="$1"
+        shift
+        
+        # Extrahiere Serie und Episode-Info
+        if [[ "$episode" =~ ^(.+)[[:space:]]+(S[0-9]{2}E[0-9]{2}|Film[[:space:]][0-9]+)$ ]]; then
+            local series_name="${BASH_REMATCH[1]}"
+            local episode_info="${BASH_REMATCH[2]}"
+            
+            if [ -z "${series_episodes[$series_name]}" ]; then
+                series_episodes["$series_name"]="$episode_info"
+            else
+                series_episodes["$series_name"]+="|$episode_info"
+            fi
+        fi
+    done
+    
+    # Erstelle Fields
+    for series in "${!series_episodes[@]}"; do
+        local episodes="${series_episodes[$series]}"
+        IFS='|' read -ra ep_array <<< "$episodes"
+        local ep_count=${#ep_array[@]}
+        
+        if [ $field_count -gt 0 ]; then
+            fields+=","
+        fi
+        
+        if [ $ep_count -eq 1 ]; then
+            fields+="{\"name\":\"$series\",\"value\":\"- ${ep_array[0]}\",\"inline\":false}"
+        else
+            local value=""
+            for ep in "${ep_array[@]}"; do
+                if [ -z "$value" ]; then
+                    value="- $ep"
+                else
+                    value+="\\n- $ep"
+                fi
+            done
+            fields+="{\"name\":\"$series ($ep_count x)\",\"value\":\"$value\",\"inline\":false}"
+        fi
+        
+        field_count=$((field_count + 1))
+        
+        if [ $field_count -ge $MAX_FIELDS ]; then
+            break
+        fi
+    done
+    
+    fields+="]"
+    
+    # Baue description mit error_info
+    local description="$summary"
+    if [ ! -z "$error_info" ]; then
+        description+="\\n\\n$error_info"
+    fi
+    
+    # Erstelle Embed
+    local json_payload=$(cat <<EOF
+{
+  "embeds": [{
+    "title": "${title}",
+    "description": "${description}",
+    "color": ${color},
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)",
+    "fields": ${fields},
+    "footer": {
+      "text": "Unraid AniLoader"
+    }
+  }]
+}
+EOF
+)
+    
+    # Sende an alle konfigurierten Webhooks
+    for webhook_url in "${DISCORD_WEBHOOK_URLS[@]}"; do
+        [ -z "$webhook_url" ] && continue
+        curl -s -H "Content-Type: application/json" \
+             -d "${json_payload}" \
+             "${webhook_url}" > /dev/null &
+    done
+    wait
+}
+
 # Multi-Embed Funktion für lange Listen
 send_discord_multi_embed() {
     local title="$1"
@@ -239,15 +344,43 @@ NEW_EPISODES_COUNT=$(echo "$LOG_CONTENT" | grep -c "\[SUCCESS\].*heruntergeladen
 SKIPPED_COUNT=$(echo "$LOG_CONTENT" | grep -c "\[SKIP\]")
 ERROR_COUNT=$(echo "$LOG_CONTENT" | grep -c "\[ERROR\]")
 
-# Erstelle Liste ALLER neuen Episoden (kein Limit)
-NEW_EPISODES=$(echo "$LOG_CONTENT" | grep "\[SUCCESS\].*heruntergeladen" | sed 's/.*\[SUCCESS\] //')
+# Extrahiere URLs und konvertiere zu lesbaren Episode-Namen
+declare -a PARSED_EPISODES
+
+while IFS= read -r line; do
+    if [[ "$line" =~ \[SUCCESS\][[:space:]]+'(https://aniworld\.to/anime/stream/[^\']+)\'[[:space:]]+heruntergeladen ]]; then
+        url="${BASH_REMATCH[1]}"
+        
+        # Parse URL zu lesbarem Format
+        if [[ "$url" =~ /anime/stream/([^/]+)/staffel-([0-9]+)/episode-([0-9]+) ]]; then
+            series_slug="${BASH_REMATCH[1]}"
+            season="${BASH_REMATCH[2]}"
+            episode="${BASH_REMATCH[3]}"
+            
+            # Konvertiere slug zu Title Case
+            series_name=$(echo "$series_slug" | sed 's/-/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2));}1')
+            season_padded=$(printf "%02d" $season)
+            episode_padded=$(printf "%02d" $episode)
+            
+            PARSED_EPISODES+=("$series_name S${season_padded}E${episode_padded}")
+        elif [[ "$url" =~ /anime/stream/([^/]+)/filme/film-([0-9]+) ]]; then
+            series_slug="${BASH_REMATCH[1]}"
+            film_nr="${BASH_REMATCH[2]}"
+            
+            series_name=$(echo "$series_slug" | sed 's/-/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2));}1')
+            PARSED_EPISODES+=("$series_name Film $film_nr")
+        fi
+    fi
+done <<< "$LOG_CONTENT"
 
 # Zähle betroffene Serien
-if [ ! -z "$NEW_EPISODES" ]; then
-    SERIES_COUNT=$(echo "$NEW_EPISODES" | cut -d':' -f1 | sort -u | wc -l)
-else
-    SERIES_COUNT=0
-fi
+declare -A unique_series
+for ep in "${PARSED_EPISODES[@]}"; do
+    if [[ "$ep" =~ ^(.+)[[:space:]]+(S[0-9]{2}E[0-9]{2}|Film[[:space:]][0-9]+)$ ]]; then
+        unique_series["${BASH_REMATCH[1]}"]=1
+    fi
+done
+SERIES_COUNT=${#unique_series[@]}
 
 echo ""
 echo "=== ZUSAMMENFASSUNG ==="
@@ -270,14 +403,14 @@ if [ "$NEW_EPISODES_COUNT" -gt 0 ]; then
         error_info="⚠️ ${ERROR_COUNT} Fehler aufgetreten"
     fi
     
-    if [ ! -z "$NEW_EPISODES" ]; then
-        # Nutze Multi-Embed Funktion für automatische Aufteilung
-        send_discord_multi_embed \
+    if [ ${#PARSED_EPISODES[@]} -gt 0 ]; then
+        # Nutze gruppierte Embed Funktion
+        send_discord_grouped_embed \
             "📺 AniLoader - Neue Episoden Check" \
             "$summary" \
-            "$NEW_EPISODES" \
             "3066993" \
-            "$error_info"
+            "$error_info" \
+            "${PARSED_EPISODES[@]}"
         echo "[OK] Discord Benachrichtigung gesendet mit ${NEW_EPISODES_COUNT} Episoden!"
     else
         # Keine Episoden-Details, nur Summary

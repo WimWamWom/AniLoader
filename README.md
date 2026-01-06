@@ -203,10 +203,10 @@ AniLoader kann vollautomatisch auf Unraid-Servern laufen und dich per Discord ü
 
 **Voraussetzung:** Unraid Plugin "User Scripts" installieren
 
-Es gibt zwei vorgefertigte Bash-Scripts im Repository:
+Es gibt drei vorgefertigte Bash-Scripts im Repository:
 
 #### check-german.sh
-Prüft **wöchentlich** auf neue deutsche Synchronisationen bereits vorhandener Episoden.
+Prüft **wöchentlich** auf neue deutsche Synchronisationen bereits vorhandener Episoden via API-Call.
 
 **Empfohlener Zeitplan:** Sonntags 5:00 Uhr
 ```
@@ -214,22 +214,68 @@ Prüft **wöchentlich** auf neue deutsche Synchronisationen bereits vorhandener 
 ```
 
 #### check-new.sh
-Prüft **täglich** auf komplett neue Episoden über alle verfolgten Serien.
+Prüft **täglich** auf komplett neue Episoden über alle verfolgten Serien via API-Call.
 
 **Empfohlener Zeitplan:** Täglich 6:00 Uhr
 ```
 0 6 * * *
 ```
 
+#### last_run_summary.sh
+Liest die lokale `last_run.txt` Datei aus und sendet eine Discord-Benachrichtigung. **Kein API-Call nötig!**
+
+**Empfohlener Zeitplan:** Nach jedem manuellen Run oder als Alternative zu den obigen Scripts
+```bash
+# Manueller Aufruf nach Download
+./last_run_summary.sh
+
+# Oder automatisch alle 2 Stunden
+0 */2 * * *
+```
+
+**Vorteil:** Funktioniert auch ohne laufenden Webserver, perfekt für lokale Installationen!
+
 ### Features der Scripts
 
-- **API-Integration**: Kommuniziert mit deinem AniLoader-Server via REST-API
-- **Basic Auth**: Unterstützt passwortgeschützte Domains
-- **Wait-Logic**: Wartet bis zu 120 Minuten, falls ein anderer Job noch läuft (verhindert Konflikte)
-- **Discord Webhooks**: Automatische Benachrichtigungen mit allen gefundenen Episoden
-- **Multi-Embed Support**: Teilt lange Listen automatisch in mehrere Discord-Embeds auf (2048 Zeichen Limit)
+- **API-Integration** (check-german.sh & check-new.sh): Kommuniziert mit deinem AniLoader-Server via REST-API
+- **Lokale Verarbeitung** (last_run_summary.sh): Liest direkt die Log-Datei, kein Server nötig
+- **Basic Auth**: Unterstützt passwortgeschützte Domains (nur API-Scripts)
+- **Wait-Logic**: Wartet bis zu 120 Minuten, falls ein anderer Job noch läuft (nur API-Scripts)
+- **Discord Webhooks mit Fields**: Übersichtliche Gruppierung nach Serien mit Discord Embed Fields
+- **URL-Parsing**: Konvertiert AniWorld-URLs automatisch zu lesbaren Episode-Namen
+  - `https://aniworld.to/.../staffel-3/episode-11` → `Spy X Family S03E11`
+- **Intelligente Gruppierung**: Mehrere Episoden einer Serie werden zusammengefasst
+- **Multi-Embed Support**: Teilt lange Listen automatisch auf (Discord 25 Fields Limit)
 - **Mehrere Webhooks**: Sende Benachrichtigungen gleichzeitig an mehrere Discord-Kanäle
 - **Intelligente Filterung**: Nur Benachrichtigung wenn tatsächlich neue Episoden gefunden wurden
+
+### Discord Benachrichtigungsformat
+
+Die Scripts senden strukturierte Discord-Embeds mit Fields:
+
+```
+🇩🇪 AniLoader - Deutsche Episoden Check
+✅ 28 neue deutsche Episode(n) gefunden!
+
+┌─ Boruto Naruto Next Generations (21x)
+│  - S05E48
+│  - S05E49
+│  - ...
+│  - S06E21
+│
+┌─ My Hero Academia
+│  - S08E11
+│
+┌─ Spy X Family
+│  - S03E11
+```
+
+**Features:**
+- Serienname als Field-Titel
+- Anzahl der Episoden bei mehreren: `(21x)`
+- Saubere Episode-Liste darunter
+- Einzelne Episoden in eigenen Fields
+- Automatische Aufteilung bei >25 Serien
 
 ### Discord Webhooks
 
@@ -242,8 +288,9 @@ Prüft **täglich** auf komplett neue Episoden über alle verfolgten Serien.
 
 #### Konfiguration in den Scripts
 
-Beide Scripts haben am Anfang einen Konfigurationsbereich:
+Alle drei Scripts haben am Anfang einen Konfigurationsbereich:
 
+**check-german.sh & check-new.sh (API-basiert):**
 ```bash
 # API Endpoint
 API_ENDPOINT="https://your-domain.example.com"
@@ -252,9 +299,30 @@ API_AUTH="username:password"
 # Discord Webhooks (mehrere möglich)
 DISCORD_WEBHOOK_URLS=(
     "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"  # Optional
+    # "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"
 )
 ```
+
+**last_run_summary.sh (Lokale Datei):**
+```bash
+# Pfad zur last_run.txt
+LASTRUN_FILE="/mnt/user/Docker/AniLoader/data/last_run.txt"
+
+# Discord Webhooks (mehrere möglich)
+DISCORD_WEBHOOK_URLS=(
+    "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+    # "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"
+)
+```
+
+**WICHTIG:** Erstelle lokale Kopien für sensible Daten:
+```bash
+cp check-german.sh check-german-local.sh
+cp check-new.sh check-new-local.sh
+cp last_run_summary.sh last_run_summary-local.sh
+```
+
+Die `*.local.sh` Dateien werden von .gitignore ignoriert!
 
 #### Discord Embed-Farben
 
@@ -289,6 +357,7 @@ Der German-Check läuft Sonntags um 5:00 Uhr, der New-Check täglich um 6:00 Uhr
 
 ### Script-Anpassung für deine Umgebung
 
+#### API-Scripts (check-german.sh & check-new.sh)
 1. **API_ENDPOINT**: Deine AniLoader-Domain oder IP
 2. **API_AUTH**: Falls Basic Auth aktiviert, Format `"username:password"`
 3. **DISCORD_WEBHOOK_URLS**: Ein oder mehrere Webhook-URLs
@@ -299,11 +368,24 @@ API_ENDPOINT="https://aniloader.meinedomain.de"
 API_AUTH="admin:meinPasswort123"
 DISCORD_WEBHOOK_URLS=(
     "https://discord.com/api/webhooks/123456789/abcdefghijk"
-    "https://discord.com/api/webhooks/987654321/zyxwvutsrqp"
 )
 ```
 
-**Wichtig:** Die Scripts verwenden den `/last_run` Endpoint, der nur in neueren AniLoader-Versionen verfügbar ist. Stelle sicher, dass dein Server aktualisiert ist!
+#### Lokales Script (last_run_summary.sh)
+1. **LASTRUN_FILE**: Absoluter Pfad zur `last_run.txt`
+2. **DISCORD_WEBHOOK_URLS**: Ein oder mehrere Webhook-URLs
+
+Beispiel:
+```bash
+LASTRUN_FILE="/mnt/user/Docker/AniLoader/data/last_run.txt"
+DISCORD_WEBHOOK_URLS=(
+    "https://discord.com/api/webhooks/123456789/abcdefghijk"
+)
+```
+
+**Wichtig:** 
+- Die API-Scripts benötigen den `/last_run` Endpoint (neuere AniLoader-Versionen)
+- Das lokale Script funktioniert auch ohne laufenden Webserver!
 
 ## Log-System
 

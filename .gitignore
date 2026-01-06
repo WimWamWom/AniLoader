@@ -1,3 +1,46 @@
+# Download Verzeichnisse
 /Downloads
+/downloads
+
+# Python Cache
 /__pycache__
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Konfiguration (enthält lokale Pfade)
 /data/
+data/config.json
+data/last_run.txt
+data/*.txt
+data/*.log
+
+# Log Dateien
+*.log
+logs/
+*.txt
+
+# Lokale Skripte mit sensiblen Daten
+check-german-local.sh
+check-new-local.sh
+last_run_summary-local.sh
+*.local.sh
+*.local.ps1
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS spezifisch
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporäre Dateien
+tmp/
+temp/
+*.tmp

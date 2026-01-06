@@ -294,6 +294,45 @@ log_lock = threading.Lock()
 # Separate lock to serialize config writes on Windows
 CONFIG_WRITE_LOCK = threading.Lock()
 
+def cleanup_old_logs(days=7):
+    """Löscht Log-Einträge älter als X Tage aus all_logs.txt"""
+    try:
+        if not os.path.exists(all_logs_path):
+            return
+        
+        from datetime import datetime, timedelta
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        # Lese alle Zeilen
+        with open(all_logs_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # Filtere Zeilen die nicht älter als 7 Tage sind
+        kept_lines = []
+        for line in lines:
+            try:
+                # Parse Zeitstempel: [2026-01-06 14:30:45]
+                if line.startswith('['):
+                    timestamp_str = line[1:20]  # Extract YYYY-MM-DD HH:MM:SS
+                    log_date = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                    if log_date >= cutoff_date:
+                        kept_lines.append(line)
+                else:
+                    # Zeile ohne Zeitstempel behalten
+                    kept_lines.append(line)
+            except (ValueError, IndexError):
+                # Bei Parse-Fehler Zeile behalten
+                kept_lines.append(line)
+        
+        # Schreibe gefilterte Logs zurück
+        if len(kept_lines) < len(lines):
+            with open(all_logs_path, 'w', encoding='utf-8') as f:
+                f.writelines(kept_lines)
+            removed_count = len(lines) - len(kept_lines)
+            print(f"[CLEANUP] {removed_count} alte Log-Einträge entfernt (älter als {days} Tage)")
+    except Exception as e:
+        print(f"[CLEANUP-ERROR] Fehler beim Aufräumen der Logs: {e}")
+
 def log(msg):
     """Thread-safe log to all_logs.txt + last_run.txt + print."""
     ts = time.strftime("[%Y-%m-%d %H:%M:%S]")
@@ -3607,6 +3646,8 @@ def AniLoader():
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     deleted_check()
+    # Alte Logs aufräumen (älter als 7 Tage)
+    cleanup_old_logs(days=7)
     if REFRESH_TITLES:
         refresh_titles_on_start()
     log("[SYSTEM] AniLoader API starting...")
