@@ -534,7 +534,7 @@ def insert_anime(url, title=None):
                 else:
                     title = url
 
-        # Prüfen, ob der Anime/Serie existiert
+        # Prüfen, ob der Anime oder Serie existiert
         c.execute("SELECT id, deleted FROM anime WHERE url = ?", (url,))
         row = c.fetchone()
         if row:
