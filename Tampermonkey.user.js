@@ -9,7 +9,9 @@
 // @updateURL    https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js
 // @match        https://aniworld.to/*
 // @match        https://s.to/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      deine.domain.com
+// @connect      10.10.10.10
 // ==/UserScript==
 
 (function() {
@@ -17,40 +19,95 @@
 
     // 🌐 === SERVER KONFIGURATION ===
     // Passe diese Werte an deine Umgebung an:
+    
+    // Option 1: Domain verwenden (nginx reverse proxy mit SSL)
+    const USE_DOMAIN = true;// true = Domain verwenden, false = IP verwenden
+    const SERVER_DOMAIN = "deine.domain.com";// Deine Domain
+    const USE_HTTPS = true; 
+
+    // Option 2: IP-Adresse verwenden (direkter Zugriff)
     const SERVER_IP = "10.10.10.10";
-    const SERVER_PORT = 5050;       
+    const SERVER_PORT = 5050;
+    
+    // Basic Auth (für nginx Passwortschutz)
+    const AUTH_USERNAME = "Username";// Benutzername für Basic Auth
+    const AUTH_PASSWORD = "Password";// Passwort für Basic Auth
+    const USE_AUTH = true;// true = Basic Auth verwenden, false = ohne Auth
+
+    // === HILFSFUNKTIONEN ===
+    function getBaseUrl() {
+        if (USE_DOMAIN) {
+            const protocol = USE_HTTPS ? 'https' : 'http';
+            return `${protocol}://${SERVER_DOMAIN}`;
+        } else {
+            return `http://${SERVER_IP}:${SERVER_PORT}`;
+        }
+    }
+
+    function getAuthHeaders() {
+        const headers = {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+        };
+        if (USE_AUTH && AUTH_USERNAME && AUTH_PASSWORD) {
+            headers.Authorization = 'Basic ' + btoa(AUTH_USERNAME + ':' + AUTH_PASSWORD);
+        }
+        return headers;
+    }
 
     async function apiGet(path) {
         const separator = path.includes('?') ? '&' : '?';
-        const url = `http://${SERVER_IP}:${SERVER_PORT}${path}${separator}_t=${Date.now()}`;
+        const url = `${getBaseUrl()}${path}${separator}_t=${Date.now()}`;
         console.log('[AniLoader] GET:', url);
-        const res = await fetch(url, {
-            mode: 'cors',
-            cache: 'no-store',
-            headers: {
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache'
-            }
+        return new Promise((resolve, reject) => {
+            GM.xmlHttpRequest({
+                method: 'GET',
+                url: url,
+                headers: getAuthHeaders(),
+                onload: (response) => {
+                    if (response.status >= 200 && response.status < 300) {
+                        try {
+                            resolve(JSON.parse(response.responseText));
+                        } catch (e) {
+                            reject(new Error('JSON parse error'));
+                        }
+                    } else {
+                        reject(new Error('API ' + response.status));
+                    }
+                },
+                onerror: () => reject(new Error('Network error')),
+                ontimeout: () => reject(new Error('Timeout'))
+            });
         });
-        if (!res.ok) throw new Error('API ' + res.status);
-        return res.json();
     }
     async function apiPost(path, body) {
-        const url = `http://${SERVER_IP}:${SERVER_PORT}${path}`;
+        const url = `${getBaseUrl()}${path}`;
         console.log('[AniLoader] POST:', url, body);
-        const res = await fetch(url, {
-            method: 'POST', 
-            headers: {
-                'Content-Type':'application/json',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache'
-            },
-            mode: 'cors',
-            cache: 'no-store',
-            body: JSON.stringify(body||{})
+        const headers = {
+            'Content-Type':'application/json',
+            ...getAuthHeaders()
+        };
+        return new Promise((resolve, reject) => {
+            GM.xmlHttpRequest({
+                method: 'POST',
+                url: url,
+                headers: headers,
+                data: JSON.stringify(body||{}),
+                onload: (response) => {
+                    if (response.status >= 200 && response.status < 300) {
+                        try {
+                            resolve(JSON.parse(response.responseText));
+                        } catch (e) {
+                            reject(new Error('JSON parse error'));
+                        }
+                    } else {
+                        reject(new Error('API ' + response.status));
+                    }
+                },
+                onerror: () => reject(new Error('Network error')),
+                ontimeout: () => reject(new Error('Timeout'))
+            });
         });
-        if (!res.ok) throw new Error('API ' + res.status);
-        return res.json();
     }
 
     function getAnimeBaseUrl() {
@@ -192,22 +249,36 @@
     // Server-Check und UI-Umschaltung
     async function isServerOnline() {
         try {
-            const url = `http://${SERVER_IP}:${SERVER_PORT}/status?_t=${Date.now()}`;
+            const url = `${getBaseUrl()}/status?_t=${Date.now()}`;
             console.log('[AniLoader] Checking server:', url);
-            const res = await fetch(url, { 
-                mode: 'cors',
-                cache: 'no-store',
-                headers: {
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache'
-                }
+            return new Promise((resolve) => {
+                GM.xmlHttpRequest({
+                    method: 'GET',
+                    url: url,
+                    headers: getAuthHeaders(),
+                    timeout: 5000,
+                    onload: (response) => {
+                        console.log('[AniLoader] Server response:', response.status);
+                        if (response.status >= 200 && response.status < 300) {
+                            try {
+                                const data = JSON.parse(response.responseText);
+                                console.log('[AniLoader] Server data:', data);
+                            } catch (e) { /* ignore */ }
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    },
+                    onerror: (e) => {
+                        console.error('[AniLoader] Server-Check Fehler:', e);
+                        resolve(false);
+                    },
+                    ontimeout: () => {
+                        console.error('[AniLoader] Server-Check Timeout');
+                        resolve(false);
+                    }
+                });
             });
-            console.log('[AniLoader] Server response:', res.ok, res.status);
-            if (res.ok) {
-                const data = await res.json();
-                console.log('[AniLoader] Server data:', data);
-            }
-            return res && res.ok;
         } catch (e) {
             console.error('[AniLoader] Server-Check Fehler:', e);
             return false;
