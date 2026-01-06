@@ -2,7 +2,7 @@
 
 [German README](README.md) — deutsche Version
 
-# AniLoader
+# <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> AniLoader
 
 <ins><strong>In development, already usable</strong></ins><br/>
 This downloader is based on <a href="https://github.com/phoenixthrush/AniWorld-Downloader" target="_blank" rel="noreferrer">AniWorld-Downloader</a> by <a href="https://github.com/phoenixthrush" target="_blank" rel="noreferrer">phoenixthrush</a> and uses its CLI <code>aniworld</code> for the actual downloads.

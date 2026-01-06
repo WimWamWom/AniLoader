@@ -1,4 +1,4 @@
-# AniLoader - Anime Download Manager
+# <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> AniLoader - Anime Download Manager
 
 Automatischer Anime-Download-Manager mit Web-Interface für AniWorld.to
 
