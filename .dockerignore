@@ -33,9 +33,18 @@ README.md
 README_en.md
 LICENSE
 DOCKER_ANLEITUNG.md
+DOCKER_README.md
+DOCKER_UPLOAD_CHECKLIST.md
+STORAGE_ORGANIZATION.md
+TAMPERMONKEY_SETUP.md
 
-# Tampermonkey
+# Tampermonkey (nicht für Docker benötigt)
 Tampermonkey.user.js
+
+# Shell-Skripte (nicht für Docker benötigt)
+*.sh
+check-german.sh
+check-new.sh
 
 # Docker files
 docker-compose.yml
