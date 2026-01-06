@@ -28,6 +28,8 @@ LABEL org.opencontainers.image.description="Anime Download Manager mit Web-Inter
 LABEL org.opencontainers.image.url="https://github.com/WimWamWom/AniLoader"
 LABEL org.opencontainers.image.source="https://github.com/WimWamWom/AniLoader"
 LABEL org.opencontainers.image.vendor="WimWamWom"
+# Unraid Icon
+LABEL net.unraid.docker.icon="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png"
 
 # Arbeitsverzeichnis erstellen
 WORKDIR /app
