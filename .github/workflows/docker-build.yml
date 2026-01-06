@@ -38,7 +38,6 @@ jobs:
       with:
         images: ${{ env.DOCKER_HUB_USERNAME }}/${{ env.IMAGE_NAME }}
         tags: |
-          type=ref,event=branch
           type=ref,event=pr
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
