@@ -201,7 +201,7 @@ done
 
 # API Aufruf zum Starten des new Modus
 echo "Starte New-Check via ${API_ENDPOINT}..."
-curl -s -X POST ${AUTH_PARAM} "${API_ENDPOINT}/start" \
+curl -s -X POST ${AUTH_PARAM} "${API_ENDPOINT}/start_download" \
     -H "Content-Type: application/json" \
     -d '{"mode":"new"}'
 
