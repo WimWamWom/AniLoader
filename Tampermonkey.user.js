@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AniWorld & S.to Download-Button
 // @namespace    AniLoader
-// @version      1.6
-// @icon         https://cdn-icons-png.flaticon.com/512/9205/9205302.png
+// @version      1.7
+// @icon         https://wimwamwom.de/AniLoader.png
 // @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
 // @author       Wim
 // @downloadURL  https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js
