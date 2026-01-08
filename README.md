@@ -1,6 +1,6 @@
 <a id="readme-top"></a>
 
-[English README](README_en.md) — English translation of this README
+[English README](README_en.md) | [Docker Dokumentation](README_DOCKER.md)
 
 # <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> AniLoader
 
