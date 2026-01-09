@@ -10,10 +10,13 @@ echo "========================================="
 # ============================================
 # KONFIGURATION
 # ============================================
+# Kann entweder aus Datei oder von API lesen
+# - Wenn API_ENDPOINT gesetzt ist, wird die API verwendet
+# - Sonst wird LASTRUN_FILE gelesen
 LASTRUN_FILE="/mnt/user/Docker/AniLoader/data/last_run.txt"  # ANPASSEN!
 
 # Discord Webhook URLs (als Array - leer lassen um Discord zu deaktivieren)
-# Mehrere URLs einfach untereinander eintragen:
+# Hier direkt konfigurieren - wird von check-new.sh und check-german.sh verwendet:
 DISCORD_WEBHOOK_URLS=(
     "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     # "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"
@@ -218,24 +221,170 @@ EOF
     
     [ $failed -gt 0 ] && return 1
     return 0
-    wait
+}
+
+# Multi-Embed Funktion für sehr lange Listen (>25 Serien)
+send_discord_multi_embed() {
+    local title="$1"
+    local summary="$2"
+    local color="$3"
+    local error_info="$4"
+    shift 4
+    
+    if [ ${#DISCORD_WEBHOOK_URLS[@]} -eq 0 ]; then
+        return 0
+    fi
+    
+    # Sammle alle Episoden
+    local -a all_episodes=("$@")
+    local total_episodes=${#all_episodes[@]}
+    
+    # Gruppiere nach Serie
+    declare -A series_episodes
+    for episode in "${all_episodes[@]}"; do
+        if [[ "$episode" =~ ^(.+)[[:space:]]+(S[0-9]{2}E[0-9]{2}|Film[[:space:]][0-9]+)$ ]]; then
+            local series_name="${BASH_REMATCH[1]}"
+            local episode_info="${BASH_REMATCH[2]}"
+            if [ -z "${series_episodes[$series_name]}" ]; then
+                series_episodes["$series_name"]="$episode_info"
+            else
+                series_episodes["$series_name"]+="|$episode_info"
+            fi
+        fi
+    done
+    
+    local total_series=${#series_episodes[@]}
+    local MAX_FIELDS=25
+    
+    # Wenn <= 25 Serien, nutze normale grouped embed
+    if [ $total_series -le $MAX_FIELDS ]; then
+        send_discord_grouped_embed "$title" "$summary" "$color" "$error_info" "${all_episodes[@]}"
+        return $?
+    fi
+    
+    # Teile in mehrere Embeds auf
+    local embeds="["
+    local current_fields="["
+    local field_count=0
+    local embed_count=0
+    local series_processed=0
+    
+    for series in "${!series_episodes[@]}"; do
+        local episodes="${series_episodes[$series]}"
+        IFS='|' read -ra ep_array <<< "$episodes"
+        local ep_count=${#ep_array[@]}
+        
+        [ $field_count -gt 0 ] && current_fields+=","
+        local series_escaped=$(json_escape "$series")
+        
+        if [ $ep_count -eq 1 ]; then
+            local ep_escaped=$(json_escape "${ep_array[0]}")
+            current_fields+="{\"name\":\"$series_escaped\",\"value\":\"- $ep_escaped\",\"inline\":false}"
+        else
+            local value=""
+            for ep in "${ep_array[@]}"; do
+                local ep_escaped=$(json_escape "$ep")
+                [ -z "$value" ] && value="- $ep_escaped" || value+="\\n- $ep_escaped"
+            done
+            current_fields+="{\"name\":\"$series_escaped ($ep_count x)\",\"value\":\"$value\",\"inline\":false}"
+        fi
+        
+        field_count=$((field_count + 1))
+        series_processed=$((series_processed + 1))
+        
+        # Wenn 25 Fields erreicht oder letzte Serie
+        if [ $field_count -ge $MAX_FIELDS ] || [ $series_processed -eq $total_series ]; then
+            current_fields+="]"
+            embed_count=$((embed_count + 1))
+            
+            [ $embed_count -gt 1 ] && embeds+=","
+            
+            local embed_title="$title"
+            local embed_desc
+            
+            if [ $embed_count -eq 1 ]; then
+                embed_desc=$(json_escape "$summary")
+            else
+                embed_desc="📺 **Fortsetzung (Teil $embed_count)...**"
+            fi
+            
+            # Fehler-Info nur im letzten Embed
+            if [ $series_processed -eq $total_series ] && [ ! -z "$error_info" ]; then
+                embed_desc+="\\n\\n$(json_escape "$error_info")"
+            fi
+            
+            embeds+="{\"title\":\"$(json_escape "$embed_title")\",\"description\":\"$embed_desc\",\"color\":$color,\"fields\":$current_fields,\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",\"footer\":{\"text\":\"AniLoader\"}}"
+            
+            # Reset für nächstes Embed
+            current_fields="["
+            field_count=0
+        fi
+    done
+    
+    embeds+="]"
+    
+    # Sende an alle Webhooks
+    local success=0
+    local failed=0
+    for webhook_url in "${DISCORD_WEBHOOK_URLS[@]}"; do
+        [ -z "$webhook_url" ] && continue
+        local response=$(curl -s -w "\n%{http_code}" -H "Content-Type: application/json" -d "{\"embeds\":$embeds}" "${webhook_url}")
+        local http_code=$(echo "$response" | tail -n1)
+        if [ "$http_code" = "204" ] || [ "$http_code" = "200" ]; then
+            ((success++))
+        else
+            ((failed++))
+            echo "[FEHLER] Discord Multi-Embed fehlgeschlagen (HTTP $http_code)"
+        fi
+    done
+    
+    [ $failed -gt 0 ] && return 1
+    return 0
 }
 
 # ============================================
 # HAUPTPROGRAMM
 # ============================================
 
-# Prüfe ob Datei existiert
-if [ ! -f "$LASTRUN_FILE" ]; then
-    echo "[FEHLER] Datei nicht gefunden: $LASTRUN_FILE"
-    exit 1
+# Lade Logs entweder von API oder aus Datei
+if [ ! -z "$API_ENDPOINT" ]; then
+    echo "Lade Logs von API: $API_ENDPOINT/last_run"
+    
+    # Curl Auth Parameter vorbereiten
+    AUTH_PARAM=""
+    if [ ! -z "$API_AUTH" ]; then
+        AUTH_PARAM="-u ${API_AUTH}"
+    fi
+    
+    # Hole die Logs vom aktuellen Run über /last_run API
+    RAW_RESPONSE=$(curl -s ${AUTH_PARAM} "${API_ENDPOINT}/last_run" 2>/dev/null || echo "")
+    
+    if [ -z "$RAW_RESPONSE" ]; then
+        echo "[FEHLER] Keine Logs von API verfügbar."
+        exit 1
+    fi
+    
+    # Konvertiere JSON-Array zu Plaintext (entferne JSON-Formatierung)
+    # API gibt ["zeile1","zeile2",...] zurück, möglicherweise mit Zeilenumbrüchen
+    if [[ "$RAW_RESPONSE" == \[* ]]; then
+        # Entferne Zeilenumbrüche, dann parse JSON-Array
+        LOG_CONTENT=$(echo "$RAW_RESPONSE" | tr -d '\n\r' | sed 's/^\["//' | sed 's/"\]$//' | sed 's/","$/\n/g' | sed 's/","/\n/g' | sed 's/\\u00e4/ä/g; s/\\u00f6/ö/g; s/\\u00fc/ü/g; s/\\u00df/ß/g; s/\\u00c4/Ä/g; s/\\u00d6/Ö/g; s/\\u00dc/Ü/g')
+    else
+        LOG_CONTENT="$RAW_RESPONSE"
+    fi
+else
+    # Prüfe ob Datei existiert
+    if [ ! -f "$LASTRUN_FILE" ]; then
+        echo "[FEHLER] Datei nicht gefunden: $LASTRUN_FILE"
+        exit 1
+    fi
+    
+    echo "Lese Datei: $LASTRUN_FILE"
+    LOG_CONTENT=$(cat "$LASTRUN_FILE")
 fi
 
-echo "Lese Datei: $LASTRUN_FILE"
-LOG_CONTENT=$(cat "$LASTRUN_FILE")
-
 if [ -z "$LOG_CONTENT" ]; then
-    echo "[WARNUNG] Datei ist leer."
+    echo "[WARNUNG] Keine Logs verfügbar."
     exit 0
 fi
 
@@ -266,11 +415,11 @@ if [ "$MODE" = "german" ]; then
     
     while IFS= read -r line; do
         # [DOWNLOAD] Versuche German Dub -> URL
-        if [[ "$line" =~ \[DOWNLOAD\][[:space:]]Versuche[[:space:]]German[[:space:]]Dub[[:space:]]-\>[[:space:]](https?://[^[:space:]]+) ]]; then
+        if [[ "$line" =~ \[DOWNLOAD\].*Versuche.*German.*Dub.*-\>[[:space:]]*(https?://[^[:space:]]+) ]]; then
             current_url="${BASH_REMATCH[1]}"
             current_is_german=true
         # [VERIFY] (only if German Dub)
-        elif [[ "$line" =~ \[VERIFY\].*wurde[[:space:]]+erfolgreich[[:space:]]+erstellt ]] && [ ! -z "$current_url" ] && [ "$current_is_german" = true ]; then
+        elif [[ "$line" =~ \[VERIFY\].*wurde.*erfolgreich.*erstellt ]] && [ ! -z "$current_url" ] && [ "$current_is_german" = true ]; then
             url="$current_url"
             
             # Parse URL to readable format (aniworld or s.to)
@@ -301,11 +450,11 @@ elif [ "$MODE" = "new" ]; then
     current_url=""
     
     while IFS= read -r line; do
-        # [DOWNLOAD] ... -> URL
-        if [[ "$line" =~ \[DOWNLOAD\][[:space:]]Versuche[[:space:]].*[[:space:]]-\>[[:space:]](https?://[^[:space:]]+) ]]; then
+        # [DOWNLOAD] ... -> URL (mit Timestamp am Anfang)
+        if [[ "$line" =~ \[DOWNLOAD\].*Versuche.*-\>[[:space:]]*(https?://[^[:space:]]+) ]]; then
             current_url="${BASH_REMATCH[1]}"
         # [VERIFY] ... wurde erfolgreich erstellt
-        elif [[ "$line" =~ \[VERIFY\].*wurde[[:space:]]+erfolgreich[[:space:]]+erstellt ]] && [ ! -z "$current_url" ]; then
+        elif [[ "$line" =~ \[VERIFY\].*wurde.*erfolgreich.*erstellt ]] && [ ! -z "$current_url" ]; then
             url="$current_url"
             
             # Parse URL to readable format (aniworld or s.to)
@@ -394,8 +543,8 @@ if [ "$EPISODES_COUNT" -gt 0 ]; then
     fi
     
     if [ ${#PARSED_EPISODES[@]} -gt 0 ]; then
-        # Nutze gruppierte Embed Funktion
-        if send_discord_grouped_embed \
+        # Nutze Multi-Embed für automatische Aufteilung bei >25 Serien
+        if send_discord_multi_embed \
             "$TITLE" \
             "$summary" \
             "3066993" \
