@@ -1,5 +1,5 @@
 
-[🇩🇪 Deutsch] | [🇬🇧 English Docker Documentation](README_DOCKER_en.md)
+[🇩🇪 Deutsch] | [🇬🇧 English Docker Documentation](https://github.com/WimWamWom/AniLoader/blob/main/README_DOCKER_en.md)
 
 # <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> AniLoader Docker Dokumentation
 
