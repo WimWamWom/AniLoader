@@ -1,6 +1,7 @@
 
-<img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> 
-# AniLoader Docker Documentation
+[🇬🇧 English] | [🇩🇪 Deutsche Docker-Dokumentation](README_DOCKER.md)
+
+# <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> AniLoader Docker Documentation
 
 This guide covers installation and configuration of AniLoader with Docker.
 
