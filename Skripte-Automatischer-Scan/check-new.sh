@@ -295,7 +295,7 @@ while true; do
     waited=$((waited + 1))
 done
 
-API Aufruf
+# API Aufruf
 echo "Starte New-Check via ${API_ENDPOINT}..."
 curl -s -X POST ${AUTH_PARAM} "${API_ENDPOINT}/start_download" \
     -H "Content-Type: application/json" \
