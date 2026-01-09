@@ -10,18 +10,21 @@ echo "========================================="
 # ============================================
 # KONFIGURATION
 # ============================================
-# Kann entweder aus Datei oder von API lesen
-# - Wenn API_ENDPOINT gesetzt ist, wird die API verwendet
-# - Sonst wird LASTRUN_FILE gelesen
-LASTRUN_FILE="/mnt/user/Docker/AniLoader/data/last_run.txt"  # ANPASSEN!
+API_ENDPOINT="https://your-domain.example.com"
+
+# Basic Auth (falls Domain AUTH-geschützt ist)
+# Format: "username:password" oder leer lassen
+API_AUTH="username:password"
 
 # Discord Webhook URLs (als Array - leer lassen um Discord zu deaktivieren)
-# Hier direkt konfigurieren - wird von check-new.sh und check-german.sh verwendet:
 DISCORD_WEBHOOK_URLS=(
     "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
     # "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"
-    # "https://discord.com/api/webhooks/DRITTE_WEBHOOK_URL"
 )
+
+
+# Alternativ: Lokale Datei (wird nur verwendet wenn API_ENDPOINT leer ist)
+LASTRUN_FILE="/mnt/user/Docker/AniLoader/data/last_run.txt"
 
 # ============================================
 # DISCORD WEBHOOK FUNKTION

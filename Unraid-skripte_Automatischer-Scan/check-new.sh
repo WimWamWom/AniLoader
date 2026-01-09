@@ -295,14 +295,14 @@ while true; do
     waited=$((waited + 1))
 done
 
-# API Aufruf
-# echo "Starte New-Check via ${API_ENDPOINT}..."
-# curl -s -X POST ${AUTH_PARAM} "${API_ENDPOINT}/start_download" \
-#     -H "Content-Type: application/json" \
-#     -d '{"mode":"new"}'
+API Aufruf
+echo "Starte New-Check via ${API_ENDPOINT}..."
+curl -s -X POST ${AUTH_PARAM} "${API_ENDPOINT}/start_download" \
+    -H "Content-Type: application/json" \
+    -d '{"mode":"new"}'
 
-# echo "Warte auf Abschluss..."
-# sleep 10
+echo "Warte auf Abschluss..."
+sleep 10
 
 while true; do
     STATUS=$(curl -s ${AUTH_PARAM} "${API_ENDPOINT}/status" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
