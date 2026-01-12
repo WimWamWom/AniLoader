@@ -741,7 +741,11 @@ async function fetchLogs() {
     
     const data = await apiGet(endpoint);
     if (!Array.isArray(data)) return;
-    let lines = data; // Kein Limit mehr - zeige alle Logs
+    let lines = data;
+    // Begrenze die Anzahl der Logzeilen auf maximal 20000
+    if (lines.length > 30000) {
+      lines = lines.slice(-30000);
+    }
     const filterVal = logFilter.value.trim();
     if (filterVal) {
       try {
