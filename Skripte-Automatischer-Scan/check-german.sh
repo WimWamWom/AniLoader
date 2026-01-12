@@ -383,12 +383,13 @@ echo "=== ZUSAMMENFASSUNG ==="
 echo "Neue deutsche Episoden gefunden: $GERMAN_EPISODES_COUNT"
 echo "Fehler: $ERROR_COUNT"
 
+
 # ============================================
 # DISCORD BENACHRICHTIGUNG
 # ============================================
 
 if [ "$GERMAN_EPISODES_COUNT" -gt 0 ]; then
-    summary="✅ **${GERMAN_EPISODES_COUNT} neue deutsche Episode(n) gefunden!**"
+    summary="✅ **${GERMAN_EPISODES_COUNT} neue deutsche Episode(n) heruntergeladen!**"
     
     error_info=""
     [ "$ERROR_COUNT" -gt 0 ] && error_info="⚠️ ${ERROR_COUNT} Fehler aufgetreten"
