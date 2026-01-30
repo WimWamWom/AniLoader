@@ -1,6 +1,8 @@
 # Download Verzeichnisse
 /Downloads
 /downloads
+/.last-version/Downloads
+/.test/Downloads
 
 # Python Cache
 /__pycache__
@@ -15,7 +17,8 @@ data/config.json
 data/last_run.txt
 data/*.txt
 data/*.log
-
+/.last-version/data
+/.test/data
 # Log Dateien
 *.log
 logs/
