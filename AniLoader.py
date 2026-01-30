@@ -17,7 +17,7 @@ from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
 import random
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import html
 
 
@@ -923,6 +923,118 @@ def get_series_title(url):
     except Exception as e:
         log(f"[FEHLER] Konnte Serien-Titel nicht abrufen ({url}): {e}")
     return None
+
+
+# -------------------- New-mode HTML Precheck --------------------
+def scrape_series_structure(series_url: str, retries: int = 3, backoff: float = 1.0):
+    """Scrape seasons and episodes from a series page.
+
+    Returns a dict {season_int: [episode_int,...]} or None on permanent failure.
+    """
+    try:
+        headers = get_headers()
+        parsed = urlparse(series_url)
+        host = parsed.hostname
+        ips = resolve_ips_via_cloudflare(host) if host else None
+        attempt = 0
+        while attempt < retries:
+            try:
+                with DnsOverride(host, ips):
+                    r = requests.get(series_url, headers=headers, timeout=10)
+                r.raise_for_status()
+                soup = BeautifulSoup(r.text, "html.parser")
+                seasons = {}
+                # Find season links (support German and English variants)
+                for a in soup.select("a[href*='/staffel-'], a[href*='/season-']"):
+                    href = a.get('href')
+                    if not href:
+                        continue
+                    m = re.search(r'(?:staffel|season)-(\d+)', href)
+                    if not m:
+                        continue
+                    s = int(m.group(1))
+                    seasons[s] = urljoin(series_url, href)
+
+                # For each season, fetch episodes
+                result = {}
+                for s, s_url in seasons.items():
+                    try:
+                        with DnsOverride(host, ips):
+                            sr = requests.get(s_url, headers=headers, timeout=10)
+                        sr.raise_for_status()
+                        ssoup = BeautifulSoup(sr.text, "html.parser")
+                        eps = set()
+                        for a in ssoup.select("a[href*='/episode-']"):
+                            href = a.get('href')
+                            if not href:
+                                continue
+                            m = re.search(r'episode-(\d+)', href)
+                            if m:
+                                eps.add(int(m.group(1)))
+                        if eps:
+                            result[s] = sorted(eps)
+                    except Exception:
+                        # ignore per-season failures, continue with others
+                        log(f"[NEW-PRECHECK] Fehler beim Abruf Staffel {s} ({s_url})")
+                # Also check for films (film-#) on series page
+                films = set()
+                for a in soup.select("a[href*='/film-']"):
+                    href = a.get('href')
+                    if not href:
+                        continue
+                    m = re.search(r'film-(\d+)', href)
+                    if m:
+                        films.add(int(m.group(1)))
+                if films:
+                    result[0] = sorted(films)
+
+                return result
+            except Exception as e:
+                attempt += 1
+                if attempt >= retries:
+                    log(f"[NEW-PRECHECK] Permanenter Fehler beim Abruf {series_url}: {e}")
+                    return None
+                time.sleep(backoff * attempt)
+    except Exception as e:
+        log(f"[NEW-PRECHECK] Unerwarteter Fehler beim Parsen von {series_url}: {e}")
+        return None
+
+
+def has_new_episodes_db_check(anime_record: dict, scraped: dict) -> bool:
+    """Vergleicht DB-Metadaten mit dem gescrapten Ergebnis.
+
+    Returns True if processing should continue (i.e. potentially new episodes), False to skip.
+    If `scraped` is None (fetch error) we return True to avoid false negatives.
+    If `scraped` is empty we also return True (can't determine reliably).
+    """
+    if scraped is None:
+        # network error, be conservative and allow processing
+        return True
+    if not scraped:
+        # nothing found on page - cannot safely assume "no new" -> allow
+        return True
+
+    last_film = anime_record.get('last_film') or 0
+    last_season = anime_record.get('last_season') or 0
+    last_episode = anime_record.get('last_episode') or 0
+
+    # Check films (season 0)
+    if 0 in scraped:
+        max_film = max(scraped[0])
+        if max_film > last_film:
+            return True
+
+    # Check seasons
+    for s, eps in scraped.items():
+        if s == 0:
+            continue
+        if s > last_season:
+            return True
+        if s == last_season and eps and max(eps) > last_episode:
+            return True
+
+    # No new episodes detected
+    return False
 
 # -------------------- DNS über 1.1.1.1 nur für Titelabfragen --------------------
 def resolve_ips_via_cloudflare(hostname: str):
@@ -2166,6 +2278,32 @@ def run_mode(mode="default"):
                     log(f"[QUEUE] Re-Check Fehler (German): {_e}")
         elif mode == "new":
             log("=== Modus: Prüfe auf neue Episoden & Filme ===")
+            # Run HTML precheck for all DB entries to decide which series actually need processing.
+            log("[NEW] Starte HTML-Precheck für alle Serien (New mode)")
+            allowed_ids = set()
+            for anime in anime_list:
+                try:
+                    aid = anime['id']
+                    if anime.get('deleted'):
+                        log(f"[NEW-PRECHECK] '{anime.get('title') or anime.get('url')}' übersprungen (deleted).")
+                        continue
+                    series_title = anime.get('title') or get_series_title(anime.get('url'))
+                    log(f"[NEW-PRECHECK] Prüfe '{series_title}' ({anime.get('url')})")
+                    scraped = scrape_series_structure(anime.get('url'))
+                    if scraped is None:
+                        log(f"[NEW-PRECHECK] Netzwerkfehler oder kein HTML für '{series_title}' — Verarbeitung zulassen")
+                        allowed_ids.add(aid)
+                        continue
+                    # Log found seasons/episodes
+                    log(f"[NEW-PRECHECK] Gefundene Struktur für '{series_title}': {scraped}")
+                    if has_new_episodes_db_check(anime, scraped):
+                        log(f"[NEW-PRECHECK] Neue Episoden erkannt für '{series_title}' — wird verarbeitet.")
+                        allowed_ids.add(aid)
+                    else:
+                        log(f"[NEW-PRECHECK] Keine neuen Episoden für '{series_title}' — übersprungen.")
+                except Exception as _e:
+                    log(f"[NEW-PRECHECK] Fehler bei '{anime.get('title') or anime.get('url')}': {_e} — Verarbeitung zulassen")
+                    allowed_ids.add(anime.get('id'))
             # 1) Zuerst Queue
             if queued_ids:
                 work_list = [a for a in anime_list if a['id'] in queued_ids]
@@ -2179,6 +2317,10 @@ def run_mode(mode="default"):
                     current_download["current_index"] = idx
                     if anime.get("deleted"):
                         log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+                        continue
+                    # Skip if precheck determined no new episodes for this anime
+                    if anime['id'] not in allowed_ids:
+                        log(f"[NEW] '{anime.get('title')}' — keine neuen Episoden, übersprungen.")
                         continue
                     series_title = anime["title"] or get_series_title(anime["url"])
                     anime_id = anime["id"]
@@ -2215,6 +2357,10 @@ def run_mode(mode="default"):
                 current_download["current_index"] = idx
                 if anime.get("deleted"):
                     log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+                    continue
+                # Skip if precheck determined no new episodes for this anime
+                if anime['id'] not in allowed_ids:
+                    log(f"[NEW] '{anime.get('title')}' — keine neuen Episoden, übersprungen.")
                     continue
                 series_title = anime["title"] or get_series_title(anime["url"])
                 anime_id = anime["id"]
@@ -3645,7 +3791,7 @@ def AniLoader():
     init_db()
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
-    deleted_check()
+#    deleted_check()
     # Alte Logs aufräumen (älter als 7 Tage)
     cleanup_old_logs(days=7)
     if REFRESH_TITLES:
