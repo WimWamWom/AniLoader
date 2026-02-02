@@ -1195,8 +1195,8 @@ fetchLogs();
 fetchDisk();
 fetchQueue();
 // Staggered polling: each runs regularly with offsets between starts
-const INTERVAL_MS = 5000; // 5 Sekunden (war vorher 60s)
-const STAGGER_MS = 1000; // 1 Sekunde zwischen den verschiedenen Abfragen
+const INTERVAL_MS = 500; // 0.5 Sekunden (war vorher 5s)
+const STAGGER_MS = 20; // 0.02 Sekunden zwischen den verschiedenen Abfragen
 function scheduleStaggered(fn, offsetMs) {
   setTimeout(() => {
     try { fn(); } catch(e) { console.error(e); }
