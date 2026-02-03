@@ -19,266 +19,394 @@ import random
 import socket
 from urllib.parse import urlparse, urljoin
 import html
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 
-# -------------------- Konfiguration --------------------
-BASE_DIR = Path(__file__).resolve().parent
-ANIME_TXT = BASE_DIR / "AniLoader.txt"
-# Default downloads directory; can be overridden via config.json (download_path)
-DEFAULT_DOWNLOAD_DIR = BASE_DIR / "Downloads"
-# Effective downloads directory used at runtime
-DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
-# Neue Speichermodus-Variablen
-STORAGE_MODE = "standard"  # 'standard' oder 'separate'
-MOVIES_PATH = ""  # Nur für separate Mode (wird nicht mehr verwendet)
-SERIES_PATH = ""  # Nur für separate Mode (wird nicht mehr verwendet)
-# Neue Content-Type basierte Pfade
-ANIME_PATH = ""  # Pfad für Animes (aniworld.to)
-SERIEN_PATH = ""  # Pfad für Serien (s.to)
-# Film/Staffel Organisation
-ANIME_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Animes
-SERIEN_SEPARATE_MOVIES = False  # Filme getrennt von Staffeln bei Serien
-ANIME_MOVIES_PATH = ""  # Separater Pfad für Anime-Filme (optional)
-SERIEN_MOVIES_PATH = ""  # Separater Pfad für Serien-Filme (optional)
-# Server port (configurable only via config.json)
-SERVER_PORT = 5050
+# -------------------- Config-Klasse --------------------
+@dataclass
+class Config:
+    """Zentrale Konfigurationsklasse für alle AniLoader-Einstellungen."""
+    
+    # Basis-Pfade (werden beim Init gesetzt)
+    base_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parent)
+    
+    # Download-Einstellungen
+    download_dir: Path = field(default=None)  # type: ignore
+    storage_mode: str = "standard"  # 'standard' oder 'separate'
+    movies_path: str = ""
+    series_path: str = ""
+    anime_path: str = ""
+    serien_path: str = ""
+    
+    # Film/Staffel Organisation
+    anime_separate_movies: bool = False
+    serien_separate_movies: bool = False
+    anime_movies_path: str = ""
+    serien_movies_path: str = ""
+    
+    # Server-Einstellungen
+    server_port: int = 5050
+    
+    # Sprach-Einstellungen
+    languages: List[str] = field(default_factory=lambda: ["German Dub", "German Sub", "English Dub", "English Sub"])
+    
+    # Speicher-Einstellungen
+    min_free_gb: float = 2.0
+    max_path: int = 260
+    
+    # Autostart & Titel
+    autostart_mode: Optional[str] = None  # 'default'|'german'|'new'|'check-missing'|'full-check' or None
+    refresh_titles: bool = True
+    
+    # Data-Folder Pfade (werden dynamisch berechnet)
+    _data_folder: str = field(default="", init=False)
+    
+    def __post_init__(self):
+        """Initialisiert abgeleitete Pfade nach der Erstellung."""
+        if self.download_dir is None:
+            self.download_dir = self.base_dir / "Downloads"
+        self._data_folder = os.path.join(os.path.dirname(__file__), 'data')
+        os.makedirs(self._data_folder, exist_ok=True)
+    
+    @property
+    def data_folder(self) -> str:
+        return self._data_folder
+    
+    @data_folder.setter
+    def data_folder(self, value: str):
+        self._data_folder = value
+        os.makedirs(self._data_folder, exist_ok=True)
+    
+    @property
+    def anime_txt(self) -> Path:
+        return self.base_dir / "AniLoader.txt"
+    
+    @property
+    def config_path(self) -> Path:
+        return Path(os.path.join(self._data_folder, 'config.json'))
+    
+    @property
+    def db_path(self) -> Path:
+        return Path(os.path.join(self._data_folder, 'AniLoader.db'))
+    
+    @property
+    def log_path(self) -> str:
+        return os.path.join(self._data_folder, 'last_run.txt')
+    
+    @property
+    def all_logs_path(self) -> str:
+        return os.path.join(self._data_folder, 'all_logs.txt')
+    
+    def load(self) -> None:
+        """Lädt die Konfiguration aus config.json."""
+        try:
+            if not self.config_path.exists():
+                self.save()  # Erstelle Standard-Config
+                return
+            
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            
+            changed = False
+            
+            # Data-Folder zuerst prüfen (kann Config-Pfad ändern)
+            data_folder_path = cfg.get('data_folder_path')
+            if data_folder_path and isinstance(data_folder_path, str) and data_folder_path.strip():
+                try:
+                    new_folder = Path(data_folder_path).expanduser()
+                    try:
+                        new_folder = new_folder.resolve()
+                    except Exception:
+                        pass
+                    if str(new_folder) != self._data_folder:
+                        self._data_folder = str(new_folder)
+                        os.makedirs(self._data_folder, exist_ok=True)
+                        # Config aus neuem Ort laden
+                        if self.config_path.exists():
+                            with open(self.config_path, 'r', encoding='utf-8') as f2:
+                                cfg = json.load(f2)
+                except Exception as e:
+                    _log_internal(f"[CONFIG-WARN] Ungültiger data_folder_path: {e}, verwende Standard")
+            
+            # Languages
+            langs = cfg.get('languages')
+            if isinstance(langs, list) and langs:
+                self.languages = langs
+            
+            # Min Free GB
+            try:
+                self.min_free_gb = float(cfg.get('min_free_gb', self.min_free_gb))
+            except Exception:
+                pass
+            
+            # Autostart Mode
+            raw_mode = cfg.get('autostart_mode')
+            allowed = {None, 'default', 'german', 'new', 'check-missing', 'full-check'}
+            if isinstance(raw_mode, str):
+                raw_mode_norm = raw_mode.strip().lower()
+                if raw_mode_norm in {'', 'none', 'off', 'disabled'}:
+                    self.autostart_mode = None
+                elif raw_mode_norm in allowed:
+                    self.autostart_mode = raw_mode_norm
+                else:
+                    self.autostart_mode = None
+            else:
+                self.autostart_mode = None
+            
+            # Download Path
+            dl_path = cfg.get('download_path')
+            if isinstance(dl_path, str) and dl_path.strip():
+                try:
+                    self.download_dir = Path(dl_path).expanduser()
+                    try:
+                        self.download_dir = self.download_dir.resolve()
+                    except Exception:
+                        pass
+                except Exception:
+                    self.download_dir = self.base_dir / "Downloads"
+            else:
+                self.download_dir = self.base_dir / "Downloads"
+                cfg['download_path'] = str(self.download_dir)
+                changed = True
+            
+            # Storage Mode
+            storage_mode = cfg.get('storage_mode', 'standard')
+            if storage_mode in ['standard', 'separate']:
+                self.storage_mode = storage_mode
+            else:
+                self.storage_mode = 'standard'
+                cfg['storage_mode'] = 'standard'
+                changed = True
+            
+            # Movies/Series Paths
+            self.movies_path = cfg.get('movies_path', '')
+            if 'movies_path' not in cfg:
+                cfg['movies_path'] = str(self.download_dir / 'Filme')
+                self.movies_path = cfg['movies_path']
+                changed = True
+            
+            self.series_path = cfg.get('series_path', '')
+            if 'series_path' not in cfg:
+                cfg['series_path'] = str(self.download_dir / 'Serien')
+                self.series_path = cfg['series_path']
+                changed = True
+            
+            # Anime/Serien Paths
+            self.anime_path = cfg.get('anime_path', '')
+            if 'anime_path' not in cfg:
+                cfg['anime_path'] = str(self.download_dir / 'Animes')
+                self.anime_path = cfg['anime_path']
+                changed = True
+            
+            self.serien_path = cfg.get('serien_path', '')
+            if 'serien_path' not in cfg:
+                cfg['serien_path'] = str(self.download_dir / 'Serien')
+                self.serien_path = cfg['serien_path']
+                changed = True
+            
+            # Film/Staffel Organisation
+            self.anime_separate_movies = cfg.get('anime_separate_movies', False)
+            if 'anime_separate_movies' not in cfg:
+                cfg['anime_separate_movies'] = False
+                changed = True
+            
+            self.serien_separate_movies = cfg.get('serien_separate_movies', False)
+            if 'serien_separate_movies' not in cfg:
+                cfg['serien_separate_movies'] = False
+                changed = True
+            
+            self.anime_movies_path = cfg.get('anime_movies_path', '')
+            self.serien_movies_path = cfg.get('serien_movies_path', '')
+            
+            # Server Port
+            try:
+                port_val = cfg.get('port', self.server_port)
+                if isinstance(port_val, str) and port_val.isdigit():
+                    port_val = int(port_val)
+                if isinstance(port_val, int) and 1 <= port_val <= 65535:
+                    self.server_port = port_val
+                else:
+                    cfg['port'] = self.server_port
+                    changed = True
+            except Exception:
+                cfg['port'] = self.server_port
+                changed = True
+            
+            # Refresh Titles
+            try:
+                if 'refresh_titles' in cfg:
+                    self.refresh_titles = bool(cfg.get('refresh_titles'))
+                else:
+                    cfg['refresh_titles'] = True
+                    self.refresh_titles = True
+                    changed = True
+            except Exception:
+                self.refresh_titles = True
+                cfg['refresh_titles'] = True
+                changed = True
+            
+            # Data Folder Path in Config
+            if 'data_folder_path' not in cfg:
+                cfg['data_folder_path'] = self._data_folder
+                changed = True
+            
+            # Speichern wenn Änderungen
+            if changed:
+                if _write_config_atomic(cfg, self.config_path):
+                    _log_internal("[CONFIG] fehlende Schlüssel ergänzt und gespeichert")
+                else:
+                    _log_internal("[CONFIG-ERROR] Ergänzung konnte nicht gespeichert werden")
+            
+            _log_internal(f"[CONFIG] geladen: languages={self.languages} min_free_gb={self.min_free_gb} autostart_mode={self.autostart_mode} data_folder={self._data_folder}")
+        
+        except Exception as e:
+            _log_internal(f"[CONFIG-ERROR] load: {e}")
+    
+    def save(self) -> bool:
+        """Speichert die aktuelle Konfiguration in config.json."""
+        try:
+            cfg = {
+                'languages': self.languages,
+                'min_free_gb': self.min_free_gb,
+                'download_path': str(self.download_dir),
+                'storage_mode': self.storage_mode,
+                'movies_path': self.movies_path,
+                'series_path': self.series_path,
+                'anime_path': self.anime_path,
+                'serien_path': self.serien_path,
+                'anime_separate_movies': self.anime_separate_movies,
+                'serien_separate_movies': self.serien_separate_movies,
+                'anime_movies_path': self.anime_movies_path,
+                'serien_movies_path': self.serien_movies_path,
+                'port': self.server_port,
+                'autostart_mode': self.autostart_mode,
+                'refresh_titles': self.refresh_titles,
+                'data_folder_path': self._data_folder
+            }
+            return _write_config_atomic(cfg, self.config_path)
+        except Exception as e:
+            _log_internal(f"[CONFIG-ERROR] save: {e}")
+            return False
 
-# Define paths for the data folder
-# Will be loaded from config.json if set, otherwise defaults to ./data
-DEFAULT_DATA_FOLDER = os.path.join(os.path.dirname(__file__), 'data')
-data_folder = DEFAULT_DATA_FOLDER
-config_path = os.path.join(data_folder, 'config.json')
-db_path = os.path.join(data_folder, 'AniLoader.db')
-log_path = os.path.join(data_folder, 'last_run.txt')
-all_logs_path = os.path.join(data_folder, 'all_logs.txt')
 
-# Ensure the data folder exists
-os.makedirs(data_folder, exist_ok=True)
+# Globale Config-Instanz (Singleton)
+config = Config()
 
-# Function to save the last log
-def save_last_log(log_content):
-    with open(log_path, 'w', encoding='utf-8') as log_file:
-        log_file.write(log_content)
+# Alias-Variablen für Rückwärtskompatibilität (können später entfernt werden)
+BASE_DIR = config.base_dir
+ANIME_TXT = config.anime_txt
+DEFAULT_DOWNLOAD_DIR = config.base_dir / "Downloads"
 
-# Function to read the last log
+# Statische Aliase für alten Code (direkter Zugriff über config.*)
+CONFIG_PATH = config.config_path
+DB_PATH = config.db_path
+
+LANGUAGES = config.languages  # Referenz auf die Liste
+MIN_FREE_GB = config.min_free_gb
+MAX_PATH = config.max_path
+AUTOSTART_MODE = config.autostart_mode
+REFRESH_TITLES = config.refresh_titles
+
+# Kompatibilitätsfunktionen für alte globale Variablen
+data_folder = config.data_folder
+config_path = config.log_path.replace('last_run.txt', 'config.json')
+db_path = str(config.db_path)
+log_path = config.log_path
+all_logs_path = config.all_logs_path
+
+
+def _log_internal(msg: str):
+    """Interne Log-Funktion für Config-Klasse (bevor log() definiert ist)."""
+    ts = time.strftime("[%Y-%m-%d %H:%M:%S]")
+    line = f"{ts} {msg}"
+    try:
+        print(line, flush=True)
+    except Exception:
+        pass
+
+
+def _write_config_atomic(cfg: dict, config_path: Path) -> bool:
+    """Atomisches Schreiben der Config (für Config-Klasse)."""
+    try:
+        dir_path = os.path.dirname(str(config_path))
+        os.makedirs(dir_path, exist_ok=True)
+        tmp_path = str(config_path) + ".tmp"
+        
+        try:
+            if os.path.exists(config_path):
+                os.chmod(config_path, stat.S_IWRITE | stat.S_IREAD)
+        except Exception:
+            pass
+        
+        for attempt in range(5):
+            try:
+                with open(tmp_path, 'w', encoding='utf-8') as wf:
+                    json.dump(cfg, wf, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, config_path)
+                return True
+            except PermissionError:
+                try:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except Exception:
+                    pass
+                time.sleep(0.3 * (attempt + 1))
+                continue
+            except Exception:
+                try:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                except Exception:
+                    pass
+                break
+        
+        # Fallback: direktes Schreiben
+        try:
+            with open(config_path, 'w', encoding='utf-8') as wf:
+                json.dump(cfg, wf, indent=2, ensure_ascii=False)
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
+# Function to read the last log (Kompatibilität)
 def read_last_log():
-    if os.path.exists(log_path):
-        with open(log_path, 'r', encoding='utf-8') as log_file:
+    if os.path.exists(config.log_path):
+        with open(config.log_path, 'r', encoding='utf-8') as log_file:
             return log_file.read()
     return "No previous log available."
 
-CONFIG_PATH = Path(config_path)
-DB_PATH = Path(db_path)
-
-LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
-MIN_FREE_GB = 2.0
-MAX_PATH = 260
-AUTOSTART_MODE = None  # 'default'|'german'|'new'|'check-missing' or None
-REFRESH_TITLES = True  # Titelaktualisierung beim Start zulassen
-
 
 def update_data_paths(new_data_folder):
-    """Updates the global data folder paths when the data_folder_path config changes."""
-    global data_folder, config_path, db_path, log_path, all_logs_path, CONFIG_PATH, DB_PATH
-    data_folder = new_data_folder
-    config_path = os.path.join(data_folder, 'config.json')
-    db_path = os.path.join(data_folder, 'AniLoader.db')
-    log_path = os.path.join(data_folder, 'last_run.txt')
-    all_logs_path = os.path.join(data_folder, 'all_logs.txt')
-    CONFIG_PATH = Path(config_path)
-    DB_PATH = Path(db_path)
-    # Ensure the new data folder exists
-    os.makedirs(data_folder, exist_ok=True)
+    """Updates the config data folder when path changes."""
+    config.data_folder = new_data_folder
 
 
 def load_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, ANIME_MOVIES_PATH, SERIEN_MOVIES_PATH, data_folder
-    try:
-        # First, check if there's a data_folder_path override in the config
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-                cfg = json.load(f)
-                # Check for data_folder_path first
-                data_folder_path = cfg.get('data_folder_path')
-                if data_folder_path and isinstance(data_folder_path, str) and data_folder_path.strip():
-                    try:
-                        new_folder = Path(data_folder_path).expanduser()
-                        try:
-                            new_folder = new_folder.resolve()
-                        except Exception:
-                            pass
-                        if str(new_folder) != data_folder:
-                            update_data_paths(str(new_folder))
-                            # Reload config from new location
-                            if CONFIG_PATH.exists():
-                                with open(CONFIG_PATH, 'r', encoding='utf-8') as f2:
-                                    cfg = json.load(f2)
-                    except Exception as e:
-                        log(f"[CONFIG-WARN] Ungültiger data_folder_path: {e}, verwende Standard")
-                
-                # languages
-                langs = cfg.get('languages')
-                if isinstance(langs, list) and langs:
-                    LANGUAGES = langs
-                # min_free_gb
-                try:
-                    MIN_FREE_GB = float(cfg.get('min_free_gb', MIN_FREE_GB))
-                except Exception:
-                    pass
-                # autostart_mode (normalize, validate)
-                raw_mode = cfg.get('autostart_mode')
-                allowed = {None, 'default', 'german', 'new', 'check-missing'}
-                if isinstance(raw_mode, str):
-                    raw_mode_norm = raw_mode.strip().lower()
-                    if raw_mode_norm in {'', 'none', 'off', 'disabled'}:
-                        AUTOSTART_MODE = None
-                    elif raw_mode_norm in allowed:
-                        AUTOSTART_MODE = raw_mode_norm
-                    else:
-                        AUTOSTART_MODE = None
-                elif raw_mode is None:
-                    AUTOSTART_MODE = None
-                else:
-                    AUTOSTART_MODE = None
-                # download_path (add default if missing)
-                changed = False
-                dl_path = cfg.get('download_path')
-                if isinstance(dl_path, str) and dl_path.strip():
-                    try:
-                        DOWNLOAD_DIR = Path(dl_path).expanduser()
-                        try:
-                            DOWNLOAD_DIR = DOWNLOAD_DIR.resolve()
-                        except Exception:
-                            # keep as provided if resolve fails
-                            pass
-                    except Exception:
-                        DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
-                else:
-                    DOWNLOAD_DIR = DEFAULT_DOWNLOAD_DIR
-                    cfg['download_path'] = str(DOWNLOAD_DIR)
-                    changed = True
-                # storage_mode, movies_path, series_path
-                storage_mode = cfg.get('storage_mode', 'standard')
-                if storage_mode in ['standard', 'separate']:
-                    STORAGE_MODE = storage_mode
-                else:
-                    STORAGE_MODE = 'standard'
-                    cfg['storage_mode'] = 'standard'
-                    changed = True
-                
-                MOVIES_PATH = cfg.get('movies_path', '')
-                if 'movies_path' not in cfg:
-                    # Standardmäßig Unterordner "Filme" im Download-Verzeichnis
-                    cfg['movies_path'] = str(DOWNLOAD_DIR / 'Filme')
-                    MOVIES_PATH = str(DOWNLOAD_DIR / 'Filme')
-                    changed = True
-                    
-                SERIES_PATH = cfg.get('series_path', '')
-                if 'series_path' not in cfg:
-                    # Standardmäßig Unterordner "Serien" im Download-Verzeichnis
-                    cfg['series_path'] = str(DOWNLOAD_DIR / 'Serien')
-                    SERIES_PATH = str(DOWNLOAD_DIR / 'Serien')
-                    changed = True
-                
-                # Neue Content-Type basierte Pfade
-                ANIME_PATH = cfg.get('anime_path', '')
-                if 'anime_path' not in cfg:
-                    cfg['anime_path'] = str(DOWNLOAD_DIR / 'Animes')
-                    ANIME_PATH = str(DOWNLOAD_DIR / 'Animes')
-                    changed = True
-                    
-                SERIEN_PATH = cfg.get('serien_path', '')
-                if 'serien_path' not in cfg:
-                    cfg['serien_path'] = str(DOWNLOAD_DIR / 'Serien')
-                    SERIEN_PATH = str(DOWNLOAD_DIR / 'Serien')
-                    changed = True
-                
-                # Film/Staffel Organisation
-                ANIME_SEPARATE_MOVIES = cfg.get('anime_separate_movies', False)
-                if 'anime_separate_movies' not in cfg:
-                    cfg['anime_separate_movies'] = False
-                    changed = True
-                    
-                SERIEN_SEPARATE_MOVIES = cfg.get('serien_separate_movies', False)
-                if 'serien_separate_movies' not in cfg:
-                    cfg['serien_separate_movies'] = False
-                    changed = True
-                
-                # Separate Film-Pfade (optional)
-                ANIME_MOVIES_PATH = cfg.get('anime_movies_path', '')
-                SERIEN_MOVIES_PATH = cfg.get('serien_movies_path', '')
-                # port (only from config; keep default if invalid)
-                try:
-                    port_val = cfg.get('port', SERVER_PORT)
-                    if isinstance(port_val, str) and port_val.isdigit():
-                        port_val = int(port_val)
-                    if isinstance(port_val, int) and 1 <= port_val <= 65535:
-                        SERVER_PORT = port_val
-                    else:
-                        cfg['port'] = SERVER_PORT
-                        changed = True
-                except Exception:
-                    cfg['port'] = SERVER_PORT
-                    changed = True
-                # refresh_titles flag (default True)
-                try:
-                    if 'refresh_titles' in cfg:
-                        REFRESH_TITLES = bool(cfg.get('refresh_titles'))
-                    else:
-                        cfg['refresh_titles'] = True
-                        REFRESH_TITLES = True
-                        changed = True
-                except Exception:
-                    REFRESH_TITLES = True
-                    cfg['refresh_titles'] = True
-                    changed = True
-                # data_folder_path - add if missing but don't change global var during load
-                if 'data_folder_path' not in cfg:
-                    cfg['data_folder_path'] = data_folder
-                    changed = True
-                # persist if we added defaults
-                if changed:
-                    if _write_config_atomic(cfg):
-                        log("[CONFIG] fehlende Schlüssel ergänzt und gespeichert")
-                    else:
-                        log("[CONFIG-ERROR] Ergänzung konnte nicht gespeichert werden (Datei evtl. gesperrt)")
-                log(f"[CONFIG] geladen: languages={LANGUAGES} min_free_gb={MIN_FREE_GB} autostart_mode={AUTOSTART_MODE} data_folder={data_folder}")
-        else:
-            save_config()  # create default config
-    except Exception as e:
-        log(f"[CONFIG-ERROR] load_config: {e}")
+    """Wrapper für Rückwärtskompatibilität - lädt Config über Config-Klasse."""
+    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, REFRESH_TITLES, data_folder, db_path, log_path, all_logs_path, CONFIG_PATH, DB_PATH
+    config.load()
+    # Aktualisiere globale Aliase
+    LANGUAGES = config.languages
+    MIN_FREE_GB = config.min_free_gb
+    AUTOSTART_MODE = config.autostart_mode
+    REFRESH_TITLES = config.refresh_titles
+    data_folder = config.data_folder
+    db_path = str(config.db_path)
+    log_path = config.log_path
+    all_logs_path = config.all_logs_path
+    CONFIG_PATH = config.config_path
+    DB_PATH = config.db_path
 
 
 def save_config():
-    try:
-        cfg = {
-            'languages': LANGUAGES,
-            'min_free_gb': MIN_FREE_GB,
-            'download_path': str(DOWNLOAD_DIR),
-            'storage_mode': STORAGE_MODE,
-            'movies_path': MOVIES_PATH,
-            'series_path': SERIES_PATH,
-            'anime_path': ANIME_PATH,
-            'serien_path': SERIEN_PATH,
-            'anime_separate_movies': ANIME_SEPARATE_MOVIES,
-            'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
-            'anime_movies_path': ANIME_MOVIES_PATH,
-            'serien_movies_path': SERIEN_MOVIES_PATH,
-            'port': SERVER_PORT,
-            'autostart_mode': AUTOSTART_MODE,
-            'refresh_titles': REFRESH_TITLES,
-            'data_folder_path': data_folder
-        }
-        # atomic write to avoid partial files
-        tmp_path = str(CONFIG_PATH) + ".tmp"
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_path, CONFIG_PATH)
-        log(f"[CONFIG] gespeichert")
-        return True
-    except Exception as e:
-        log(f"[CONFIG-ERROR] save_config: {e}")
-        return False
+    """Wrapper für Rückwärtskompatibilität - speichert Config über Config-Klasse."""
+    return config.save()
+
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
@@ -358,195 +486,159 @@ def log(msg):
             sys.stdout.flush()
         except Exception:
             pass
-def _write_config_atomic(cfg: dict) -> bool:
-    """Write config.json with retries and atomic replace where possible.
-    Handles transient PermissionError on Windows by retrying and finally
-    falling back to a direct write if needed.
-    """
-    try:
-        with CONFIG_WRITE_LOCK:
-            dir_path = os.path.dirname(str(CONFIG_PATH))
-            os.makedirs(dir_path, exist_ok=True)
-            tmp_path = str(CONFIG_PATH) + ".tmp"
-            # make sure target file is writable (remove read-only)
-            try:
-                if os.path.exists(CONFIG_PATH):
-                    os.chmod(CONFIG_PATH, stat.S_IWRITE | stat.S_IREAD)
-            except Exception:
-                pass
-            for attempt in range(5):
-                try:
-                    with open(tmp_path, 'w', encoding='utf-8') as wf:
-                        json.dump(cfg, wf, indent=2, ensure_ascii=False)
-                    os.replace(tmp_path, CONFIG_PATH)
-                    return True
-                except PermissionError:
-                    # Clean temp and backoff
-                    try:
-                        if os.path.exists(tmp_path):
-                            os.remove(tmp_path)
-                    except Exception:
-                        pass
-                    time.sleep(0.3 * (attempt + 1))
-                    continue
-                except Exception:
-                    # Cleanup and break to fallback
-                    try:
-                        if os.path.exists(tmp_path):
-                            os.remove(tmp_path)
-                    except Exception:
-                        pass
-                    break
-            # Fallback: non-atomic write
-            try:
-                with open(CONFIG_PATH, 'w', encoding='utf-8') as wf:
-                    json.dump(cfg, wf, indent=2, ensure_ascii=False)
-                return True
-            except Exception as e:
-                log(f"[CONFIG-ERROR] final write failed: {e}")
-                return False
-    except Exception as e:
-        log(f"[CONFIG-ERROR] _write_config_atomic: {e}")
-        return False
+
 
 # -------------------- Flask app --------------------
 app = Flask(__name__, template_folder="templates", static_folder="static")
 # CORS für Tampermonkey-Skript von HTTPS-Seiten (aniworld.to, s.to)
+# Flask-CORS übernimmt alle Header automatisch - kein manueller after_request nötig
 CORS(app, resources={r"/*": {
     "origins": "*", 
     "allow_headers": "*", 
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "supports_credentials": False,
-    "expose_headers": "*"
+    "expose_headers": "*",
+    "max_age": 3600
 }})
 
-# Zusätzlicher Hook für CORS Preflight Requests
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', '*')
-    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    response.headers.add('Access-Control-Max-Age', '3600')
-    return response
+
+# -------------------- DB Context Manager --------------------
+@contextmanager
+def db_connection():
+    """Context Manager für sichere Datenbankverbindungen.
+    
+    Verwendung:
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT * FROM anime")
+            # Connection wird automatisch committed und geschlossen
+    
+    Bei Exceptions wird automatisch rollback ausgeführt.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(config.db_path)
+        yield conn
+        conn.commit()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
 
 # -------------------- DB-Funktionen --------------------
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS anime (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            url TEXT UNIQUE,
-            complete INTEGER DEFAULT 0,
-            deutsch_komplett INTEGER DEFAULT 0,
-            deleted INTEGER DEFAULT 0,
-            fehlende_deutsch_folgen TEXT DEFAULT '[]',
-            last_film INTEGER DEFAULT 0,
-            last_episode INTEGER DEFAULT 0,
-            last_season INTEGER DEFAULT 0
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anime (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                url TEXT UNIQUE,
+                complete INTEGER DEFAULT 0,
+                deutsch_komplett INTEGER DEFAULT 0,
+                deleted INTEGER DEFAULT 0,
+                fehlende_deutsch_folgen TEXT DEFAULT '[]',
+                last_film INTEGER DEFAULT 0,
+                last_episode INTEGER DEFAULT 0,
+                last_season INTEGER DEFAULT 0
+            )
+        """)
+
+        # Queue-Tabelle für "Als nächstes downloaden"
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                anime_id INTEGER,
+                anime_url TEXT UNIQUE,
+                added_at INTEGER DEFAULT (strftime('%s','now'))
+            )
+            """
         )
-    """)
 
-    # Queue-Tabelle für "Als nächstes downloaden"
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            anime_id INTEGER,
-            anime_url TEXT UNIQUE,
-            added_at INTEGER DEFAULT (strftime('%s','now'))
-        )
-        """
-    )
+        # Migration: ensure 'position' column exists to support manual ordering
+        try:
+            c.execute("PRAGMA table_info(queue)")
+            cols = [r[1] for r in c.fetchall()]
+            if 'position' not in cols:
+                c.execute("ALTER TABLE queue ADD COLUMN position INTEGER")
+                # initialize position values in current order
+                c.execute("SELECT id FROM queue ORDER BY added_at ASC, id ASC")
+                qids = [r[0] for r in c.fetchall()]
+                for idx, qid in enumerate(qids, start=1):
+                    c.execute("UPDATE queue SET position = ? WHERE id = ?", (idx, qid))
+                log("[DB] queue.position Spalte hinzugefügt und initialisiert")
+        except Exception as e:
+            log(f"[DB-ERROR] Migration queue.position: {e}")
 
-    # Migration: ensure 'position' column exists to support manual ordering
-    try:
-        c.execute("PRAGMA table_info(queue)")
-        cols = [r[1] for r in c.fetchall()]
-        if 'position' not in cols:
-            c.execute("ALTER TABLE queue ADD COLUMN position INTEGER")
-            # initialize position values in current order
-            c.execute("SELECT id FROM queue ORDER BY added_at ASC, id ASC")
-            qids = [r[0] for r in c.fetchall()]
-            for idx, qid in enumerate(qids, start=1):
-                c.execute("UPDATE queue SET position = ? WHERE id = ?", (idx, qid))
-            conn.commit()
-            log("[DB] queue.position Spalte hinzugefügt und initialisiert")
-    except Exception as e:
-        log(f"[DB-ERROR] Migration queue.position: {e}")
+        # Recalculate IDs to ensure they are sequential
+        c.execute("CREATE TEMPORARY TABLE anime_backup AS SELECT * FROM anime;")
+        c.execute("DROP TABLE anime;")
+        c.execute("""
+            CREATE TABLE anime (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                url TEXT UNIQUE,
+                complete INTEGER DEFAULT 0,
+                deutsch_komplett INTEGER DEFAULT 0,
+                deleted INTEGER DEFAULT 0,
+                fehlende_deutsch_folgen TEXT DEFAULT '[]',
+                last_film INTEGER DEFAULT 0,
+                last_episode INTEGER DEFAULT 0,
+                last_season INTEGER DEFAULT 0
+            )
+        """)
+        c.execute("INSERT INTO anime (title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season) SELECT title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season FROM anime_backup;")
+        c.execute("DROP TABLE anime_backup;")
 
-    # Recalculate IDs to ensure they are sequential
-    c.execute("CREATE TEMPORARY TABLE anime_backup AS SELECT * FROM anime;")
-    c.execute("DROP TABLE anime;")
-    c.execute("""
-        CREATE TABLE anime (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            url TEXT UNIQUE,
-            complete INTEGER DEFAULT 0,
-            deutsch_komplett INTEGER DEFAULT 0,
-            deleted INTEGER DEFAULT 0,
-            fehlende_deutsch_folgen TEXT DEFAULT '[]',
-            last_film INTEGER DEFAULT 0,
-            last_episode INTEGER DEFAULT 0,
-            last_season INTEGER DEFAULT 0
-        )
-    """)
-    c.execute("INSERT INTO anime (title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season) SELECT title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season FROM anime_backup;")
-    c.execute("DROP TABLE anime_backup;")
-
-    conn.commit()
-    conn.close()
 
 # -------------------- Title-Refresh beim Start --------------------
 def refresh_titles_on_start():
     """Geht alle DB-Einträge mit https:// URL durch und aktualisiert den Titel, falls aus der URL-Seite ein anderer Name ermittelt wird."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT id, url, title FROM anime")
-        rows = c.fetchall()
-        updated = 0
-        for aid, url, old_title in rows:
-            try:
-                if not isinstance(url, str) or not url.startswith("https://"):
-                    continue
-                new_title = get_series_title(url)
-                if new_title and new_title != old_title:
-                    c.execute("UPDATE anime SET title = ? WHERE id = ?", (new_title, aid))
-                    updated += 1
-                    log(f"[DB] Titel aktualisiert (ID {aid}): '{old_title}' -> '{new_title}'")
-            except Exception as e:
-                log(f"[WARN] Titel-Check fehlgeschlagen (ID {aid}): {e}")
-        conn.commit()
-        conn.close()
-        log(f"[DB] Titel-Refresh abgeschlossen. Aktualisiert: {updated}")
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, url, title FROM anime")
+            rows = c.fetchall()
+            updated = 0
+            for aid, url, old_title in rows:
+                try:
+                    if not isinstance(url, str) or not url.startswith("https://"):
+                        continue
+                    new_title = get_series_title(url)
+                    if new_title and new_title != old_title:
+                        c.execute("UPDATE anime SET title = ? WHERE id = ?", (new_title, aid))
+                        updated += 1
+                        log(f"[DB] Titel aktualisiert (ID {aid}): '{old_title}' -> '{new_title}'")
+                except Exception as e:
+                    log(f"[WARN] Titel-Check fehlgeschlagen (ID {aid}): {e}")
+            log(f"[DB] Titel-Refresh abgeschlossen. Aktualisiert: {updated}")
     except Exception as e:
         log(f"[ERROR] Title refresh on start: {e}")
+
 
 # -------------------- Import / Insert --------------------
 def import_anime_txt():
     """Liest alle Links aus AniLoader.txt, fügt sie in die DB ein und leert die Datei anschließend."""
-    if not ANIME_TXT.exists():
-        log(f"[WARN] AniLoader.txt nicht gefunden: {ANIME_TXT}")
+    if not config.anime_txt.exists():
+        log(f"[WARN] AniLoader.txt nicht gefunden: {config.anime_txt}")
         return
 
     # Datei auslesen
-    with open(ANIME_TXT, "r", encoding="utf-8") as f:
+    with open(config.anime_txt, "r", encoding="utf-8") as f:
         links = [line.strip() for line in f if line.strip()]
 
     # Links in DB einfügen
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
     for url in links:
         insert_anime(url=url)
-    conn.commit()
-    conn.close()
 
     # AniLoader.txt leeren
     try:
-        with open(ANIME_TXT, "w", encoding="utf-8") as f:
+        with open(config.anime_txt, "w", encoding="utf-8") as f:
             f.truncate(0)
     except Exception as e:
         log(f"[ERROR] Konnte AniLoader.txt nicht leeren: {e}")
@@ -557,64 +649,61 @@ def insert_anime(url, title=None):
     Fügt einen Anime in die DB ein.
     Wenn der Anime bereits existiert und als deleted markiert ist, wird deleted auf 0 gesetzt.
     """
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
     try:
-        if not title:
-            # Serien-Titel abrufen oder aus URL ableiten (Best-Effort)
-            try:
-                title = get_series_title(url)
-            except Exception:
-                title = None
+        with db_connection() as conn:
+            c = conn.cursor()
             if not title:
-                m = re.search(r"/anime/stream/([^/]+)", url)
-                if m:
-                    title = m.group(1).replace("-", " ").title()
-                else:
-                    title = url
+                # Serien-Titel abrufen oder aus URL ableiten (Best-Effort)
+                try:
+                    title = get_series_title(url)
+                except Exception:
+                    title = None
+                if not title:
+                    # Try to derive a readable title from common URL patterns.
+                    # Support aniworld (/anime/stream/<slug>) and s.to (/serie/<slug>)
+                    m = re.search(r"/(?:anime/stream|serie)/([^/]+)", url)
+                    if m:
+                        title = m.group(1).replace("-", " ").title()
+                    else:
+                        title = url
 
-        # Prüfen, ob der Anime oder Serie existiert
-        c.execute("SELECT id, deleted FROM anime WHERE url = ?", (url,))
-        row = c.fetchone()
-        if row:
-            anime_id, deleted_flag = row
-            if deleted_flag == 1:
-                # Wieder aktivieren: deleted -> 0, evtl. Titel aktualisieren
-                c.execute("UPDATE anime SET deleted = 0, title = ? WHERE id = ?", (title, anime_id))
-                conn.commit()
-                log(f"[DB] Anime reaktiviert: {title} (ID {anime_id})")
+            # Prüfen, ob der Anime oder Serie existiert
+            c.execute("SELECT id, deleted FROM anime WHERE url = ?", (url,))
+            row = c.fetchone()
+            if row:
+                anime_id, deleted_flag = row
+                if deleted_flag == 1:
+                    # Wieder aktivieren: deleted -> 0, evtl. Titel aktualisieren
+                    c.execute("UPDATE anime SET deleted = 0, title = ? WHERE id = ?", (title, anime_id))
+                    log(f"[DB] Anime reaktiviert: {title} (ID {anime_id})")
+                else:
+                    log(f"[DB] Anime existiert bereits: {title} (ID {anime_id})")
             else:
-                log(f"[DB] Anime existiert bereits: {title} (ID {anime_id})")
-        else:
-            # Neuer Eintrag
-            c.execute("INSERT INTO anime (url, title) VALUES (?, ?)", (url, title))
-            conn.commit()
-            log(f"[DB] Neuer Anime eingefügt: {title}")
-        return True
+                # Neuer Eintrag
+                c.execute("INSERT INTO anime (url, title) VALUES (?, ?)", (url, title))
+                log(f"[DB] Neuer Anime eingefügt: {title}")
+            return True
     except Exception as e:
         log(f"[DB-ERROR] {e}")
         return False
-    finally:
-        conn.close()
+
 
 def update_anime(anime_id, **kwargs):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    fields = []
-    values = []
-    will_complete = False
-    for key, val in kwargs.items():
-        if key == "fehlende_deutsch_folgen":
-            val = json.dumps(val)
-        fields.append(f"{key} = ?")
-        values.append(val)
-        if key == 'complete' and bool(val):
-            will_complete = True
-    values.append(anime_id)
-    if fields:
-        c.execute(f"UPDATE anime SET {', '.join(fields)} WHERE id = ?", values)
-        conn.commit()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        fields = []
+        values = []
+        will_complete = False
+        for key, val in kwargs.items():
+            if key == "fehlende_deutsch_folgen":
+                val = json.dumps(val)
+            fields.append(f"{key} = ?")
+            values.append(val)
+            if key == 'complete' and bool(val):
+                will_complete = True
+        values.append(anime_id)
+        if fields:
+            c.execute(f"UPDATE anime SET {', '.join(fields)} WHERE id = ?", values)
     # Entferne aus Queue, wenn jetzt komplett
     if will_complete:
         try:
@@ -623,16 +712,16 @@ def update_anime(anime_id, **kwargs):
         except Exception as e:
             log(f"[QUEUE] Entfernen nach Abschluss fehlgeschlagen: {e}")
 
+
 def load_anime():
     """
     Lädt alle Anime-Einträge aus der DB und gibt sie als Liste von Dicts zurück.
     Enthält jetzt auch das Feld 'deleted' damit caller entscheiden kann.
     """
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT id, title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season FROM anime ORDER BY id")
-    rows = c.fetchall()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, title, url, complete, deutsch_komplett, deleted, fehlende_deutsch_folgen, last_film, last_episode, last_season FROM anime ORDER BY id")
+        rows = c.fetchall()
     anime_list = []
     for row in rows:
         entry = {
@@ -650,174 +739,164 @@ def load_anime():
         anime_list.append(entry)
     return anime_list
 
+
 def queue_add(anime_id: int) -> bool:
     """Fügt eine Anime-ID zur Warteschlange hinzu (einzigartig)."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        # ensure anime exists
-        c.execute("SELECT id, url, complete FROM anime WHERE id = ?", (anime_id,))
-        row = c.fetchone()
-        if not row:
-            return False
-        _, aurl, complete_flag = row
-        if complete_flag:
-            # Bereits komplett -> nicht zur Queue hinzufügen
-            log(f"[QUEUE] Anime {anime_id} ist bereits komplett – nicht zur Warteschlange hinzugefügt.")
-            return False
-        # schon vorhanden?
-        c.execute("SELECT id FROM queue WHERE anime_url = ?", (aurl,))
-        if c.fetchone():
-            conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            # ensure anime exists
+            c.execute("SELECT id, url, complete FROM anime WHERE id = ?", (anime_id,))
+            row = c.fetchone()
+            if not row:
+                return False
+            _, aurl, complete_flag = row
+            if complete_flag:
+                # Bereits komplett -> nicht zur Queue hinzufügen
+                log(f"[QUEUE] Anime {anime_id} ist bereits komplett – nicht zur Warteschlange hinzugefügt.")
+                return False
+            # schon vorhanden?
+            c.execute("SELECT id FROM queue WHERE anime_url = ?", (aurl,))
+            if c.fetchone():
+                return True
+            # nächste Position bestimmen
+            c.execute("SELECT COALESCE(MAX(position), 0) FROM queue")
+            next_pos = (c.fetchone() or [0])[0] + 1
+            c.execute("INSERT INTO queue (anime_id, anime_url, position) VALUES (?, ?, ?)", (anime_id, aurl, next_pos))
             return True
-        # nächste Position bestimmen
-        c.execute("SELECT COALESCE(MAX(position), 0) FROM queue")
-        next_pos = (c.fetchone() or [0])[0] + 1
-        c.execute("INSERT INTO queue (anime_id, anime_url, position) VALUES (?, ?, ?)", (anime_id, aurl, next_pos))
-        conn.commit()
-        conn.close()
-        return True
     except Exception as e:
         log(f"[DB-ERROR] queue_add: {e}")
         return False
 
+
 def queue_list():
     """Gibt die Queue als Liste von Dicts mit id, anime_id, title zurück (sortiert)."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            """
-            SELECT q.id, a.id as anime_id, a.title, COALESCE(q.position, 0) as position
-            FROM queue q
-            LEFT JOIN anime a ON a.url = q.anime_url
-            ORDER BY position ASC, q.added_at ASC, q.id ASC
-            """
-        )
-        rows = c.fetchall()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT q.id, a.id as anime_id, a.title, COALESCE(q.position, 0) as position
+                FROM queue q
+                LEFT JOIN anime a ON a.url = q.anime_url
+                ORDER BY position ASC, q.added_at ASC, q.id ASC
+                """
+            )
+            rows = c.fetchall()
         return [{"id": r[0], "anime_id": r[1], "title": r[2], "position": r[3]} for r in rows]
     except Exception as e:
         log(f"[DB-ERROR] queue_list: {e}")
         return []
 
+
 def queue_clear():
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM queue")
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM queue")
         return True
     except Exception as e:
         log(f"[DB-ERROR] queue_clear: {e}")
         return False
 
+
 def queue_pop_next():
     """Entnimmt das erste Queue-Element und gibt anime_id zurück, sonst None."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT id, anime_url FROM queue ORDER BY position ASC, added_at ASC, id ASC LIMIT 1")
-        row = c.fetchone()
-        if not row:
-            conn.close()
-            return None
-        qid, aurl = row
-        c.execute("DELETE FROM queue WHERE id = ?", (qid,))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, anime_url FROM queue ORDER BY position ASC, added_at ASC, id ASC LIMIT 1")
+            row = c.fetchone()
+            if not row:
+                return None
+            qid, aurl = row
+            c.execute("DELETE FROM queue WHERE id = ?", (qid,))
         # map url to current anime id (IDs could be recalculated in init_db)
         try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("SELECT id FROM anime WHERE url = ?", (aurl,))
-            r2 = c.fetchone()
-            conn.close()
-            return r2[0] if r2 else None
+            with db_connection() as conn:
+                c = conn.cursor()
+                c.execute("SELECT id FROM anime WHERE url = ?", (aurl,))
+                r2 = c.fetchone()
+                return r2[0] if r2 else None
         except Exception:
             return None
     except Exception as e:
         log(f"[DB-ERROR] queue_pop_next: {e}")
         return None
 
+
 def queue_prune_completed():
     """Entfernt alle Queue-Einträge, deren Anime bereits als komplett markiert ist (oder nicht mehr existiert)."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        # lösche alle, deren URL zu einem complete=1 Anime gehört
-        c.execute(
-            "DELETE FROM queue WHERE anime_url IN (SELECT url FROM anime WHERE complete = 1)"
-        )
-        # optional: verwaiste Einträge (ohne zugehörigen Anime) entfernen
-        c.execute(
-            "DELETE FROM queue WHERE anime_url NOT IN (SELECT url FROM anime)"
-        )
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            # lösche alle, deren URL zu einem complete=1 Anime gehört
+            c.execute(
+                "DELETE FROM queue WHERE anime_url IN (SELECT url FROM anime WHERE complete = 1)"
+            )
+            # optional: verwaiste Einträge (ohne zugehörigen Anime) entfernen
+            c.execute(
+                "DELETE FROM queue WHERE anime_url NOT IN (SELECT url FROM anime)"
+            )
         return True
     except Exception as e:
         log(f"[DB-ERROR] queue_prune_completed: {e}")
         return False
 
+
 def queue_delete_by_anime_id(anime_id: int) -> bool:
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM queue WHERE anime_id = ?", (anime_id,))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM queue WHERE anime_id = ?", (anime_id,))
         return True
     except Exception as e:
         log(f"[DB-ERROR] queue_delete_by_anime_id: {e}")
         return False
 
+
 def queue_delete(qid: int) -> bool:
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM queue WHERE id = ?", (qid,))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute("DELETE FROM queue WHERE id = ?", (qid,))
         return True
     except Exception as e:
         log(f"[DB-ERROR] queue_delete: {e}")
         return False
+
 
 def queue_reorder(order_ids):
     """Setzt die Reihenfolge der Queue über die Liste von Queue-IDs (id aus /queue GET)."""
     try:
         if not isinstance(order_ids, list) or not all(isinstance(x, int) for x in order_ids):
             return False
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        # Weisen die übergebenen Positionen zu
-        for pos, qid in enumerate(order_ids, start=1):
-            c.execute("UPDATE queue SET position = ? WHERE id = ?", (pos, qid))
-        # Restliche (nicht genannte) hinten anhängen in aktueller Reihenfolge
-        placeholders = ",".join(["?"] * len(order_ids)) if order_ids else None
-        if placeholders:
-            c.execute(f"SELECT id FROM queue WHERE id NOT IN ({placeholders}) ORDER BY position ASC, added_at ASC, id ASC", order_ids)
-        else:
-            c.execute("SELECT id FROM queue ORDER BY position ASC, added_at ASC, id ASC")
-        start_pos = len(order_ids) + 1
-        rest = [r[0] for r in c.fetchall()]
-        for idx, qid in enumerate(rest, start=start_pos):
-            c.execute("UPDATE queue SET position = ? WHERE id = ?", (idx, qid))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            # Weisen die übergebenen Positionen zu
+            for pos, qid in enumerate(order_ids, start=1):
+                c.execute("UPDATE queue SET position = ? WHERE id = ?", (pos, qid))
+            # Restliche (nicht genannte) hinten anhängen in aktueller Reihenfolge
+            placeholders = ",".join(["?"] * len(order_ids)) if order_ids else None
+            if placeholders:
+                c.execute(f"SELECT id FROM queue WHERE id NOT IN ({placeholders}) ORDER BY position ASC, added_at ASC, id ASC", order_ids)
+            else:
+                c.execute("SELECT id FROM queue ORDER BY position ASC, added_at ASC, id ASC")
+            start_pos = len(order_ids) + 1
+            rest = [r[0] for r in c.fetchall()]
+            for idx, qid in enumerate(rest, start=start_pos):
+                c.execute("UPDATE queue SET position = ? WHERE id = ?", (idx, qid))
         return True
     except Exception as e:
         log(f"[DB-ERROR] queue_reorder: {e}")
         return False
 
+
 def check_deutsch_komplett(anime_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
-    row = c.fetchone()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
+        row = c.fetchone()
     fehlende = json.loads(row[0]) if row and row[0] else []
     if not fehlende:
         update_anime(anime_id, deutsch_komplett=1)
@@ -825,9 +904,22 @@ def check_deutsch_komplett(anime_id):
         return True
     return False
 
+
 # -------------------- Hilfsfunktionen --------------------
 def get_headers():
     return {"User-Agent": random.choice(USER_AGENTS)}
+
+def get_folder_variants(series_folder: str) -> list:
+    """
+    Gibt eine Liste von Ordner-Varianten zurück (mit . und # getauscht).
+    Wird für Rückwärtskompatibilität benötigt, da ältere Versionen Punkte durch # ersetzt haben.
+    """
+    folders = [series_folder]
+    if '.' in series_folder:
+        folders.append(series_folder.replace('.', '#'))
+    elif '#' in series_folder:
+        folders.append(series_folder.replace('#', '.'))
+    return folders
 
 def sanitize_title(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*]', '', name)
@@ -876,7 +968,7 @@ def sanitize_episode_title(name: str) -> str:
     name = re.sub(r'\s+', ' ', name).strip()
     return name
 
-def freier_speicher_mb(pfad: str) -> float:
+def freier_speicher_gb(pfad: str) -> float:
     """Gibt den verfügbaren Speicherplatz des angegebenen Pfads in GB zurück."""
     try:
         gesamt, belegt, frei = shutil.disk_usage(pfad)
@@ -934,7 +1026,7 @@ def scrape_series_structure(series_url: str, retries: int = 3, backoff: float = 
     try:
         headers = get_headers()
         parsed = urlparse(series_url)
-        host = parsed.hostname
+        host = parsed.hostname or ""
         ips = resolve_ips_via_cloudflare(host) if host else None
         attempt = 0
         while attempt < retries:
@@ -943,11 +1035,11 @@ def scrape_series_structure(series_url: str, retries: int = 3, backoff: float = 
                     r = requests.get(series_url, headers=headers, timeout=10)
                 r.raise_for_status()
                 soup = BeautifulSoup(r.text, "html.parser")
-                seasons = {}
+                seasons: dict[int, str] = {}
                 # Find season links (support German and English variants)
                 for a in soup.select("a[href*='/staffel-'], a[href*='/season-']"):
                     href = a.get('href')
-                    if not href:
+                    if not href or not isinstance(href, str):
                         continue
                     m = re.search(r'(?:staffel|season)-(\d+)', href)
                     if not m:
@@ -956,17 +1048,17 @@ def scrape_series_structure(series_url: str, retries: int = 3, backoff: float = 
                     seasons[s] = urljoin(series_url, href)
 
                 # For each season, fetch episodes
-                result = {}
+                result: dict[int, list[int]] = {}
                 for s, s_url in seasons.items():
                     try:
                         with DnsOverride(host, ips):
                             sr = requests.get(s_url, headers=headers, timeout=10)
                         sr.raise_for_status()
                         ssoup = BeautifulSoup(sr.text, "html.parser")
-                        eps = set()
+                        eps: set[int] = set()
                         for a in ssoup.select("a[href*='/episode-']"):
                             href = a.get('href')
-                            if not href:
+                            if not href or not isinstance(href, str):
                                 continue
                             m = re.search(r'episode-(\d+)', href)
                             if m:
@@ -977,10 +1069,10 @@ def scrape_series_structure(series_url: str, retries: int = 3, backoff: float = 
                         # ignore per-season failures, continue with others
                         log(f"[NEW-PRECHECK] Fehler beim Abruf Staffel {s} ({s_url})")
                 # Also check for films (film-#) on series page
-                films = set()
+                films: set[int] = set()
                 for a in soup.select("a[href*='/film-']"):
                     href = a.get('href')
-                    if not href:
+                    if not href or not isinstance(href, str):
                         continue
                     m = re.search(r'film-(\d+)', href)
                     if m:
@@ -1113,73 +1205,68 @@ def get_base_path_for_content(content_type='anime', is_film=False):
     Returns:
         Path object für den Download-Pfad
     """
-    if STORAGE_MODE == 'separate':
+    if config.storage_mode == 'separate':
         # Content-Type basierte Pfade
         if content_type == 'anime':
             # Bei Filmen prüfen ob separate Film-Speicherung aktiviert ist
-            if is_film and ANIME_SEPARATE_MOVIES:
+            if is_film and config.anime_separate_movies:
                 # Wenn separater Film-Pfad gesetzt ist, verwende diesen
-                if ANIME_MOVIES_PATH and ANIME_MOVIES_PATH.strip():
-                    base_path = Path(ANIME_MOVIES_PATH)
+                if config.anime_movies_path and config.anime_movies_path.strip():
+                    base_path = Path(config.anime_movies_path)
                     base_path.mkdir(parents=True, exist_ok=True)
                     return base_path
                 # Sonst: Filme im Unterordner "Filme" des Anime-Pfads
-                if ANIME_PATH:
-                    base_path = Path(ANIME_PATH) / 'Filme'
+                if config.anime_path:
+                    base_path = Path(config.anime_path) / 'Filme'
                     base_path.mkdir(parents=True, exist_ok=True)
                     return base_path
             # Standard Anime-Pfad (für Serien oder wenn Filme nicht separat)
-            if ANIME_PATH:
-                base_path = Path(ANIME_PATH)
+            if config.anime_path:
+                base_path = Path(config.anime_path)
                 base_path.mkdir(parents=True, exist_ok=True)
                 return base_path
                 
         elif content_type == 'serie':
             # Bei Filmen prüfen ob separate Film-Speicherung aktiviert ist
-            if is_film and SERIEN_SEPARATE_MOVIES:
+            if is_film and config.serien_separate_movies:
                 # Wenn separater Film-Pfad gesetzt ist, verwende diesen
-                if SERIEN_MOVIES_PATH and SERIEN_MOVIES_PATH.strip():
-                    base_path = Path(SERIEN_MOVIES_PATH)
+                if config.serien_movies_path and config.serien_movies_path.strip():
+                    base_path = Path(config.serien_movies_path)
                     base_path.mkdir(parents=True, exist_ok=True)
                     return base_path
                 # Sonst: Filme im Unterordner "Filme" des Serien-Pfads
-                if SERIEN_PATH:
-                    base_path = Path(SERIEN_PATH) / 'Filme'
+                if config.serien_path:
+                    base_path = Path(config.serien_path) / 'Filme'
                     base_path.mkdir(parents=True, exist_ok=True)
                     return base_path
             # Standard Serien-Pfad (für Serien oder wenn Filme nicht separat)
-            if SERIEN_PATH:
-                base_path = Path(SERIEN_PATH)
+            if config.serien_path:
+                base_path = Path(config.serien_path)
                 base_path.mkdir(parents=True, exist_ok=True)
                 return base_path
                 
         # Fallback zu alten MOVIES_PATH/SERIES_PATH (deprecated, für Kompatibilität)
-        if is_film and MOVIES_PATH:
-            path = Path(MOVIES_PATH)
+        if is_film and config.movies_path:
+            path = Path(config.movies_path)
             path.mkdir(parents=True, exist_ok=True)
             return path
-        if not is_film and SERIES_PATH:
-            path = Path(SERIES_PATH)
+        if not is_film and config.series_path:
+            path = Path(config.series_path)
             path.mkdir(parents=True, exist_ok=True)
             return path
     # Fallback zu DOWNLOAD_DIR (standard mode oder wenn separate Pfade nicht gesetzt sind)
-    return DOWNLOAD_DIR
+    return config.download_dir
 
 def episode_already_downloaded(series_folder, season, episode, in_dedicated_movies_folder=False):
     # Prüfe beide Varianten des Ordnernamens (mit . und mit #)
-    folders_to_check = [series_folder]
-    
-    # Wenn der Ordner einen Punkt enthält, prüfe auch die #-Variante
-    if '.' in series_folder:
-        alt_folder = series_folder.replace('.', '#')
-        folders_to_check.append(alt_folder)
-    # Wenn der Ordner eine Raute enthält, prüfe auch die .-Variante
-    elif '#' in series_folder:
-        alt_folder = series_folder.replace('#', '.')
-        folders_to_check.append(alt_folder)
+    folders_to_check = get_folder_variants(series_folder)
     
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
+        # Initialisiere Film-Patterns (werden bei season > 0 nicht verwendet, aber für Konsistenz)
+        pattern_film = ""
+        pattern_movie = ""
+        pattern_film_old = ""
     else:
         # Für Filme: Pattern abhängig von Speicherort
         series_name = Path(series_folder).name
@@ -1192,6 +1279,7 @@ def episode_already_downloaded(series_folder, season, episode, in_dedicated_movi
         # Alternative Patterns für Rückwärtskompatibilität
         pattern_movie = f"Movie{episode:02d}"
         pattern_film_old = f"Film{episode:02d}"  # Altes Format
+        pattern = ""  # Nicht verwendet bei Filmen
     
     # Bei dedizierten Film-Ordnern: Suche im parent-Ordner rekursiv
     # (weil jeder Film in eigenem Unterordner liegt)
@@ -1226,7 +1314,7 @@ def delete_old_non_german_versions(series_folder, season, episode, in_dedicated_
     if isinstance(series_folder, str):
         base = Path(series_folder)
     else:
-        base = Path(DOWNLOAD_DIR) / series_folder
+        base = Path(config.download_dir) / series_folder
     
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
@@ -1270,16 +1358,7 @@ def rename_downloaded_file(series_folder, season, episode, title, language, in_d
     }.get(language, "")
 
     # Prüfe beide Varianten des Ordnernamens (mit . und mit #)
-    folders_to_check = [series_folder]
-    
-    # Wenn der Ordner einen Punkt enthält, prüfe auch die #-Variante
-    if '.' in series_folder:
-        alt_folder = series_folder.replace('.', '#')
-        folders_to_check.append(alt_folder)
-    # Wenn der Ordner eine Raute enthält, prüfe auch die .-Variante
-    elif '#' in series_folder:
-        alt_folder = series_folder.replace('#', '.')
-        folders_to_check.append(alt_folder)
+    folders_to_check = get_folder_variants(series_folder)
     
     if season > 0:
         pattern = f"S{season:02d}E{episode:03d}"
@@ -1483,19 +1562,19 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
     
     # Bestimme ob wir in einem dedizierten Film-Ordner sind
     # Dies ist der Fall wenn:
-    # 1. ANIME_SEPARATE_MOVIES aktiv und ANIME_MOVIES_PATH gesetzt ist (dann ist base_path = ANIME_MOVIES_PATH)
-    # 2. ANIME_SEPARATE_MOVIES aktiv und ANIME_MOVIES_PATH leer (dann ist base_path = ANIME_PATH/Filme)
+    # 1. anime_separate_movies aktiv und anime_movies_path gesetzt ist (dann ist base_path = anime_movies_path)
+    # 2. anime_separate_movies aktiv und anime_movies_path leer (dann ist base_path = anime_path/Filme)
     # In beiden Fällen landen Filme NICHT im Serien-Unterordner/Filme, sondern direkt
     in_dedicated_movies_folder = False
-    if is_film and STORAGE_MODE == 'separate':
-        if content_type == 'anime' and ANIME_SEPARATE_MOVIES:
+    if is_film and config.storage_mode == 'separate':
+        if content_type == 'anime' and config.anime_separate_movies:
             in_dedicated_movies_folder = True
-        elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
+        elif content_type == 'serie' and config.serien_separate_movies:
             in_dedicated_movies_folder = True
     
-    # Prüfe freien Speicher vor jedem Download (freier_speicher_mb liefert GB)
+    # Prüfe freien Speicher vor jedem Download
     try:
-        free_gb = freier_speicher_mb(str(base_path))
+        free_gb = freier_speicher_gb(str(base_path))
     except Exception as e:
         log(f"[ERROR] Konnte freien Speicher nicht ermitteln: {e}")
         return "FAILED"
@@ -1600,31 +1679,27 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
 
     if not german_available:
         try:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
-            row = c.fetchone()
-            fehlende = json.loads(row[0]) if row and row[0] else []
-            if episode_url not in fehlende:
-                # Nur in DB schreiben, wenn noch genug Speicher zur Verfügung steht
-                try:
-                    free_after_gb = freier_speicher_mb(str(base_path))
-                except Exception:
-                    free_after_gb = 0
-                if free_after_gb >= MIN_FREE_GB:
-                    fehlende.append(episode_url)
-                    update_anime(anime_id, fehlende_deutsch_folgen=fehlende)
-                    log(f"[INFO] Episode zu fehlende_deutsch_folgen hinzugefügt: {episode_url}")
-                else:
-                    log(f"[WARN] DB nicht aktualisiert wegen zu wenig Speicher: {episode_url}")
+            with db_connection() as conn:
+                c = conn.cursor()
+                c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
+                row = c.fetchone()
+                fehlende = json.loads(row[0]) if row and row[0] else []
+                if episode_url not in fehlende:
+                    # Nur in DB schreiben, wenn noch genug Speicher zur Verfügung steht
+                    try:
+                        free_after_gb = freier_speicher_gb(str(base_path))
+                    except Exception:
+                        free_after_gb = 0
+                    if free_after_gb >= MIN_FREE_GB:
+                        fehlende.append(episode_url)
+                        update_anime(anime_id, fehlende_deutsch_folgen=fehlende)
+                        log(f"[INFO] Episode zu fehlende_deutsch_folgen hinzugefügt: {episode_url}")
+                    else:
+                        log(f"[WARN] DB nicht aktualisiert wegen zu wenig Speicher: {episode_url}")
         except Exception as e:
             log(f"[DB-ERROR] beim Aktualisieren fehlende_deutsch_folgen: {e}")
-        finally:
-            try:
-                conn.close()
-            except:
-                pass
     return "OK" if episode_downloaded else "FAILED"
+
 
 def download_films(series_title, base_url, anime_id, german_only=False, start_film=1):
     film_num = start_film
@@ -1719,10 +1794,10 @@ def full_check_anime(series_title, base_url, anime_id):
     
     # Bestimme ob dedizierter Film-Ordner
     in_dedicated_movies_folder = False
-    if STORAGE_MODE == 'separate':
-        if content_type == 'anime' and ANIME_SEPARATE_MOVIES:
+    if config.storage_mode == 'separate':
+        if content_type == 'anime' and config.anime_separate_movies:
             in_dedicated_movies_folder = True
-        elif content_type == 'serie' and SERIEN_SEPARATE_MOVIES:
+        elif content_type == 'serie' and config.serien_separate_movies:
             in_dedicated_movies_folder = True
     
     # === 1. FILME PRÜFEN ===
@@ -1903,11 +1978,10 @@ def full_check_anime(series_title, base_url, anime_id):
     
     # === 3. DATENBANK AKTUALISIEREN ===
     # Lade aktuelle fehlende_deutsch_folgen aus DB (wurde während des Checks durch download_episode aktualisiert)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
-    row = c.fetchone()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT fehlende_deutsch_folgen FROM anime WHERE id = ?", (anime_id,))
+        row = c.fetchone()
     final_fehlende_urls = json.loads(row[0]) if row and row[0] else []
     
     log(f"[FULL-CHECK] Aktuelle fehlende deutsche Folgen in DB: {len(final_fehlende_urls)}")
@@ -1942,15 +2016,15 @@ def full_check_anime(series_title, base_url, anime_id):
     
     # Auch in dedizierten Film-Ordnern prüfen
     if not has_content and in_dedicated_movies_folder:
-        if STORAGE_MODE == 'separate':
-            if content_type == 'anime' and ANIME_MOVIES_PATH:
-                movie_base = Path(ANIME_MOVIES_PATH)
-            elif content_type == 'anime' and ANIME_PATH:
-                movie_base = Path(ANIME_PATH) / 'Filme'
-            elif content_type == 'serie' and SERIEN_MOVIES_PATH:
-                movie_base = Path(SERIEN_MOVIES_PATH)
-            elif content_type == 'serie' and SERIEN_PATH:
-                movie_base = Path(SERIEN_PATH) / 'Filme'
+        if config.storage_mode == 'separate':
+            if content_type == 'anime' and config.anime_movies_path:
+                movie_base = Path(config.anime_movies_path)
+            elif content_type == 'anime' and config.anime_path:
+                movie_base = Path(config.anime_path) / 'Filme'
+            elif content_type == 'serie' and config.serien_movies_path:
+                movie_base = Path(config.serien_movies_path)
+            elif content_type == 'serie' and config.serien_path:
+                movie_base = Path(config.serien_path) / 'Filme'
             else:
                 movie_base = None
             
@@ -1984,88 +2058,85 @@ def deleted_check():
     Berücksichtigt alle konfigurierten Pfade (ANIME_PATH, SERIEN_PATH, DOWNLOAD_DIR).
     """
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
+        with db_connection() as conn:
+            c = conn.cursor()
 
-        # --- IDs + Titel aller als 'complete' markierten Animes holen ---
-        c.execute("SELECT id, title FROM anime WHERE complete = 1")
-        complete_animes_in_db = c.fetchall() # Liste von Tupeln: [(id, title), ...]
+            # --- IDs + Titel aller als 'complete' markierten Animes holen ---
+            c.execute("SELECT id, title FROM anime WHERE complete = 1")
+            complete_animes_in_db = c.fetchall() # Liste von Tupeln: [(id, title), ...]
 
-        # --- Alle Ordnernamen aus allen relevanten Pfaden sammeln ---
-        local_animes = []
-        
-        # Alle möglichen Pfade sammeln (ohne Duplikate)
-        paths_to_check = set()
-        
-        if STORAGE_MODE == 'separate':
-            # Anime-Pfad (aniworld.to Inhalte)
-            if ANIME_PATH and ANIME_PATH.strip():
-                paths_to_check.add(Path(ANIME_PATH))
-            # Serien-Pfad (s.to Inhalte)
-            if SERIEN_PATH and SERIEN_PATH.strip():
-                paths_to_check.add(Path(SERIEN_PATH))
-            # Dedizierte Film-Pfade (dort liegen Filme in Unterordnern nach Filmtitel)
-            if ANIME_MOVIES_PATH and ANIME_MOVIES_PATH.strip():
-                paths_to_check.add(Path(ANIME_MOVIES_PATH))
-            if SERIEN_MOVIES_PATH and SERIEN_MOVIES_PATH.strip():
-                paths_to_check.add(Path(SERIEN_MOVIES_PATH))
-            # Legacy: MOVIES_PATH und SERIES_PATH falls noch gesetzt
-            if MOVIES_PATH and MOVIES_PATH.strip():
-                paths_to_check.add(Path(MOVIES_PATH))
-            if SERIES_PATH and SERIES_PATH.strip():
-                paths_to_check.add(Path(SERIES_PATH))
-        
-        # Im standard Mode oder als Fallback: DOWNLOAD_DIR prüfen
-        if STORAGE_MODE == 'standard' or not paths_to_check:
-            paths_to_check.add(Path(DOWNLOAD_DIR))
-        
-        # Alle Ordner aus allen Pfaden sammeln
-        for path in paths_to_check:
-            if path.exists() and path.is_dir():
-                try:
-                    folder_names = [folder.name for folder in path.iterdir() if folder.is_dir()]
-                    local_animes.extend(folder_names)
-                    log(f"[CHECK] Prüfe Pfad: {path} - {len(folder_names)} Ordner gefunden")
-                except Exception as e:
-                    log(f"[CHECK-WARN] Fehler beim Lesen von {path}: {e}")
-        
-        # Duplikate entfernen (falls ein Ordnername in mehreren Pfaden existiert)
-        local_animes = list(set(local_animes))
+            # --- Alle Ordnernamen aus allen relevanten Pfaden sammeln ---
+            local_animes = []
+            
+            # Alle möglichen Pfade sammeln (ohne Duplikate)
+            paths_to_check = set()
+            
+            if config.storage_mode == 'separate':
+                # Anime-Pfad (aniworld.to Inhalte)
+                if config.anime_path and config.anime_path.strip():
+                    paths_to_check.add(Path(config.anime_path))
+                # Serien-Pfad (s.to Inhalte)
+                if config.serien_path and config.serien_path.strip():
+                    paths_to_check.add(Path(config.serien_path))
+                # Dedizierte Film-Pfade (dort liegen Filme in Unterordnern nach Filmtitel)
+                if config.anime_movies_path and config.anime_movies_path.strip():
+                    paths_to_check.add(Path(config.anime_movies_path))
+                if config.serien_movies_path and config.serien_movies_path.strip():
+                    paths_to_check.add(Path(config.serien_movies_path))
+                # Legacy: MOVIES_PATH und SERIES_PATH falls noch gesetzt
+                if config.movies_path and config.movies_path.strip():
+                    paths_to_check.add(Path(config.movies_path))
+                if config.series_path and config.series_path.strip():
+                    paths_to_check.add(Path(config.series_path))
+            
+            # Im standard Mode oder als Fallback: DOWNLOAD_DIR prüfen
+            if config.storage_mode == 'standard' or not paths_to_check:
+                paths_to_check.add(Path(config.download_dir))
+            
+            # Alle Ordner aus allen Pfaden sammeln
+            for path in paths_to_check:
+                if path.exists() and path.is_dir():
+                    try:
+                        folder_names = [folder.name for folder in path.iterdir() if folder.is_dir()]
+                        local_animes.extend(folder_names)
+                        log(f"[CHECK] Prüfe Pfad: {path} - {len(folder_names)} Ordner gefunden")
+                    except Exception as e:
+                        log(f"[CHECK-WARN] Fehler beim Lesen von {path}: {e}")
+            
+            # Duplikate entfernen (falls ein Ordnername in mehreren Pfaden existiert)
+            local_animes = list(set(local_animes))
 
-        log(f"[CHECK] Gefundene complete-Animes in DB: {len(complete_animes_in_db)}")
-        log(f"[CHECK] Gefundene lokale Animes (gesamt): {len(local_animes)}")
+            log(f"[CHECK] Gefundene complete-Animes in DB: {len(complete_animes_in_db)}")
+            log(f"[CHECK] Gefundene lokale Animes (gesamt): {len(local_animes)}")
 
-        deleted_anime = []
+            deleted_anime = []
 
-        # --- Überprüfen, welche Animes gelöscht wurden ---
-        for anime_id, anime_title in complete_animes_in_db:
-            if anime_title not in local_animes:
-                deleted_anime.append(anime_title)
+            # --- Überprüfen, welche Animes gelöscht wurden ---
+            for anime_id, anime_title in complete_animes_in_db:
+                if anime_title not in local_animes:
+                    deleted_anime.append(anime_title)
 
-                # Anime in der DB auf Initialwerte zurücksetzen, aber Titel + URL + ID behalten
-                c.execute("""
-                    UPDATE anime
-                    SET complete = 0,
-                        deutsch_komplett = 0,
-                        deleted = 1,
-                        fehlende_deutsch_folgen = '[]',
-                        last_film = 0,
-                        last_episode = 0,
-                        last_season = 0
-                    WHERE id = ?
-                """, (anime_id,))
+                    # Anime in der DB auf Initialwerte zurücksetzen, aber Titel + URL + ID behalten
+                    c.execute("""
+                        UPDATE anime
+                        SET complete = 0,
+                            deutsch_komplett = 0,
+                            deleted = 1,
+                            fehlende_deutsch_folgen = '[]',
+                            last_film = 0,
+                            last_episode = 0,
+                            last_season = 0
+                        WHERE id = ?
+                    """, (anime_id,))
 
-        # Änderungen speichern
-        conn.commit()
-        conn.close()
-
-        log(f"[INFO] Gelöschte Animes: {deleted_anime}")
+            log(f"[INFO] Gelöschte Animes: {deleted_anime}")
 
         return deleted_anime
 
     except Exception as e:
         log(f"[ERROR] deleted_check: {e}")
         return []
+
 
 # -------------------- Haupt-Runner (wird im Thread ausgeführt) --------------------
 current_download = {
@@ -2090,7 +2161,279 @@ def check_stop_requested():
     with download_lock:
         return current_download.get("stop_requested", False)
 
+
+# -------------------- run_mode Hilfsfunktionen --------------------
+def _update_current_anime(anime: dict, idx: int = 0):
+    """Aktualisiert den current_download Status für ein Anime."""
+    series_title = anime.get("title") or get_series_title(anime.get("url"))
+    current_download["current_index"] = idx
+    current_download["current_title"] = series_title
+    current_download["anime_started_at"] = time.time()
+    current_download["current_id"] = anime.get("id")
+    current_download["current_url"] = anime.get("url")
+    current_download["episode_started_at"] = None
+    return series_title
+
+
+def _process_german_mode_anime(anime: dict) -> bool:
+    """
+    Verarbeitet ein einzelnes Anime im German-Modus.
+    Returns: True wenn erfolgreich verarbeitet, False bei Stop.
+    """
+    if anime.get("deleted"):
+        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+        return True
+    
+    series_title = anime.get("title") or get_series_title(anime.get("url"))
+    anime_id = anime["id"]
+    fehlende = anime.get("fehlende_deutsch_folgen", [])
+    
+    if not fehlende:
+        log(f"[GERMAN] '{series_title}': Keine neuen deutschen Folgen")
+        return True
+    
+    log(f"[GERMAN] '{series_title}': {len(fehlende)} Folgen zu testen.")
+    verbleibend = fehlende.copy()
+    
+    for url in fehlende:
+        if check_stop_requested():
+            log("[STOP] Download gestoppt (nach aktueller Episode)")
+            return False
+        
+        match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
+        if match:
+            season = int(match.group(1))
+            episode = int(match.group(2))
+        else:
+            m2 = re.search(r"/film-(\d+)", url)
+            season = 0
+            episode = int(m2.group(1)) if m2 else 1
+        
+        result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
+        
+        if result == "OK" and url in verbleibend:
+            verbleibend.remove(url)
+            update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
+            log(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
+            if series_title:
+                delete_old_non_german_versions(
+                    series_folder=os.path.join(str(config.download_dir), series_title),
+                    season=season,
+                    episode=episode
+                )
+    
+    check_deutsch_komplett(anime_id)
+    return True
+
+
+def _process_new_mode_anime(anime: dict) -> str:
+    """
+    Verarbeitet ein einzelnes Anime im New-Modus.
+    Returns: 'OK', 'NO_SPACE', oder 'STOPPED'
+    """
+    if anime.get("deleted"):
+        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+        return "OK"
+    
+    series_title = anime.get("title") or get_series_title(anime.get("url"))
+    anime_id = anime["id"]
+    base_url = anime["url"]
+    
+    start_film = (anime.get("last_film") or 0) + 1
+    start_season = anime.get("last_season") or 1
+    start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
+    
+    log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
+    
+    r = download_films(series_title, base_url, anime_id, start_film=start_film)
+    if r == "NO_SPACE":
+        return "NO_SPACE"
+    
+    r2 = download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
+    if r2 == "NO_SPACE":
+        return "NO_SPACE"
+    
+    check_deutsch_komplett(anime_id)
+    return "OK"
+
+
+def _process_check_missing_anime(anime: dict) -> str:
+    """
+    Verarbeitet ein einzelnes Anime im Check-Missing-Modus.
+    Returns: 'OK' oder 'STOPPED'
+    """
+    if anime.get("deleted"):
+        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
+        return "OK"
+    
+    # Nur Anime berücksichtigen, die bereits Downloads haben oder als komplett markiert sind
+    if anime["last_film"] == 0 and anime["last_season"] == 0 and anime["last_episode"] == 0 and not anime["complete"]:
+        return "OK"
+    
+    series_title = anime.get("title") or get_series_title(anime.get("url"))
+    base_url = anime["url"]
+    anime_id = anime["id"]
+    
+    log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
+    
+    # Filme prüfen
+    film_num = 1
+    while True:
+        film_url = f"{base_url}/filme/film-{film_num}"
+        if episode_already_downloaded(os.path.join(str(config.download_dir), str(series_title or '')), 0, film_num):
+            log(f"[OK] Film {film_num} bereits vorhanden.")
+        else:
+            log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
+            result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
+            if result == "NO_STREAMS":
+                break
+        film_num += 1
+    
+    # Staffeln prüfen
+    season = 1
+    consecutive_empty_seasons = 0
+    while True:
+        episode = 1
+        found_episode = False
+        while True:
+            episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
+            if episode_already_downloaded(os.path.join(str(config.download_dir), str(series_title or '')), season, episode):
+                log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
+                episode += 1
+                continue
+            
+            log(f"[INFO] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
+            result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
+            
+            if result == "NO_STREAMS":
+                if episode == 1:
+                    break
+                else:
+                    log(f"[INFO] Staffel {season} beendet nach {episode-1} Episoden.")
+                    break
+            else:
+                found_episode = True
+                episode += 1
+        
+        if not found_episode:
+            consecutive_empty_seasons += 1
+        else:
+            consecutive_empty_seasons = 0
+        
+        if consecutive_empty_seasons >= 2:
+            log(f"[CHECK-MISSING] '{series_title}' hat keine weiteren Staffeln.")
+            break
+        
+        season += 1
+    
+    check_deutsch_komplett(anime_id)
+    log(f"[CHECK-MISSING] Kontrolle für '{series_title}' abgeschlossen.")
+    return "OK"
+
+
+def _process_full_check_anime(anime: dict) -> str:
+    """
+    Verarbeitet ein einzelnes Anime im Full-Check-Modus.
+    Returns: 'OK', 'NO_SPACE', oder 'STOPPED'
+    """
+    if anime.get("deleted"):
+        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+        return "OK"
+    
+    series_title = anime.get("title") or get_series_title(anime.get("url"))
+    anime_id = anime["id"]
+    base_url = anime["url"]
+    
+    r = full_check_anime(series_title, base_url, anime_id)
+    if r == "NO_SPACE":
+        return "NO_SPACE"
+    
+    return "OK"
+
+
+def _process_default_mode_anime(anime: dict) -> str:
+    """
+    Verarbeitet ein einzelnes Anime im Default-Modus.
+    Returns: 'OK', 'NO_SPACE', oder 'SKIP'
+    """
+    if anime.get("deleted"):
+        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
+        return "SKIP"
+    
+    if anime.get("complete"):
+        log(f"[SKIP] '{anime['title']}' bereits komplett.")
+        return "SKIP"
+    
+    series_title = anime.get("title") or get_series_title(anime.get("url"))
+    anime_id = anime["id"]
+    base_url = anime["url"]
+    
+    start_film = (anime.get("last_film") or 0) + 1
+    start_season = anime.get("last_season") or 1
+    start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
+    
+    log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
+    
+    r = download_films(series_title, base_url, anime_id, start_film=start_film)
+    if r == "NO_SPACE":
+        return "NO_SPACE"
+    
+    r2 = download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
+    if r2 == "NO_SPACE":
+        return "NO_SPACE"
+    
+    check_deutsch_komplett(anime_id)
+    update_anime(anime_id, complete=1)
+    log(f"[OK] Download abgeschlossen für: '{series_title}'")
+    return "OK"
+
+
+def _process_queue_recheck(mode: str, priority_map: dict):
+    """
+    Prüft und verarbeitet neue Queue-Einträge nach jedem DB-Eintrag.
+    """
+    try:
+        queue_prune_completed()
+        queued_now = queue_list()
+        if not queued_now:
+            return
+        
+        amap = {a['id']: a for a in load_anime()}
+        work_q = [amap[q['anime_id']] for q in queued_now if q.get('anime_id') in amap]
+        work_q.sort(key=lambda a: next((i for i, q in enumerate(queued_now) if q['anime_id'] == a['id']), 999999))
+        
+        log(f"[QUEUE] {len(work_q)} neue Einträge – abarbeiten ({mode.title()})")
+        
+        for q_anime in work_q:
+            _update_current_anime(q_anime)
+            
+            if mode == "german":
+                _process_german_mode_anime(q_anime)
+            elif mode == "new":
+                result = _process_new_mode_anime(q_anime)
+                if result == "NO_SPACE":
+                    return
+            elif mode == "check-missing":
+                _process_check_missing_anime(q_anime)
+            elif mode == "full-check":
+                result = _process_full_check_anime(q_anime)
+                if result == "NO_SPACE":
+                    return
+            else:  # default
+                result = _process_default_mode_anime(q_anime)
+                if result == "NO_SPACE":
+                    return
+            
+            queue_delete_by_anime_id(q_anime['id'])
+    except Exception as e:
+        log(f"[QUEUE] Re-Check Fehler ({mode.title()}): {e}")
+
+
 def run_mode(mode="default"):
+    """
+    Haupt-Dispatcher für alle Download-Modi.
+    Unterstützt: 'german', 'new', 'check-missing', 'full-check', 'default'
+    """
     global current_download
     
     # Clear log file at start of new run
@@ -2122,165 +2465,33 @@ def run_mode(mode="default"):
     
     try:
         init_db()
-        # lade Anime inkl. 'deleted' flag
         anime_list = load_anime()
-        # Prüfe Queue und bilde Prioritätenliste
+        
+        # Queue-Handling
         queue_prune_completed()
         queued = queue_list()
         queued_ids = [q['anime_id'] for q in queued]
         priority_map = {aid: idx for idx, aid in enumerate(queued_ids)}
+        
         if queued_ids:
             log(f"[QUEUE] {len(queued_ids)} Einträge werden priorisiert verarbeitet.")
+        
         log(f"[INFO] Gewählter Modus: {mode}")
-        if mode == "german":
-            log("=== Modus: Prüfe auf neue deutsche Synchro ===")
-            # 1) Zuerst Queue (falls vorhanden)
-            if queued_ids:
-                work_list = [a for a in anime_list if a['id'] in queued_ids]
-                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (German)")
-                for idx, anime in enumerate(work_list):
-                    # Stop-Überprüfung
-                    if check_stop_requested():
-                        log("[STOP] Download gestoppt (nach aktueller Episode)")
-                        return
-                    current_download["current_index"] = idx
-                    # Überspringen wenn als deleted markiert
-                    if anime.get("deleted"):
-                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                        continue
-                    series_title = anime["title"] or get_series_title(anime["url"])
-                    anime_id = anime["id"]
-                    current_download["current_title"] = series_title
-                    current_download["anime_started_at"] = time.time()
-                    current_download["current_id"] = anime_id
-                    current_download["current_url"] = anime["url"]
-                    current_download["episode_started_at"] = None
-                    fehlende = anime.get("fehlende_deutsch_folgen", [])
-                    if not fehlende:
-                        log(f"[GERMAN] '{series_title}': Keine neuen deutschen Folgen")
-                        continue
-                    log(f"[GERMAN] '{series_title}': {len(fehlende)} Folgen zu testen.")
-                    verbleibend = fehlende.copy()
-                    for url in fehlende:
-                        # Stop-Überprüfung nach jeder Episode
-                        if check_stop_requested():
-                            log("[STOP] Download gestoppt (nach aktueller Episode)")
-                            return
-                        match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
-                        if match:
-                            season = int(match.group(1))
-                            episode = int(match.group(2))
-                        else:
-                            m2 = re.search(r"/film-(\d+)", url)
-                            season = 0
-                            episode = int(m2.group(1)) if m2 else 1
-                        result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
-                        if result == "OK" and url in verbleibend:
-                            verbleibend.remove(url)
-                            update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
-                            log(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
-                            if series_title:  # Type-Guard
-                                delete_old_non_german_versions(series_folder=os.path.join(str(DOWNLOAD_DIR), series_title), season=season, episode=episode)
-                    check_deutsch_komplett(anime_id)
-                    # Entferne diesen Eintrag aus der Queue (falls vorhanden)
-
-            # 2) Danach restliche DB-Einträge
-            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
-            for idx, anime in enumerate(rest_list):
-                # Stop-Überprüfung
-                if check_stop_requested():
-                    log("[STOP] Download gestoppt (nach aktueller Episode)")
-                    return
-                current_download["current_index"] = idx
-                # Überspringen wenn als deleted markiert
-                if anime.get("deleted"):
-                    log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                    continue
-                series_title = anime["title"] or get_series_title(anime["url"])
-                anime_id = anime["id"]
-                current_download["current_title"] = series_title
-                current_download["anime_started_at"] = time.time()
-                current_download["current_id"] = anime_id
-                current_download["current_url"] = anime["url"]
-                current_download["episode_started_at"] = None
-                fehlende = anime.get("fehlende_deutsch_folgen", [])
-                if not fehlende:
-                    log(f"[GERMAN] '{series_title}': Keine neuen deutschen Folgen")
-                    continue
-                log(f"[GERMAN] '{series_title}': {len(fehlende)} Folgen zu testen.")
-                verbleibend = fehlende.copy()
-                for url in fehlende:
-                    # Stop-Überprüfung nach jeder Episode
-                    if check_stop_requested():
-                        log("[STOP] Download gestoppt (nach aktueller Episode)")
-                        return
-                    match = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
-                    if match:
-                        season = int(match.group(1))
-                        episode = int(match.group(2))
-                    else:
-                        m2 = re.search(r"/film-(\d+)", url)
-                        season = 0
-                        episode = int(m2.group(1)) if m2 else 1
-                    result = download_episode(series_title, url, season, episode, anime_id, german_only=True)
-                    
-                    if result == "OK" and url in verbleibend:
-                        verbleibend.remove(url)
-                        update_anime(anime_id, fehlende_deutsch_folgen=verbleibend)
-                        log(f"[GERMAN] '{url}' erfolgreich auf deutsch.")
-                        if series_title:  # Type-Guard
-                            delete_old_non_german_versions(series_folder=os.path.join(str(DOWNLOAD_DIR), series_title), season=season, episode=episode)
-                check_deutsch_komplett(anime_id)
-                # Nach jedem DB-Eintrag: Queue erneut prüfen und sofort abarbeiten
-                try:
-                    queue_prune_completed()
-                    queued_now = queue_list()
-                    if queued_now:
-                        amap = {a['id']: a for a in load_anime()}
-                        work_q = [amap[q['anime_id']] for q in queued_now if q.get('anime_id') in amap]
-                        work_q.sort(key=lambda a: next((i for i,q in enumerate(queued_now) if q['anime_id']==a['id']), 999999))
-                        log(f"[QUEUE] {len(work_q)} neue Einträge – abarbeiten (German)")
-                        for q_anime in work_q:
-                            if q_anime.get('deleted'):
-                                log(f"[SKIP] '{q_anime['title']}' übersprungen (deleted flag gesetzt).")
-                                queue_delete_by_anime_id(q_anime['id'])
-                                continue
-                            q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
-                            q_anime_id = q_anime['id']
-                            current_download["current_title"] = q_series_title
-                            current_download["anime_started_at"] = time.time()
-                            current_download["current_id"] = q_anime_id
-                            current_download["current_url"] = q_anime['url']
-                            current_download["episode_started_at"] = None
-                            fehlende = q_anime.get('fehlende_deutsch_folgen', [])
-                            if not fehlende:
-                                log(f"[GERMAN] '{q_series_title}': Keine neuen deutschen Folgen")
-                                queue_delete_by_anime_id(q_anime_id)
-                                continue
-                            verbleibend = fehlende.copy()
-                            for url in fehlende:
-                                m = re.search(r"/staffel-(\d+)/episode-(\d+)", url)
-                                if m:
-                                    s = int(m.group(1)); e = int(m.group(2))
-                                else:
-                                    m2 = re.search(r"/film-(\d+)", url)
-                                    s = 0; e = int(m2.group(1)) if m2 else 1
-                                r = download_episode(q_series_title, url, s, e, q_anime_id, german_only=True)
-                                if r == 'OK' and url in verbleibend:
-                                    verbleibend.remove(url)
-                                    update_anime(q_anime_id, fehlende_deutsch_folgen=verbleibend)
-                                    if q_series_title:  # Type-Guard
-                                        delete_old_non_german_versions(series_folder=os.path.join(str(DOWNLOAD_DIR), q_series_title), season=s, episode=e)
-                            check_deutsch_komplett(q_anime_id)
-                            queue_delete_by_anime_id(q_anime_id)
-                except Exception as _e:
-                    log(f"[QUEUE] Re-Check Fehler (German): {_e}")
-        elif mode == "new":
-            log("=== Modus: Prüfe auf neue Episoden & Filme ===")
-            # Run HTML precheck for all DB entries to decide which series actually need processing.
+        
+        # Mode-spezifische Initialisierung
+        mode_messages = {
+            "german": "=== Modus: Prüfe auf neue deutsche Synchro ===",
+            "new": "=== Modus: Prüfe auf neue Episoden & Filme ===",
+            "check-missing": "=== Modus: Prüfe auf fehlende Episoden & Filme ===",
+            "full-check": "=== Modus: Kompletter Check (alle Animes von Anfang an prüfen) ===",
+            "default": "=== Modus: Standard ==="
+        }
+        log(mode_messages.get(mode, mode_messages["default"]))
+        
+        # Für 'new' Mode: HTML Precheck durchführen
+        allowed_ids = set()
+        if mode == "new":
             log("[NEW] Starte HTML-Precheck für alle Serien (New mode)")
-            allowed_ids = set()
             for anime in anime_list:
                 try:
                     aid = anime['id']
@@ -2294,7 +2505,6 @@ def run_mode(mode="default"):
                         log(f"[NEW-PRECHECK] Netzwerkfehler oder kein HTML für '{series_title}' — Verarbeitung zulassen")
                         allowed_ids.add(aid)
                         continue
-                    # Log found seasons/episodes
                     log(f"[NEW-PRECHECK] Gefundene Struktur für '{series_title}': {scraped}")
                     if has_new_episodes_db_check(anime, scraped):
                         log(f"[NEW-PRECHECK] Neue Episoden erkannt für '{series_title}' — wird verarbeitet.")
@@ -2304,574 +2514,73 @@ def run_mode(mode="default"):
                 except Exception as _e:
                     log(f"[NEW-PRECHECK] Fehler bei '{anime.get('title') or anime.get('url')}': {_e} — Verarbeitung zulassen")
                     allowed_ids.add(anime.get('id'))
-            # 1) Zuerst Queue
-            if queued_ids:
-                work_list = [a for a in anime_list if a['id'] in queued_ids]
-                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (New)")
-                for idx, anime in enumerate(work_list):
-                    # Stop-Überprüfung
-                    if check_stop_requested():
-                        log("[STOP] Download gestoppt (nach aktueller Episode)")
-                        return
-                    current_download["current_index"] = idx
-                    if anime.get("deleted"):
-                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                        continue
-                    # Skip if precheck determined no new episodes for this anime
-                    if anime['id'] not in allowed_ids:
-                        log(f"[NEW] '{anime.get('title')}' — keine neuen Episoden, übersprungen.")
-                        continue
-                    series_title = anime["title"] or get_series_title(anime["url"])
-                    anime_id = anime["id"]
-                    base_url = anime["url"]
-                    current_download["current_title"] = series_title
-                    current_download["anime_started_at"] = time.time()
-                    current_download["current_id"] = anime_id
-                    current_download["current_url"] = base_url
-                    current_download["episode_started_at"] = None
-                    start_film = (anime.get("last_film") or 0) + 1
-                    start_season = anime.get("last_season") or 1
-                    start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
-                    log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
-                    r = download_films(series_title, base_url, anime_id, start_film=start_film)
-                    if r == "NO_SPACE":
-                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
-                        return
-                    r2 = download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
-                    if r2 == "NO_SPACE":
-                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
-                        return
-                    check_deutsch_komplett(anime_id)
-                    # Entferne aus Queue
-                    queue_delete_by_anime_id(anime_id)
-
-            # 2) Danach restliche DB-Einträge
-            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
-            for idx, anime in enumerate(rest_list):
-                # Stop-Überprüfung
+        
+        # 1) Zuerst Queue verarbeiten
+        if queued_ids:
+            work_list = [a for a in anime_list if a['id'] in queued_ids]
+            work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
+            log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange ({mode.title()})")
+            
+            for idx, anime in enumerate(work_list):
                 if check_stop_requested():
                     log("[STOP] Download gestoppt (nach aktueller Episode)")
                     return
                 
-                current_download["current_index"] = idx
-                if anime.get("deleted"):
-                    log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                    continue
-                # Skip if precheck determined no new episodes for this anime
-                if anime['id'] not in allowed_ids:
+                _update_current_anime(anime, idx)
+                
+                # Im 'new' Modus: Precheck-Filter anwenden
+                if mode == "new" and anime['id'] not in allowed_ids:
                     log(f"[NEW] '{anime.get('title')}' — keine neuen Episoden, übersprungen.")
                     continue
-                series_title = anime["title"] or get_series_title(anime["url"])
-                anime_id = anime["id"]
-                base_url = anime["url"]
-                current_download["current_title"] = series_title
-                current_download["anime_started_at"] = time.time()
-                current_download["current_id"] = anime_id
-                current_download["current_url"] = base_url
-                current_download["episode_started_at"] = None
-                start_film = (anime.get("last_film") or 0) + 1
-                start_season = anime.get("last_season") or 1
-                start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
-                log(f"[NEW] Prüfe '{series_title}' ab Film {start_film} und Staffel {start_season}, Episode {start_episode}")
-                r = download_films(series_title, base_url, anime_id, start_film=start_film)
-                if r == "NO_SPACE":
-                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
-                    return
-                r2 = download_seasons(series_title, base_url, anime_id, start_season=start_season, start_episode=start_episode)
-                if r2 == "NO_SPACE":
-                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (new mode).")
-                    return
-                check_deutsch_komplett(anime_id)
-                # Nach jedem DB-Eintrag: Queue erneut prüfen und abarbeiten
-                try:
-                    queue_prune_completed()
-                    queued_now = queue_list()
-                    if queued_now:
-                        amap = {a['id']: a for a in load_anime()}
-                        work_q = [amap[q['anime_id']] for q in queued_now if q.get('anime_id') in amap]
-                        work_q.sort(key=lambda a: next((i for i,q in enumerate(queued_now) if q['anime_id']==a['id']), 999999))
-                        log(f"[QUEUE] {len(work_q)} neue Einträge – abarbeiten (New)")
-                        for q_anime in work_q:
-                            if q_anime.get('deleted'):
-                                log(f"[SKIP] '{q_anime['title']}' übersprungen (deleted flag gesetzt).")
-                                queue_delete_by_anime_id(q_anime['id'])
-                                continue
-                            q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
-                            q_anime_id = q_anime['id']
-                            base_url = q_anime['url']
-                            current_download["current_title"] = q_series_title
-                            current_download["anime_started_at"] = time.time()
-                            current_download["current_id"] = q_anime_id
-                            current_download["current_url"] = base_url
-                            current_download["episode_started_at"] = None
-                            start_film = (q_anime.get('last_film') or 0) + 1
-                            start_season = q_anime.get('last_season') or 1
-                            start_episode = (q_anime.get('last_episode') or 1) if start_season > 0 else 1
-                            r = download_films(q_series_title, base_url, q_anime_id, start_film=start_film)
-                            if r == 'NO_SPACE':
-                                return
-                            r2 = download_seasons(q_series_title, base_url, q_anime_id, start_season=start_season, start_episode=start_episode)
-                            if r2 == 'NO_SPACE':
-                                return
-                            check_deutsch_komplett(q_anime_id)
-                            queue_delete_by_anime_id(q_anime_id)
-                except Exception as _e:
-                    log(f"[QUEUE] Re-Check Fehler (New): {_e}")
-
-        elif mode == "check-missing":
-            log("=== Modus: Prüfe auf fehlende Episoden & Filme ===")
-            """
-            Prüft alle Anime, die entweder teilweise oder komplett heruntergeladen sind,
-            und versucht fehlende Filme oder Episoden erneut zu laden.
-            """
-            anime_list = load_anime()
-            # 1) Zuerst Queue
-            if queued_ids:
-                work_list = [a for a in anime_list if a['id'] in queued_ids]
-                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Check-Missing)")
-                for anime in work_list:
-                    # Stop-Überprüfung
-                    if check_stop_requested():
-                        log("[STOP] Download gestoppt (nach aktueller Episode)")
-                        return
-                    # Deleted ignorieren
-                    if anime.get("deleted"):
-                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
-                        continue
-                    # Nur Anime berücksichtigen, die bereits Downloads haben oder als komplett markiert sind
-                    if anime["last_film"] == 0 and anime["last_season"] == 0 and anime["last_episode"] == 0 and not anime["complete"]:
-                        continue
-
-                    series_title = anime["title"] or get_series_title(anime["url"])
-                    base_url = anime["url"]
-                    anime_id = anime["id"]
-                    current_download["current_title"] = series_title
-                    current_download["anime_started_at"] = time.time()
-                    current_download["current_id"] = anime_id
-                    current_download["current_url"] = base_url
-                    current_download["episode_started_at"] = None
-
-                    log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
-
-                    # Alle Filme von 1 bis last_film prüfen
-                    film_num = 1
-                    while True:
-                        film_url = f"{base_url}/filme/film-{film_num}"
-                        if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), 0, film_num):
-                            log(f"[OK] Film {film_num} bereits vorhanden.")
-                        else:
-                            log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
-                            result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
-                            if result == "NO_STREAMS":
-                                break  # Keine weiteren Filme vorhanden
-                        film_num += 1
-                    # Start mit Staffel 1 und zähle leere Staffeln
-                    season = 1
-                    consecutive_empty_seasons = 0
-                    while True:
-                        episode = 1
-                        found_episode = False
-                        while True:
-                            episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
-                            if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), season, episode):
-                                log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
-                                episode += 1
-                                continue
-
-                            log(f"[INFO] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
-                            result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
-
-                            if result == "NO_STREAMS":
-                                if episode == 1:
-                                    # Staffel existiert nicht -> Abbruchkandidat
-                                    break
-                                else:
-                                    log(f"[INFO] Staffel {season} beendet nach {episode-1} Episoden.")
-                                    break
-                            else:
-                                found_episode = True
-                                episode += 1
-
-                        if not found_episode:
-                            consecutive_empty_seasons += 1
-                        else:
-                            consecutive_empty_seasons = 0
-
-                        if consecutive_empty_seasons >= 2:
-                            log(f"[CHECK-MISSING] '{series_title}' hat keine weiteren Staffeln.")
-                            break
-
-                        season += 1
-
-                    # Finaler Statuscheck
-                    check_deutsch_komplett(anime_id)
-                    log(f"[CHECK-MISSING] Kontrolle für '{series_title}' abgeschlossen.")
-                    # Entferne aus Queue
-                    queue_delete_by_anime_id(anime_id)
-
-            # 2) Danach restliche DB-Einträge
-            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
-            for anime in rest_list:
-                # Deleted ignorieren
-                if anime.get("deleted"):
-                    log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag).")
-                    continue
-                # Nur Anime berücksichtigen, die bereits Downloads haben oder als komplett markiert sind
-                if anime["last_film"] == 0 and anime["last_season"] == 0 and anime["last_episode"] == 0 and not anime["complete"]:
-                    continue
-                series_title = anime["title"] or get_series_title(anime["url"])
-                base_url = anime["url"]
-                anime_id = anime["id"]
-                current_download["current_title"] = series_title
-                current_download["anime_started_at"] = time.time()
-                current_download["current_id"] = anime_id
-                current_download["current_url"] = base_url
-                current_download["episode_started_at"] = None
-                log(f"[CHECK-MISSING] Prüfe '{series_title}' auf fehlende Downloads.")
-                # Filme
-                film_num = 1
-                while True:
-                    film_url = f"{base_url}/filme/film-{film_num}"
-                    if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), 0, film_num):
-                        log(f"[OK] Film {film_num} bereits vorhanden.")
-                    else:
-                        log(f"[INFO] Film {film_num} fehlt -> erneuter Versuch")
-                        result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only=False)
-                        if result == "NO_STREAMS":
-                            break
-                    film_num += 1
-                # Staffeln
-                season = 1
-                consecutive_empty_seasons = 0
-                while True:
-                    episode = 1
-                    found_episode = False
-                    while True:
-                        episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
-                        if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(series_title or '')), season, episode):
-                            log(f"[OK] Staffel {season} Episode {episode} vorhanden.")
-                            episode += 1
-                            continue
-                        log(f"[INFO] Staffel {season} Episode {episode} fehlt -> erneuter Versuch")
-                        result = download_episode(series_title, episode_url, season, episode, anime_id, german_only=False)
-                        if result == "NO_STREAMS":
-                            if episode == 1:
-                                break
-                            else:
-                                log(f"[INFO] Staffel {season} beendet nach {episode-1} Episoden.")
-                                break
-                        else:
-                            found_episode = True
-                            episode += 1
-                    if not found_episode:
-                        consecutive_empty_seasons += 1
-                    else:
-                        consecutive_empty_seasons = 0
-                    if consecutive_empty_seasons >= 2:
-                        log(f"[CHECK-MISSING] '{series_title}' hat keine weiteren Staffeln.")
-                        break
-                    season += 1
-                check_deutsch_komplett(anime_id)
-                log(f"[CHECK-MISSING] Kontrolle für '{series_title}' abgeschlossen.")
-                # Nach jedem DB-Eintrag: Queue erneut prüfen und abarbeiten
-                try:
-                    queue_prune_completed()
-                    queued_now = queue_list()
-                    if queued_now:
-                        amap = {a['id']: a for a in load_anime()}
-                        work_q = [amap[q['anime_id']] for q in queued_now if q.get('anime_id') in amap]
-                        work_q.sort(key=lambda a: next((i for i,q in enumerate(queued_now) if q['anime_id']==a['id']), 999999))
-                        log(f"[QUEUE] {len(work_q)} neue Einträge – abarbeiten (Check-Missing)")
-                        for q_anime in work_q:
-                            if q_anime.get('deleted'):
-                                log(f"[SKIP] '{q_anime['title']}' übersprungen (deleted flag).")
-                                queue_delete_by_anime_id(q_anime['id'])
-                                continue
-                            if q_anime['last_film'] == 0 and q_anime['last_season'] == 0 and q_anime['last_episode'] == 0 and not q_anime['complete']:
-                                queue_delete_by_anime_id(q_anime['id'])
-                                continue
-                            q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
-                            base_url = q_anime['url']
-                            q_anime_id = q_anime['id']
-                            current_download["current_title"] = q_series_title
-                            current_download["anime_started_at"] = time.time()
-                            current_download["current_id"] = q_anime_id
-                            current_download["current_url"] = base_url
-                            current_download["episode_started_at"] = None
-                            # Filme
-                            film_num = 1
-                            while True:
-                                film_url = f"{base_url}/filme/film-{film_num}"
-                                if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(q_series_title or '')), 0, film_num):
-                                    pass
-                                else:
-                                    result = download_episode(q_series_title, film_url, 0, film_num, q_anime_id, german_only=False)
-                                    if result == 'NO_STREAMS':
-                                        break
-                                film_num += 1
-                            # Staffeln
-                            season = 1
-                            consecutive_empty_seasons = 0
-                            while True:
-                                episode = 1
-                                found_episode = False
-                                while True:
-                                    episode_url = f"{base_url}/staffel-{season}/episode-{episode}"
-                                    if episode_already_downloaded(os.path.join(str(DOWNLOAD_DIR), str(q_series_title or '')), season, episode):
-                                        episode += 1
-                                        continue
-                                    result = download_episode(q_series_title, episode_url, season, episode, q_anime_id, german_only=False)
-                                    if result == 'NO_STREAMS':
-                                        if episode == 1:
-                                            break
-                                        else:
-                                            break
-                                    else:
-                                        found_episode = True
-                                        episode += 1
-                                if not found_episode:
-                                    consecutive_empty_seasons += 1
-                                else:
-                                    consecutive_empty_seasons = 0
-                                if consecutive_empty_seasons >= 2:
-                                    break
-                                season += 1
-                            check_deutsch_komplett(q_anime_id)
-                            queue_delete_by_anime_id(q_anime_id)
-                except Exception as _e:
-                    log(f"[QUEUE] Re-Check Fehler (Check-Missing): {_e}")
-
-        elif mode == "full-check":
-            log("=== Modus: Kompletter Check (alle Animes von Anfang an prüfen) ===")
-            # 1) Zuerst Queue (falls vorhanden)
-            if queued_ids:
-                work_list = [a for a in anime_list if a['id'] in queued_ids]
-                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Full-Check)")
-                for idx, anime in enumerate(work_list):
-                    # Stop-Überprüfung
-                    if check_stop_requested():
-                        log("[STOP] Download gestoppt (nach aktueller Episode)")
-                        return
-                    current_download["current_index"] = idx
-                    if anime.get("deleted"):
-                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                        continue
-                    series_title = anime["title"] or get_series_title(anime["url"])
-                    anime_id = anime["id"]
-                    base_url = anime["url"]
-                    current_download["current_title"] = series_title
-                    current_download["anime_started_at"] = time.time()
-                    current_download["current_id"] = anime_id
-                    current_download["current_url"] = base_url
-                    current_download["episode_started_at"] = None
-                    # Verwende neue full_check_anime Funktion
-                    r = full_check_anime(series_title, base_url, anime_id)
-                    if r == "NO_SPACE":
-                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
-                        return
-                    # Entferne aus Queue
-                    queue_delete_by_anime_id(anime_id)
-
-            # 2) Danach restliche DB-Einträge
-            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
-            for idx, anime in enumerate(rest_list):
-                # Stop-Überprüfung
-                if check_stop_requested():
-                    log("[STOP] Download gestoppt (nach aktueller Episode)")
-                    return
-                current_download["current_index"] = idx
-                if anime.get("deleted"):
-                    log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                    continue
-                series_title = anime["title"] or get_series_title(anime["url"])
-                anime_id = anime["id"]
-                base_url = anime["url"]
-                current_download["current_title"] = series_title
-                current_download["anime_started_at"] = time.time()
-                current_download["current_id"] = anime_id
-                current_download["current_url"] = base_url
-                current_download["episode_started_at"] = None
-                r = full_check_anime(series_title, base_url, anime_id)
-                if r == "NO_SPACE":
-                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (full-check).")
-                    return
-                # Nach jedem DB-Eintrag: Queue erneut prüfen und abarbeiten
-                try:
-                    queue_prune_completed()
-                    queued_now = queue_list()
-                    if queued_now:
-                        amap = {a['id']: a for a in load_anime()}
-                        work_q = [amap[q['anime_id']] for q in queued_now if q.get('anime_id') in amap]
-                        work_q.sort(key=lambda a: next((i for i,q in enumerate(queued_now) if q['anime_id']==a['id']), 999999))
-                        log(f"[QUEUE] {len(work_q)} neue Einträge – abarbeiten (Full-Check)")
-                        for q_anime in work_q:
-                            if q_anime.get('deleted'):
-                                log(f"[SKIP] '{q_anime['title']}' übersprungen (deleted flag gesetzt).")
-                                queue_delete_by_anime_id(q_anime['id'])
-                                continue
-                            q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
-                            q_anime_id = q_anime['id']
-                            base_url = q_anime['url']
-                            current_download["current_title"] = q_series_title
-                            current_download["anime_started_at"] = time.time()
-                            current_download["current_id"] = q_anime_id
-                            current_download["current_url"] = base_url
-                            current_download["episode_started_at"] = None
-                            r = full_check_anime(q_series_title, base_url, q_anime_id)
-                            if r == 'NO_SPACE':
-                                return
-                            queue_delete_by_anime_id(q_anime_id)
-
-                except Exception as _e:
-                    log(f"[QUEUE] Re-Check Fehler (Full-Check): {_e}")
-
-        else:
-            log("=== Modus: Standard  ===")
-            # 1) Zuerst Queue
-            if queued_ids:
-                work_list = [a for a in anime_list if a['id'] in queued_ids]
-                work_list.sort(key=lambda a: priority_map.get(a['id'], 1_000_000))
-                log(f"[QUEUE] Starte mit {len(work_list)} Einträgen aus der Warteschlange (Default)")
-                for idx, anime in enumerate(work_list):
-                    # Stop-Überprüfung
-                    if check_stop_requested():
-                        log("[STOP] Download gestoppt (nach aktueller Episode)")
-                        return
-                    
-                    current_download["current_index"] = idx
-                    if anime.get("deleted"):
-                        log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                        continue
-                    if anime["complete"]:
-                        log(f"[SKIP] '{anime['title']}' bereits komplett.")
-                        continue
-                    series_title = anime["title"] or get_series_title(anime["url"])
-                    anime_id = anime["id"]
-                    base_url = anime["url"]
-                    current_download["current_title"] = series_title
-                    current_download["anime_started_at"] = time.time()
-                    current_download["current_id"] = anime_id
-                    current_download["current_url"] = base_url
-                    current_download["episode_started_at"] = None
-                    start_film = (anime.get("last_film") or 0) + 1
-                    start_season = anime.get("last_season") or 1
-                    start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
-                    log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
-                    r = download_films(series_title, base_url, anime_id, start_film=start_film)
-                    if r == "NO_SPACE":
-                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
-                        return
-                    r2 = download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
-                    if r2 == "NO_SPACE":
-                        log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
-                        return
-                    check_deutsch_komplett(anime_id)
-                    update_anime(anime_id, complete=1)
-                    log(f"[OK] Download abgeschlossen für: '{series_title}'")
-                    # Entferne aus Queue
-                    queue_delete_by_anime_id(anime_id)
-            # 2) Danach restliche DB-Einträge
-            rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
-            for idx, anime in enumerate(rest_list):
-                # Stop-Überprüfung
-                if check_stop_requested():
-                    log("[STOP] Download gestoppt (nach aktueller Episode)")
+                
+                # Mode-spezifische Verarbeitung
+                result = _process_anime_by_mode(anime, mode)
+                if result == "NO_SPACE":
+                    log(f"[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher ({mode} mode).")
                     return
                 
-                current_download["current_index"] = idx
-                if anime.get("deleted"):
-                    log(f"[SKIP] '{anime['title']}' übersprungen (deleted flag gesetzt).")
-                    continue
-                if anime["complete"]:
-                    log(f"[SKIP] '{anime['title']}' bereits komplett.")
-                    continue
-                series_title = anime["title"] or get_series_title(anime["url"])
-                anime_id = anime["id"]
-                base_url = anime["url"]
-                current_download["current_title"] = series_title
-                current_download["anime_started_at"] = time.time()
-                current_download["current_id"] = anime_id
-                current_download["current_url"] = base_url
-                current_download["episode_started_at"] = None
-                start_film = (anime.get("last_film") or 0) + 1
-                start_season = anime.get("last_season") or 1
-                start_episode = (anime.get("last_episode") or 1) if start_season > 0 else 1
-                log(f"[START] Starte Download für: '{series_title}' ab Film {start_film} / Staffel {start_season}, Episode {start_episode}")
-                r = download_films(series_title, base_url, anime_id, start_film=start_film)
-                if r == "NO_SPACE":
-                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
-                    return
-                r2 = download_seasons(series_title, base_url, anime_id, start_season=max(1, start_season), start_episode=start_episode)
-                if r2 == "NO_SPACE":
-                    log("[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher (default mode).")
-                    return
-                check_deutsch_komplett(anime_id)
-                update_anime(anime_id, complete=1)
-                log(f"[OK] Download abgeschlossen für: '{series_title}'")
-                # Nach jedem DB-Eintrag: Queue erneut prüfen und abarbeiten
-                try:
-                    queue_prune_completed()
-                    queued_now = queue_list()
-                    if queued_now:
-                        amap = {a['id']: a for a in load_anime()}
-                        work_q = [amap[q['anime_id']] for q in queued_now if q.get('anime_id') in amap]
-                        work_q.sort(key=lambda a: next((i for i,q in enumerate(queued_now) if q['anime_id']==a['id']), 999999))
-                        log(f"[QUEUE] {len(work_q)} neue Einträge – abarbeiten (Default)")
-                        for q_anime in work_q:
-                            if q_anime.get('deleted'):
-                                log(f"[SKIP] '{q_anime['title']}' übersprungen (deleted flag gesetzt).")
-                                queue_delete_by_anime_id(q_anime['id'])
-                                continue
-                            if q_anime['complete']:
-                                queue_delete_by_anime_id(q_anime['id'])
-                                continue
-                            q_series_title = q_anime['title'] or get_series_title(q_anime['url'])
-                            q_anime_id = q_anime['id']
-                            base_url = q_anime['url']
-                            current_download["current_title"] = q_series_title
-                            current_download["anime_started_at"] = time.time()
-                            current_download["current_id"] = q_anime_id
-                            current_download["current_url"] = base_url
-                            current_download["episode_started_at"] = None
-                            start_film = (q_anime.get('last_film') or 0) + 1
-                            start_season = q_anime.get('last_season') or 1
-                            start_episode = (q_anime.get('last_episode') or 1) if start_season > 0 else 1
-                            r = download_films(q_series_title, base_url, q_anime_id, start_film=start_film)
-                            if r == 'NO_SPACE':
-                                return
-                            r2 = download_seasons(q_series_title, base_url, q_anime_id, start_season=max(1, start_season), start_episode=start_episode)
-                            if r2 == 'NO_SPACE':
-                                return
-                            check_deutsch_komplett(q_anime_id)
-                            update_anime(q_anime_id, complete=1)
-                            log(f"[OK] Download abgeschlossen für: '{q_series_title}'")
-                            queue_delete_by_anime_id(q_anime_id)
-                except Exception as _e:
-                    log(f"[QUEUE] Re-Check Fehler (Default): {_e}")
-        # Falls wir ausschließlich Queue-Items verarbeitet haben, leeren wir die verarbeiteten aus der Queue
+                queue_delete_by_anime_id(anime['id'])
+        
+        # 2) Danach restliche DB-Einträge
+        rest_list = [a for a in anime_list if not queued_ids or a['id'] not in queued_ids]
+        for idx, anime in enumerate(rest_list):
+            if check_stop_requested():
+                log("[STOP] Download gestoppt (nach aktueller Episode)")
+                return
+            
+            _update_current_anime(anime, idx)
+            
+            # Im 'new' Modus: Precheck-Filter anwenden
+            if mode == "new" and anime['id'] not in allowed_ids:
+                log(f"[NEW] '{anime.get('title')}' — keine neuen Episoden, übersprungen.")
+                continue
+            
+            # Mode-spezifische Verarbeitung
+            result = _process_anime_by_mode(anime, mode)
+            if result == "NO_SPACE":
+                log(f"[ERROR] Downloadlauf abgebrochen wegen fehlendem Speicher ({mode} mode).")
+                return
+            
+            # Nach jedem DB-Eintrag: Queue erneut prüfen
+            _process_queue_recheck(mode, priority_map)
+        
+        # Queue-Cleanup für verarbeitete Einträge
         if queued_ids:
-            # alle abgearbeitet -> Queue bereinigen (Pop pro Eintrag)
-            # Wir löschen alle IDs, die in queued_ids enthalten waren
             try:
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute(
-                    f"DELETE FROM queue WHERE anime_id IN ({','.join(['?']*len(queued_ids))})",
-                    queued_ids
-                )
-                conn.commit()
-                conn.close()
+                with db_connection() as conn:
+                    c = conn.cursor()
+                    c.execute(
+                        f"DELETE FROM queue WHERE anime_id IN ({','.join(['?']*len(queued_ids))})",
+                        queued_ids
+                    )
                 log("[QUEUE] Verarbeitete Einträge aus der Warteschlange entfernt.")
             except Exception as e:
                 log(f"[DB-ERROR] queue cleanup: {e}")
+        
         log("[INFO] Alle Aufgaben abgeschlossen.")
     except Exception as e:
         log(f"[ERROR] Unhandled exception in run_mode: {e}")
     finally:
-        # Wenn der Status bereits auf 'kein-speicher' gesetzt wurde, nicht überschreiben.
         with download_lock:
             if current_download.get("status") != "kein-speicher":
                 current_download.update({
@@ -2887,7 +2596,6 @@ def run_mode(mode="default"):
                     "current_url": None
                 })
             else:
-                # Nur laufende Details zurücksetzen, Status bleibt 'kein-speicher'
                 current_download.update({
                     "current_index": None,
                     "current_title": None,
@@ -2899,6 +2607,25 @@ def run_mode(mode="default"):
                     "current_id": None,
                     "current_url": None
                 })
+
+
+def _process_anime_by_mode(anime: dict, mode: str) -> str:
+    """
+    Dispatcher für mode-spezifische Anime-Verarbeitung.
+    Returns: 'OK', 'NO_SPACE', 'SKIP', oder 'STOPPED'
+    """
+    if mode == "german":
+        return "OK" if _process_german_mode_anime(anime) else "STOPPED"
+    elif mode == "new":
+        return _process_new_mode_anime(anime)
+    elif mode == "check-missing":
+        return _process_check_missing_anime(anime)
+    elif mode == "full-check":
+        return _process_full_check_anime(anime)
+    else:  # default
+        return _process_default_mode_anime(anime)
+
+
 @app.route("/upload_txt", methods=["POST"])
 def api_upload_txt():
     """Nimmt eine hochgeladene TXT-Datei entgegen und verarbeitet sie wie AniLoader.txt beim Start."""
@@ -2921,14 +2648,10 @@ def api_upload_txt():
             return jsonify({"status": "error", "msg": "Keine URLs in der Datei gefunden"}), 400
         
         # URLs in die Datenbank importieren
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
         imported = 0
         for url in links:
             if insert_anime(url=url):
                 imported += 1
-        conn.commit()
-        conn.close()
         
         log(f"[UPLOAD] {imported} Anime-URLs aus hochgeladener Datei '{file.filename}' importiert")
         return jsonify({
@@ -2982,27 +2705,27 @@ def api_health():
 
 @app.route("/config", methods=["GET", "POST"])
 def api_config():
-    global LANGUAGES, MIN_FREE_GB, AUTOSTART_MODE, DOWNLOAD_DIR, SERVER_PORT, REFRESH_TITLES, STORAGE_MODE, MOVIES_PATH, SERIES_PATH, ANIME_PATH, SERIEN_PATH, ANIME_SEPARATE_MOVIES, SERIEN_SEPARATE_MOVIES, ANIME_MOVIES_PATH, SERIEN_MOVIES_PATH, data_folder
+    global data_folder
     if request.method == 'GET':
         try:
             # Reload to reflect persisted file state
-            load_config()
+            config.load()
             cfg = {
-                'languages': LANGUAGES,
-                'min_free_gb': MIN_FREE_GB,
-                'download_path': str(DOWNLOAD_DIR),
-                'storage_mode': STORAGE_MODE,
-                'movies_path': MOVIES_PATH,
-                'series_path': SERIES_PATH,
-                'anime_path': ANIME_PATH,
-                'serien_path': SERIEN_PATH,
-                'anime_separate_movies': ANIME_SEPARATE_MOVIES,
-                'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
-                'anime_movies_path': ANIME_MOVIES_PATH,
-                'serien_movies_path': SERIEN_MOVIES_PATH,
-                'port': SERVER_PORT,
-                'autostart_mode': AUTOSTART_MODE,
-                'refresh_titles': REFRESH_TITLES,
+                'languages': config.languages,
+                'min_free_gb': config.min_free_gb,
+                'download_path': str(config.download_dir),
+                'storage_mode': config.storage_mode,
+                'movies_path': config.movies_path,
+                'series_path': config.series_path,
+                'anime_path': config.anime_path,
+                'serien_path': config.serien_path,
+                'anime_separate_movies': config.anime_separate_movies,
+                'serien_separate_movies': config.serien_separate_movies,
+                'anime_movies_path': config.anime_movies_path,
+                'serien_movies_path': config.serien_movies_path,
+                'port': config.server_port,
+                'autostart_mode': config.autostart_mode,
+                'refresh_titles': config.refresh_titles,
                 'data_folder_path': data_folder
             }
             return jsonify(cfg)
@@ -3033,10 +2756,10 @@ def api_config():
     try:
         log(f"[CONFIG] POST incoming: languages={langs}, min_free_gb={min_free}, download_path={new_download_path}, storage_mode={storage_mode}, autostart={autostart}, data_folder_path={new_data_folder}")
         if isinstance(langs, list) and langs:
-            LANGUAGES = list(langs)
+            config.languages = list(langs)
             changed = True
         if min_free is not None:
-            MIN_FREE_GB = float(min_free)
+            config.min_free_gb = float(min_free)
             changed = True
         if isinstance(new_download_path, str) and new_download_path.strip():
             try:
@@ -3046,7 +2769,7 @@ def api_config():
                 except Exception:
                     resolved = new_path
                 resolved.mkdir(parents=True, exist_ok=True)
-                DOWNLOAD_DIR = resolved
+                config.download_dir = resolved
                 changed = True
             except Exception as e:
                 return jsonify({'status': 'failed', 'error': f'Ungültiger Speicherort: {e}'}), 400
@@ -3070,62 +2793,62 @@ def api_config():
         
         # Storage Mode
         if storage_mode is not None and storage_mode in ['standard', 'separate']:
-            STORAGE_MODE = storage_mode
+            config.storage_mode = storage_mode
             changed = True
         
         # Movies Path
         if movies_path is not None:
-            MOVIES_PATH = movies_path.strip()
+            config.movies_path = movies_path.strip()
             changed = True
         
         # Series Path
         if series_path is not None:
-            SERIES_PATH = series_path.strip()
+            config.series_path = series_path.strip()
             changed = True
         
         # Anime Path
         if anime_path is not None:
-            ANIME_PATH = anime_path.strip()
+            config.anime_path = anime_path.strip()
             changed = True
         
         # Serien Path
         if serien_path is not None:
-            SERIEN_PATH = serien_path.strip()
+            config.serien_path = serien_path.strip()
             changed = True
         
         # Anime Separate Movies
         if anime_separate_movies is not None:
-            ANIME_SEPARATE_MOVIES = bool(anime_separate_movies)
+            config.anime_separate_movies = bool(anime_separate_movies)
             changed = True
         
         # Serien Separate Movies
         if serien_separate_movies is not None:
-            SERIEN_SEPARATE_MOVIES = bool(serien_separate_movies)
+            config.serien_separate_movies = bool(serien_separate_movies)
             changed = True
         
         # Anime Movies Path
         if anime_movies_path is not None:
-            ANIME_MOVIES_PATH = anime_movies_path
+            config.anime_movies_path = anime_movies_path
             changed = True
         
         # Serien Movies Path
         if serien_movies_path is not None:
-            SERIEN_MOVIES_PATH = serien_movies_path
+            config.serien_movies_path = serien_movies_path
             changed = True
             
         if autostart_key_present:
             allowed = {'default', 'german', 'new', 'check-missing'}
             if autostart is None:
                 # explicit null -> clear
-                AUTOSTART_MODE = None
+                config.autostart_mode = None
                 changed = True
             elif isinstance(autostart, str):
                 mode_norm = autostart.strip().lower()
                 if mode_norm in {'', 'none', 'off', 'disabled'}:
-                    AUTOSTART_MODE = None
+                    config.autostart_mode = None
                     changed = True
                 elif mode_norm in allowed:
-                    AUTOSTART_MODE = mode_norm
+                    config.autostart_mode = mode_norm
                     changed = True
                 else:
                     return jsonify({'status': 'failed', 'error': 'invalid autostart_mode'}), 400
@@ -3134,53 +2857,53 @@ def api_config():
         # refresh_titles toggle
         if refresh_titles_val is not None:
             try:
-                REFRESH_TITLES = bool(refresh_titles_val)
+                config.refresh_titles = bool(refresh_titles_val)
                 changed = True
             except Exception:
                 pass
 
         if changed:
-            save_ok = save_config()
+            save_ok = config.save()
             # Reload from disk to ensure persistence and normalization
             try:
-                load_config()
+                config.load()
             except Exception as _e:
                 log(f"[CONFIG-ERROR] reload after save: {_e}")
-            log(f"[CONFIG] POST saved: storage_mode={STORAGE_MODE}, anime_path={ANIME_PATH}, serien_path={SERIEN_PATH}, anime_separate_movies={ANIME_SEPARATE_MOVIES}, serien_separate_movies={SERIEN_SEPARATE_MOVIES}")
+            log(f"[CONFIG] POST saved: storage_mode={config.storage_mode}, anime_path={config.anime_path}, serien_path={config.serien_path}, anime_separate_movies={config.anime_separate_movies}, serien_separate_movies={config.serien_separate_movies}")
             return jsonify({'status': 'ok' if save_ok else 'failed', 'config': {
-                'languages': LANGUAGES,
-                'min_free_gb': MIN_FREE_GB,
-                'download_path': str(DOWNLOAD_DIR),
-                'storage_mode': STORAGE_MODE,
-                'movies_path': MOVIES_PATH,
-                'series_path': SERIES_PATH,
-                'anime_path': ANIME_PATH,
-                'serien_path': SERIEN_PATH,
-                'anime_separate_movies': ANIME_SEPARATE_MOVIES,
-                'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
-                'anime_movies_path': ANIME_MOVIES_PATH,
-                'serien_movies_path': SERIEN_MOVIES_PATH,
-                'port': SERVER_PORT,
-                'autostart_mode': AUTOSTART_MODE,
-                'refresh_titles': REFRESH_TITLES,
+                'languages': config.languages,
+                'min_free_gb': config.min_free_gb,
+                'download_path': str(config.download_dir),
+                'storage_mode': config.storage_mode,
+                'movies_path': config.movies_path,
+                'series_path': config.series_path,
+                'anime_path': config.anime_path,
+                'serien_path': config.serien_path,
+                'anime_separate_movies': config.anime_separate_movies,
+                'serien_separate_movies': config.serien_separate_movies,
+                'anime_movies_path': config.anime_movies_path,
+                'serien_movies_path': config.serien_movies_path,
+                'port': config.server_port,
+                'autostart_mode': config.autostart_mode,
+                'refresh_titles': config.refresh_titles,
                 'data_folder_path': data_folder
             }})
         return jsonify({'status': 'nochange', 'config': {
-            'languages': LANGUAGES,
-            'min_free_gb': MIN_FREE_GB,
-            'download_path': str(DOWNLOAD_DIR),
-            'storage_mode': STORAGE_MODE,
-            'movies_path': MOVIES_PATH,
-            'series_path': SERIES_PATH,
-            'anime_path': ANIME_PATH,
-            'serien_path': SERIEN_PATH,
-            'anime_separate_movies': ANIME_SEPARATE_MOVIES,
-            'serien_separate_movies': SERIEN_SEPARATE_MOVIES,
-            'anime_movies_path': ANIME_MOVIES_PATH,
-            'serien_movies_path': SERIEN_MOVIES_PATH,
-            'port': SERVER_PORT,
-            'autostart_mode': AUTOSTART_MODE,
-            'refresh_titles': REFRESH_TITLES,
+            'languages': config.languages,
+            'min_free_gb': config.min_free_gb,
+            'download_path': str(config.download_dir),
+            'storage_mode': config.storage_mode,
+            'movies_path': config.movies_path,
+            'series_path': config.series_path,
+            'anime_path': config.anime_path,
+            'serien_path': config.serien_path,
+            'anime_separate_movies': config.anime_separate_movies,
+            'serien_separate_movies': config.serien_separate_movies,
+            'anime_movies_path': config.anime_movies_path,
+            'serien_movies_path': config.serien_movies_path,
+            'port': config.server_port,
+            'autostart_mode': config.autostart_mode,
+            'refresh_titles': config.refresh_titles,
             'data_folder_path': data_folder
         }})
     except Exception as e:
@@ -3281,7 +3004,7 @@ def api_queue():
 @app.route('/disk')
 def api_disk():
     try:
-        free_gb = freier_speicher_mb(str(DOWNLOAD_DIR))
+        free_gb = freier_speicher_gb(str(config.download_dir))
         return jsonify({'free_gb': free_gb})
     except Exception as e:
         log(f"[ERROR] api_disk: {e}")
@@ -3378,11 +3101,10 @@ def api_database():
         except:
             pass
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(sql, params)
-    rows = c.fetchall()
-    conn.close()
+    with db_connection() as conn:
+        c = conn.cursor()
+        c.execute(sql, params)
+        rows = c.fetchall()
 
     db_data = []
     for row in rows:
@@ -3400,6 +3122,7 @@ def api_database():
         })
     return jsonify(db_data)
 
+
 @app.route("/counts")
 def api_counts():
     """
@@ -3414,17 +3137,14 @@ def api_counts():
         series_title = None
         if anime_id and anime_id.isdigit():
             try:
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute("SELECT title FROM anime WHERE id = ?", (int(anime_id),))
-                row = c.fetchone()
-                if row and row[0]:
-                    series_title = row[0]
-            finally:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+                with db_connection() as conn:
+                    c = conn.cursor()
+                    c.execute("SELECT title FROM anime WHERE id = ?", (int(anime_id),))
+                    row = c.fetchone()
+                    if row and row[0]:
+                        series_title = row[0]
+            except Exception:
+                pass
         if not series_title:
             series_title = title
         if not series_title:
@@ -3438,19 +3158,19 @@ def api_counts():
         # Suche in allen möglichen Pfaden
         possible_paths = []
         
-        if STORAGE_MODE == 'separate':
-            if ANIME_PATH and ANIME_PATH.strip():
-                possible_paths.append(Path(ANIME_PATH))
-            if SERIEN_PATH and SERIEN_PATH.strip():
-                possible_paths.append(Path(SERIEN_PATH))
-            if MOVIES_PATH and MOVIES_PATH.strip():
-                possible_paths.append(Path(MOVIES_PATH))
-            if SERIES_PATH and SERIES_PATH.strip():
-                possible_paths.append(Path(SERIES_PATH))
+        if config.storage_mode == 'separate':
+            if config.anime_path and config.anime_path.strip():
+                possible_paths.append(Path(config.anime_path))
+            if config.serien_path and config.serien_path.strip():
+                possible_paths.append(Path(config.serien_path))
+            if config.movies_path and config.movies_path.strip():
+                possible_paths.append(Path(config.movies_path))
+            if config.series_path and config.series_path.strip():
+                possible_paths.append(Path(config.series_path))
         
         # Fallback zu DOWNLOAD_DIR
-        if not possible_paths or STORAGE_MODE == 'standard':
-            possible_paths = [Path(DOWNLOAD_DIR)]
+        if not possible_paths or config.storage_mode == 'standard':
+            possible_paths = [Path(config.download_dir)]
         
         # Suche nach dem Serien-Ordner in allen möglichen Pfaden
         base = None
@@ -3462,7 +3182,7 @@ def api_counts():
         
         # Fallback: Direkt im DOWNLOAD_DIR suchen
         if not base:
-            base = Path(DOWNLOAD_DIR) / series_title
+            base = Path(config.download_dir) / series_title
         
         per_season = {}
         total_eps = 0
@@ -3593,7 +3313,8 @@ def search_provider(query, provider_name, base_url):
             elif link.startswith('/'):
                 full_url = base_url + link
             else:
-                path_prefix = '/serie/stream/' if provider_name == 'sto' else '/anime/stream/'
+                # Provider URL patterns: s.to -> /serie/<slug>, aniworld -> /anime/stream/<slug>
+                path_prefix = '/serie/' if provider_name == 'sto' else '/anime/stream/'
                 full_url = f"{base_url}{path_prefix}{link}"
             
             # Erstelle vollständige Cover-URL
@@ -3683,30 +3404,28 @@ def api_anime_delete():
         except Exception:
             return jsonify({"status": "failed", "error": "invalid id"}), 400
 
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        # Find URL for extra cleanup
-        c.execute("SELECT url, title FROM anime WHERE id = ?", (aid,))
-        row = c.fetchone()
-        if not row:
-            conn.close()
-            return jsonify({"status": "failed", "error": "not found"}), 404
-        aurl, atitle = row[0], row[1]
-        # Clean queue by anime_id and anime_url
-        try:
-            c.execute("DELETE FROM queue WHERE anime_id = ?", (aid,))
-            c.execute("DELETE FROM queue WHERE anime_url = ?", (aurl,))
-        except Exception as e:
-            log(f"[DB-ERROR] queue cleanup on delete: {e}")
-        # Delete anime itself
-        c.execute("DELETE FROM anime WHERE id = ?", (aid,))
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            # Find URL for extra cleanup
+            c.execute("SELECT url, title FROM anime WHERE id = ?", (aid,))
+            row = c.fetchone()
+            if not row:
+                return jsonify({"status": "failed", "error": "not found"}), 404
+            aurl, atitle = row[0], row[1]
+            # Clean queue by anime_id and anime_url
+            try:
+                c.execute("DELETE FROM queue WHERE anime_id = ?", (aid,))
+                c.execute("DELETE FROM queue WHERE anime_url = ?", (aurl,))
+            except Exception as e:
+                log(f"[DB-ERROR] queue cleanup on delete: {e}")
+            # Delete anime itself
+            c.execute("DELETE FROM anime WHERE id = ?", (aid,))
         log(f"[DB] Anime gelöscht: ID {aid} • '{atitle}'")
         return jsonify({"status": "ok"})
     except Exception as e:
         log(f"[ERROR] api_anime_delete: {e}")
         return jsonify({"status": "failed", "error": str(e)}), 500
+
 
 @app.route("/anime/restore", methods=["POST"])
 def api_anime_restore():
@@ -3722,30 +3441,27 @@ def api_anime_restore():
         except Exception:
             return jsonify({"status": "failed", "error": "invalid id"}), 400
 
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT id, title FROM anime WHERE id = ?", (aid,))
-        row = c.fetchone()
-        if not row:
-            conn.close()
-            return jsonify({"status": "failed", "error": "not found"}), 404
-        # Reset state and clear deleted flag
-        c.execute(
-            """
-            UPDATE anime SET
-                complete = 0,
-                deutsch_komplett = 0,
-                deleted = 0,
-                fehlende_deutsch_folgen = '[]',
-                last_film = 0,
-                last_episode = 0,
-                last_season = 0
-            WHERE id = ?
-            """,
-            (aid,)
-        )
-        conn.commit()
-        conn.close()
+        with db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, title FROM anime WHERE id = ?", (aid,))
+            row = c.fetchone()
+            if not row:
+                return jsonify({"status": "failed", "error": "not found"}), 404
+            # Reset state and clear deleted flag
+            c.execute(
+                """
+                UPDATE anime SET
+                    complete = 0,
+                    deutsch_komplett = 0,
+                    deleted = 0,
+                    fehlende_deutsch_folgen = '[]',
+                    last_film = 0,
+                    last_episode = 0,
+                    last_season = 0
+                WHERE id = ?
+                """,
+                (aid,)
+            )
         log(f"[DB] Anime reaktiviert für erneuten Download: ID {aid}")
         queued = False
         if add_to_queue:
@@ -3758,6 +3474,7 @@ def api_anime_restore():
         log(f"[ERROR] api_anime_restore: {e}")
         return jsonify({"status": "failed", "error": str(e)}), 500
 
+
 @app.route("/check")
 def api_check():
     url = request.args.get("url")
@@ -3765,48 +3482,46 @@ def api_check():
         return jsonify({"exists": False})
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        # Prüfen, ob der Anime existiert UND nicht als gelöscht markiert ist
-        c.execute("SELECT 1 FROM anime WHERE url = ? AND deleted = 0", (url,))
-        exists = c.fetchone() is not None
+        with db_connection() as conn:
+            c = conn.cursor()
+            # Prüfen, ob der Anime existiert UND nicht als gelöscht markiert ist
+            c.execute("SELECT 1 FROM anime WHERE url = ? AND deleted = 0", (url,))
+            exists = c.fetchone() is not None
     except Exception as e:
         log(f"[ERROR] api_check: {e}")
         exists = False
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
 
     return jsonify({"exists": exists})
+
 
 @app.route("/")
 def index():
     return render_template("index.html")
+
 
 # -------------------- Entrypoint --------------------
 def AniLoader():
     load_config()
     init_db()
     import_anime_txt()
-    Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
+    Path(config.download_dir).mkdir(parents=True, exist_ok=True)
     deleted_check()
     # Alte Logs aufräumen (älter als 7 Tage)
     cleanup_old_logs(days=7)
-    if REFRESH_TITLES:
+    if config.refresh_titles:
         refresh_titles_on_start()
     log("[SYSTEM] AniLoader API starting...")
     # Autostart-Modus, falls in der Config gesetzt
     try:
-        if AUTOSTART_MODE in ("default", "german", "new", "check-missing"):
+        if config.autostart_mode in ("default", "german", "new", "check-missing", "full-check"):
             with download_lock:
                 already = (current_download.get("status") == "running")
             if not already:
-                threading.Thread(target=run_mode, args=(AUTOSTART_MODE,), daemon=True).start()
-                log(f"[SYSTEM] Autostart gestartet: {AUTOSTART_MODE}")
+                threading.Thread(target=run_mode, args=(config.autostart_mode,), daemon=True).start()
+                log(f"[SYSTEM] Autostart gestartet: {config.autostart_mode}")
     except Exception as e:
         log(f"[CONFIG-ERROR] Autostart fehlgeschlagen: {e}")
+
 
 AniLoader()
 
@@ -3816,4 +3531,4 @@ if __name__ == "__main__":
         load_config()
     except Exception:
         pass
-    app.run(host="0.0.0.0", port=SERVER_PORT, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=config.server_port, debug=False, threaded=True)

@@ -567,9 +567,7 @@ def insert_anime(url, title=None):
             except Exception:
                 title = None
             if not title:
-                # Try to derive a readable title from common URL patterns.
-                # Support aniworld (/anime/stream/<slug>) and s.to (/serie/<slug>)
-                m = re.search(r"/(?:anime/stream|serie)/([^/]+)", url)
+                m = re.search(r"/anime/stream/([^/]+)", url)
                 if m:
                     title = m.group(1).replace("-", " ").title()
                 else:
@@ -3595,8 +3593,7 @@ def search_provider(query, provider_name, base_url):
             elif link.startswith('/'):
                 full_url = base_url + link
             else:
-                # Provider URL patterns: s.to -> /serie/<slug>, aniworld -> /anime/stream/<slug>
-                path_prefix = '/serie/' if provider_name == 'sto' else '/anime/stream/'
+                path_prefix = '/serie/stream/' if provider_name == 'sto' else '/anime/stream/'
                 full_url = f"{base_url}{path_prefix}{link}"
             
             # Erstelle vollständige Cover-URL
