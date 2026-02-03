@@ -3792,8 +3792,8 @@ def AniLoader():
     import_anime_txt()
     Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
     deleted_check()
-    # Alte Logs aufräumen (älter als 7 Tage)
-    cleanup_old_logs(days=7)
+    # Alte Logs aufräumen (älter als 3 Tage)
+    cleanup_old_logs(days=3)
     if REFRESH_TITLES:
         refresh_titles_on_start()
     log("[SYSTEM] AniLoader API starting...")
