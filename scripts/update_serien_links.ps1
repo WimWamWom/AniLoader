@@ -26,6 +26,9 @@ Write-Host "Backup created: $backup"
 $selectSql = "SELECT COUNT(*) FROM anime WHERE url LIKE '%/serie/stream/%';"
 $updateSql = "UPDATE anime SET url = REPLACE(url, '/serie/stream/', '/serie/') WHERE url LIKE '%/serie/stream/%';"
 
+$selectSql2 = "SELECT COUNT(*) FROM anime WHERE fehlende_deutsch_folgen LIKE '%/serie/stream/%';"
+$updateSql2 = "UPDATE anime SET fehlende_deutsch_folgen = REPLACE(fehlende_deutsch_folgen, '/serie/stream/', '/serie/') WHERE fehlende_deutsch_folgen LIKE '%/serie/stream/%';"
+
 function Run-WithSqliteCli {
     param($db, $sql)
     $exe = "sqlite3"
@@ -37,10 +40,17 @@ function Run-WithSqliteCli {
 if (Get-Command sqlite3 -ErrorAction SilentlyContinue) {
     try {
         $before = Run-WithSqliteCli -db $DbPath -sql $selectSql
-        Write-Host "Entries matching before: $before"
+        Write-Host "Entries matching (url) before: $before"
         Run-WithSqliteCli -db $DbPath -sql $updateSql | Out-Null
         $after = Run-WithSqliteCli -db $DbPath -sql $selectSql
-        Write-Host "Entries matching after: $after"
+        Write-Host "Entries matching (url) after: $after"
+
+        # fehlende_deutsch_folgen
+        $before2 = Run-WithSqliteCli -db $DbPath -sql $selectSql2
+        Write-Host "Entries matching (fehlende_deutsch_folgen) before: $before2"
+        Run-WithSqliteCli -db $DbPath -sql $updateSql2 | Out-Null
+        $after2 = Run-WithSqliteCli -db $DbPath -sql $selectSql2
+        Write-Host "Entries matching (fehlende_deutsch_folgen) after: $after2"
         Write-Host "Done."
         exit 0
     } catch {
@@ -54,12 +64,20 @@ import sqlite3,sys
 db = r'${DbPath}'
 conn = sqlite3.connect(db)
 c = conn.cursor()
+# url field
 before = c.execute("SELECT COUNT(*) FROM anime WHERE url LIKE '%/serie/stream/%'").fetchone()[0]
 print(before)
 c.execute("UPDATE anime SET url = REPLACE(url, '/serie/stream/', '/serie/') WHERE url LIKE '%/serie/stream/%'")
 conn.commit()
 after = c.execute("SELECT COUNT(*) FROM anime WHERE url LIKE '%/serie/stream/%'").fetchone()[0]
 print(after)
+# fehlende_deutsch_folgen field
+before2 = c.execute("SELECT COUNT(*) FROM anime WHERE fehlende_deutsch_folgen LIKE '%/serie/stream/%'").fetchone()[0]
+print(before2)
+c.execute("UPDATE anime SET fehlende_deutsch_folgen = REPLACE(fehlende_deutsch_folgen, '/serie/stream/', '/serie/') WHERE fehlende_deutsch_folgen LIKE '%/serie/stream/%'")
+conn.commit()
+after2 = c.execute("SELECT COUNT(*) FROM anime WHERE fehlende_deutsch_folgen LIKE '%/serie/stream/%'").fetchone()[0]
+print(after2)
 conn.close()
 "@
     try {
