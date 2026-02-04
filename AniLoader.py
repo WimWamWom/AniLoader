@@ -917,9 +917,14 @@ def get_series_title(url):
             r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
-        title = soup.select_one("div.series-title h1 span")
-        if title and title.text.strip():
-            return sanitize_title(title.text.strip())
+        # Try multiple selectors: prefer span inside h1, then h1 text, then specific h1 class
+        title_elem = (
+            soup.select_one("div.series-title h1 span")
+            or soup.select_one("div.series-title h1")
+            or soup.select_one("h1.h2.mb-1.fw-bold")
+        )
+        if title_elem and title_elem.text and title_elem.text.strip():
+            return sanitize_title(title_elem.text.strip())
     except Exception as e:
         log(f"[FEHLER] Konnte Serien-Titel nicht abrufen ({url}): {e}")
     return None
