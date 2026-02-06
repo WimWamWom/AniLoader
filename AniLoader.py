@@ -3452,7 +3452,7 @@ def search_provider(query, provider_name, base_url):
             elif link.startswith('/'):
                 full_url = base_url + link
             else:
-                path_prefix = '/serie/stream/' if provider_name == 'sto' else '/anime/stream/'
+                path_prefix = '/serie/' if provider_name == 'sto' else '/anime/stream/'
                 full_url = f"{base_url}{path_prefix}{link}"
             
             # Erstelle vollständige Cover-URL
