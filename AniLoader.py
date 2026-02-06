@@ -1522,8 +1522,22 @@ def download_episode(series_title, episode_url, season, episode, anime_id, germa
 def download_films(series_title, base_url, anime_id, german_only=False, start_film=1):
     film_num = start_film
     log(f"[INFO] Starte Filmprüfung ab Film {start_film}")
+    
+    # Bestimme Content-Type anhand der URL
+    is_sto = False
+    try:
+        hostname = urlparse(base_url).hostname
+        if hostname and 's.to' in hostname.lower():
+            is_sto = True
+    except Exception:
+        pass
+    
     while True:
-        film_url = f"{base_url}/filme/film-{film_num}"
+        # s.to verwendet /staffel-0/episode-X für Filme, aniworld.to verwendet /filme/film-X
+        if is_sto:
+            film_url = f"{base_url}/staffel-0/episode-{film_num}"
+        else:
+            film_url = f"{base_url}/filme/film-{film_num}"
         result = download_episode(series_title, film_url, 0, film_num, anime_id, german_only)
         
         if result == "NO_SPACE":
@@ -1625,8 +1639,15 @@ def full_check_anime(series_title, base_url, anime_id):
     last_found_film = 0  # Track letzten gefundenen Film
     films_complete = False  # Track ob alle Filme durchgelaufen sind (keine weiteren verfügbar)
     
+    # Bestimme, ob s.to oder aniworld.to für Film-URLs
+    is_sto = (content_type == 'serie')  # s.to für Serien
+    
     while consecutive_missing_films < 3:  # Stoppe nach 3 fehlenden Filmen
-        film_url = f"{base_url}/filme/film-{film_num}"
+        # s.to verwendet /staffel-0/episode-X für Filme, aniworld.to verwendet /filme/film-X
+        if is_sto:
+            film_url = f"{base_url}/staffel-0/episode-{film_num}"
+        else:
+            film_url = f"{base_url}/filme/film-{film_num}"
         
         # Prüfe ob Film lokal existiert (nutze episode_already_downloaded)
         if episode_already_downloaded(series_folder, 0, film_num, in_dedicated_movies_folder):
