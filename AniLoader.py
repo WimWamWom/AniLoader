@@ -1331,6 +1331,20 @@ def run_download(cmd):
         
         if process.returncode == 0:
             log(f"[CLI] Download erfolgreich abgeschlossen")
+            # Log CLI stdout for debugging (truncated)
+            try:
+                snippet = (out or "").strip()
+                if len(snippet) > 1000:
+                    snippet = snippet[:1000] + "..."
+                if snippet:
+                    log(f"[CLI-OUTPUT] {snippet}")
+                    # Detect known aniworld failure messages even when returncode == 0
+                    low = snippet.lower()
+                    if "no anime provided to execute" in low or "invalid episode link format" in low:
+                        log("[CLI] Detected aniworld failure message despite exit code 0")
+                        return "FAILED"
+            except Exception:
+                pass
             # Warte zusätzlich 3 Sekunden damit Dateien vollständig geschrieben werden
             time.sleep(3)
             return "OK"
