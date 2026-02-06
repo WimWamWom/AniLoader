@@ -4,4 +4,4 @@ requests
 beautifulsoup4
 dnspython
 aniworld
-waitress 
+waitress
