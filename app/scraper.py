@@ -2,7 +2,8 @@
 AniLoader – HTML-Scraper für aniworld.to und s.to.
 
 Extrahiert Serien-Titel, Staffeln, Episoden und verfügbare Sprachen.
-Nutzt niquests mit DNS-over-HTTPS für blockadefreien Zugriff.
+Nutzt niquests mit DNS-over-HTTPS, mit automatischem Fallback auf System-DNS
+falls DoH im Netzwerk blockiert ist (z.B. Firmennetz).
 """
 
 import re
@@ -17,35 +18,63 @@ from .logger import log
 # ──────────────────────── HTTP Session ────────────────────────
 
 _session: Optional[Session] = None
+_dns_mode: str = "doh"  # 'doh' | 'system'
 
 
-def _get_session() -> Session:
-    """Lazy-Init einer niquests-Session mit DNS-over-HTTPS."""
-    global _session
-    if _session is None:
-        _session = Session(
-            resolver=["doh+google://"],
-            headers={
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/125.0.0.0 Safari/537.36"
-                ),
-                "Referer": "https://aniworld.to/",
-            },
-        )
+def _get_session(force_new: bool = False) -> Session:
+    """Lazy-Init einer niquests-Session. Versucht DoH, fällt auf System-DNS zurück."""
+    global _session, _dns_mode
+    if _session is not None and not force_new:
+        return _session
+
+    resolver = ["doh+google://"] if _dns_mode == "doh" else None
+    _session = Session(
+        resolver=resolver,
+        headers={
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://aniworld.to/",
+        },
+    )
     return _session
 
 
 def _fetch(url: str) -> str:
-    """Fetch HTML für eine URL."""
-    resp = _get_session().get(url, timeout=15)
-    resp.raise_for_status()
-    text = str(resp.text)
-    return text
+    """Fetch HTML für eine URL. Fällt auf System-DNS zurück, wenn DoH fehlschlägt."""
+    global _dns_mode, _session
+    try:
+        resp = _get_session().get(url, timeout=15)
+        resp.raise_for_status()
+        return str(resp.text)
+    except Exception as e:
+        if _dns_mode == "doh":
+            log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
+            _dns_mode = "system"
+            _session = None  # Session neu erstellen
+            resp = _get_session(force_new=True).get(url, timeout=15)
+            resp.raise_for_status()
+            return str(resp.text)
+        raise
+
+
+def _post(url: str, **kwargs):
+    """POST-Request mit DNS-Fallback."""
+    global _dns_mode, _session
+    try:
+        return _get_session().post(url, **kwargs)
+    except Exception as e:
+        if _dns_mode == "doh":
+            log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
+            _dns_mode = "system"
+            _session = None
+            return _get_session(force_new=True).post(url, **kwargs)
+        raise
 
 
 # ──────────────────────── URL-Hilfsfunktionen ────────────────────────
@@ -526,7 +555,7 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
 
     if platform in ("aniworld", "both"):
         try:
-            resp = _get_session().post(
+            resp = _post(
                 "https://aniworld.to/ajax/search",
                 data={"keyword": query},
                 timeout=10,
@@ -547,7 +576,7 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
 
     if platform in ("sto", "both"):
         try:
-            resp = _get_session().post(
+            resp = _post(
                 "https://s.to/ajax/search",
                 data={"keyword": query},
                 timeout=10,

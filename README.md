@@ -1,598 +1,565 @@
-<a id="readme-top"></a>
+<p align="center">
+  <img src="web/static/AniLoader.png" alt="AniLoader Logo" width="200">
+</p>
 
-[English README](README_en.md) | [Docker Dokumentation](README_DOCKER.md)
+<h1 align="center">AniLoader</h1>
 
-# <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> AniLoader
+<p align="center">
+  <strong>Anime &amp; Serien Download-Manager mit Web-Interface</strong><br>
+  Automatisches Herunterladen von Anime und Serien von aniworld.to und s.to<br>
+  mit Jellyfin-kompatibler Ordnerstruktur.
+</p>
 
-<ins><strong>In Arbeit, aber bereits funktionsfähig</strong></ins><br/>
-Dieser Downloader basiert auf dem Projekt <a href="https://github.com/phoenixthrush/AniWorld-Downloader" target="_blank" rel="noreferrer">AniWorld-Downloader</a> von <a href="https://github.com/phoenixthrush" target="_blank" rel="noreferrer">phoenixthrush</a> und nutzt dessen CLI <code>aniworld</code> für die eigentlichen Downloads.
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/Unraid-compatible-F15A2C?logo=unraid&logoColor=white" alt="Unraid">
+</p>
 
-AniLoader ist ein Python-Tool mit optionalem Webinterface, das Animes von <a href="https://aniworld.to/" target="_blank" rel="noreferrer">AniWorld</a> und Serien von <a href="https://s.to/" target="_blank" rel="noreferrer">SerienStream</a> automatisch laden und sauber in Ordnern (Staffeln/Episoden/Filme) ablegen kann. Der Fokus liegt auf deutschen Versionen (German Dub). Eine SQLite-Datenbank hält den Fortschritt fest, erkennt fehlende deutsche Folgen und vermeidet Dubletten.
+---
 
-## Inhalt
+## Inhaltsverzeichnis
 
-- [Funktion](#funktion)
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Voraussetzungen](#voraussetzungen)
 - [Installation](#installation)
-  - [1. Voraussetzungen](#1-voraussetzungen)
-  - [2. Repository klonen](#2-repository-klonen)
-  - [3. Abhängigkeiten installieren](#3-abhängigkeiten-installieren)
-  - [4. Download-Liste anlegen](#4-download-liste-anlegen)
-- [Nutzung](#nutzung)
-  - [CLI (ohne Webinterface)](#cli-ohne-webinterface)
-  - [Webinterface (Flask/Waitress)](#webinterface-flaskwaitress)
-  - [Dateistruktur](#dateistruktur)
+  - [Lokal (Windows / Linux)](#lokal-windows--linux)
+  - [Docker / Docker Compose](#docker--docker-compose)
+  - [Unraid](#unraid)
 - [Konfiguration](#konfiguration)
-- [Web-UI Features](#web-ui-features)
-- [Unraid Integration & Automatisierung](#unraid-integration--automatisierung)
-- [Log-System](#log-system)
-- [API](#api)
-  - [Start Download](#start-download)
-  - [Status](#status)
-  - [Logs](#logs)
-  - [Last Run](#last-run)
-  - [Disk](#disk)
-  - [Config](#config)
-  - [Datenbank](#datenbank)
-  - [Counts](#counts)
-  - [Export](#export)
-  - [Check](#check)
-  - [Queue](#queue)
-- [Tampermonkey](#tampermonkey)
-- [Hinweise](#hinweise)
-- [Beispiele](#beispiele)
-- [Debugging & Troubleshooting](#debugging--troubleshooting)
-- [Lizenz](#lizenz)
+  - [config.yaml](#configyaml)
+  - [Speicher-Modi](#speicher-modi)
+  - [Sprachpriorität](#sprachpriorität)
+- [Benutzung](#benutzung)
+  - [Web-Interface](#web-interface)
+  - [Download-Modi](#download-modi)
+  - [Serien hinzufügen](#serien-hinzufügen)
+  - [Tampermonkey Browser-Skript](#tampermonkey-browser-skript)
+- [API-Referenz](#api-referenz)
+- [Projektstruktur](#projektstruktur)
+- [Technische Details](#technische-details)
+- [FAQ / Fehlerbehebung](#faq--fehlerbehebung)
 
-## Funktion
+---
 
-### Features
-- Import von Serien-Links aus <code>AniLoader.txt</code>
-- Fortschrittsverwaltung in SQLite (welche Staffeln/Episoden/Filme sind geladen, fehlende deutsche Folgen, „komplett“ usw.)
-- Sprach-Priorität in dieser Reihenfolge (konfigurierbar):
-  1. German Dub
-  2. German Sub
-  3. English Dub
-  4. English Sub
-- Bereits vorhandene Folgen werden erkannt und übersprungen
-- Automatisches Löschen alter Nicht-Dub-Versionen, sobald German Dub vorhanden ist
-- Sauberes Umbenennen nach Schema: <code>S01E023 - Episodentitel [English Sub].mp4</code> bzw. <code>Film01 - Titel.mp4</code>
-- Ordnerstruktur: <code>Downloads/Serie/Staffel N/*.mp4</code> und <code>Downloads/Serie/Filme/*.mp4</code>
-- Modi: kompletter Lauf, nur neue Inhalte, nur deutsche Nachlieferungen, und Prüfung auf fehlende Dateien
-- Webinterface: Fortschritt, Logs, Datenbank-Ansicht, Speicheranzeige, Queue („Als nächstes“)
+## Features
+
+| Feature | Beschreibung |
+|---|---|
+| 🌐 **Web-Interface** | Dark-Theme Web-UI mit 4 Tabs – Download, Hinzufügen, Datenbank, Einstellungen |
+| 📥 **4 Download-Modi** | Standard, German, Neue Episoden, Integritäts-Check |
+| 🔍 **Integrierte Suche** | Durchsuche aniworld.to und s.to direkt aus dem Interface |
+| 🇩🇪 **Sprachpriorität** | Konfigurierbare Sprachreihenfolge mit automatischem Fallback |
+| 📁 **Jellyfin-kompatibel** | Automatische Ordnerstruktur `Title (Year) [imdbid-xxx]/Season ss/` |
+| 💾 **SQLite Datenbank** | Verwaltet alle Serien mit Status, Fortschritt und fehlenden Episoden |
+| 🔒 **DNS-over-HTTPS** | Umgeht ISP-DNS-Sperren automatisch über Google DoH |
+| 🐋 **Docker & Unraid** | Fertige Docker-Images mit Health-Check und Volume-Mounts |
+| 🧩 **Tampermonkey-Skript** | Ein-Klick-Download direkt von der aniworld.to / s.to Seite |
+| 📊 **Live-Status** | Echtzeit-Fortschritt mit Auto-Polling im Browser |
+| 📤 **Bulk-Import** | TXT-Datei hochladen oder Drag & Drop für viele URLs auf einmal |
+| ⚙️ **YAML Konfiguration** | Alle Einstellungen über Web-UI oder `config.yaml` änderbar |
+
+---
+
+## Screenshots
+
+> Das Web-Interface ist unter `http://<ip>:5050` erreichbar und bietet 4 Tabs:
+
+### Download-Tab
+- **Steuerung**: 4 Download-Modi starten / stoppen
+- **Live-Status**: Aktuelle Serie, Staffel, Episode, Modus
+- **Fortschritt**: Heruntergeladen / Übersprungen / Fehlgeschlagen
+- **Log-Ausgabe**: Echtzeit-Log des aktuellen Laufs
+
+### Hinzufügen-Tab
+- **Link einfügen**: Einzelne URL hinzufügen
+- **TXT-Upload**: Datei mit URLs hochladen (Drag & Drop)
+- **Suche**: Direkt nach Animes/Serien suchen (Plattform wählbar)
+
+### Datenbank-Tab
+- **Übersichtstabelle**: Alle Serien mit Status, Typ, DE-Verfügbarkeit, Fortschritt
+- **Sortierung**: Klick auf Spaltenköpfe zum Sortieren
+- **Filter**: Suchfeld + „Gelöschte anzeigen" Toggle
+- **Aktionen**: Löschen / Wiederherstellen pro Eintrag
+
+### Einstellungen-Tab
+- **Server-Port**: Anpassbar
+- **Sprachpriorität**: Drag & Drop Reihenfolge
+- **Speicher-Modus**: Standard oder separate Pfade
+- **Download-Einstellungen**: Min. freier Speicher, Timeout, Autostart
+
+---
+
+## Voraussetzungen
+
+### Lokal
+- **Python 3.11+**
+- **ffmpeg** (wird von `aniworld` CLI benötigt)
+- **aniworld** (wird automatisch über `requirements.txt` installiert)
+
+### Docker
+- **Docker** und **Docker Compose**
+- Sonst nichts – alles ist im Image enthalten
+
+---
 
 ## Installation
 
-### 1. Voraussetzungen
-- Empfohlen: Python 3.9 oder neuer (getestet mit 3.13)
-- Betriebssystem: Windows, Linux oder macOS (Windows bevorzugt, da Waitress im README gezeigt wird)
-
-### 2. Repository klonen
-```bash
-git clone https://github.com/WimWamWom/AniLoader
-```
-
-### 3. Abhängigkeiten installieren
-Installiere alle benötigten Pakete in einem Schritt:
-```bash
-pip install requests beautifulsoup4 flask flask_cors aniworld waitress
-```
-
-Optional (für DNS-Override bei Titelabfragen via 1.1.1.1):
-```bash
-pip install dnspython
-```
-
-Prüfen, ob das Downloader-CLI vorhanden ist:
-```bash
-aniworld --help
-```
-
-### 4. Download-Liste anlegen
-Lege im Projektordner eine Datei <code>AniLoader.txt</code> an und trage je Zeile genau einen Serienlink ein (Basis-URL, keine Episoden-URL), z. B.:
-
-```
-https://aniworld.to/anime/stream/naruto
-https://s.to/serie/stream/the-rookie
-```
-
-## Nutzung
-
-### CLI (ohne Webinterface)
-Das CLI-Skript ist <code>downloader.py</code>. Start:
+### Lokal (Windows / Linux)
 
 ```bash
-py downloader.py [mode]
+# 1. Repository klonen
+git clone https://github.com/WimWamWom/AniLoader.git
+cd AniLoader/claude-code
+
+# 2. Virtuelle Umgebung erstellen (empfohlen)
+python -m venv venv
+
+# Windows:
+venv\Scripts\activate
+
+# Linux/Mac:
+source venv/bin/activate
+
+# 3. Abhängigkeiten installieren
+pip install -r requirements.txt
+
+# 4. ffmpeg installieren (falls noch nicht vorhanden)
+# Windows: https://www.gyan.dev/ffmpeg/builds/ → PATH hinzufügen
+# Linux:   sudo apt install ffmpeg
+# Mac:     brew install ffmpeg
+
+# 5. Starten
+python main.py
 ```
 
-Modi:
-- <code>default</code> (Standard): kompletter Lauf über Filme und Staffeln; lädt Inhalte gemäß Sprach-Priorität; markiert ggf. komplett
-- <code>german</code>: versucht ausschließlich Einträge aus „fehlende_deutsch_folgen“ in German Dub nachzuladen
-- <code>new</code>: prüft ab den gespeicherten <code>last_*</code>-Werten auf neue Filme/Staffeln/Episoden
-- <code>check-missing</code>: versucht fehlende Dateien anhand DB- und Dateisystem-Infos nachzuladen
-- <code>full-check</code>: kompletter Check von Anfang an (Filme ab 1, Staffeln ab 1/Episode 1) für alle Serien; vorhandene Dateien werden übersprungen
+Der Server startet auf `http://localhost:5050`.
 
-Beispiele:
+### Docker / Docker Compose
+
 ```bash
-py downloader.py
-py downloader.py german
-py downloader.py new
-py downloader.py check-missing
-py downloader.py full-check
+# 1. Repository klonen
+git clone https://github.com/WimWamWom/AniLoader.git
+cd AniLoader/claude-code
+
+# 2. Bauen und starten
+docker compose up -d
+
+# Logs anzeigen
+docker compose logs -f
 ```
 
-Hinweise:
-- <code>Downloads/</code> wird automatisch erzeugt
-- Minimale Restkapazität ist konfigurierbar (Standard 2 GB); unterhalb wird abgebrochen
-- <code>aniworld</code> muss im PATH liegen
-
-### Webinterface (Flask/Waitress)
-
-- Entwicklungsstart (lokal):
-```bash
-py AniLoader.py
+**docker-compose.yml** anpassen:
+```yaml
+services:
+  aniloader:
+    build: .
+    container_name: aniloader
+    ports:
+      - "5050:5050"          # Port nach Bedarf ändern
+    volumes:
+      - ./data:/app/data      # DB, Config, Logs
+      - ./Downloads:/app/Downloads  # Standard-Download-Ordner
+      # Separate Pfade (optional):
+      # - /mnt/media/anime:/animes
+      # - /mnt/media/serien:/serien
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
 ```
 
-- Produktion unter Windows (empfohlen):
-```bash
-python -m waitress --host=0.0.0.0 --port=5050 AniLoader:app
-```
+### Unraid
 
-Aufruf: http://localhost:5050
+1. **Docker Template** über Community Applications oder manuell erstellen
+2. **Repository**: `https://github.com/WimWamWom/AniLoader`
+3. **Ports**: Container-Port `5050` → Host-Port `5050`
+4. **Pfade**:
 
-### Dateistruktur
+| Container-Pfad | Host-Pfad | Beschreibung |
+|---|---|---|
+| `/app/data` | `/mnt/user/appdata/aniloader` | Datenbank, Config, Logs |
+| `/app/Downloads` | `/mnt/user/data/media/anime` | Download-Verzeichnis |
 
-```
-AniLoader/
-├─ AniLoader.py             # Webserver + Logik
-├─ downloader.py            # CLI-Variante (ohne Webserver)
-├─ AniLoader.txt            # Import-Liste der Serien-URLs
-├─ data/
-│  ├─ AniLoader.db         # SQLite-Datenbank
-│  └─ config.json          # Konfiguration (languages, min_free_gb, download_path, port, autostart_mode)
-├─ Downloads/              # Zielordner der Dateien
-│  └─ <Serienname>/
-│     ├─ Filme/
-│     └─ Staffel 1/, Staffel 2/, ...
-├─ templates/              # HTML
-├─ static/                 # CSS/JS
-└─ README.md
-```
+5. **Icon URL**: `https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png`
+
+---
 
 ## Konfiguration
 
-Die Konfigurationsdatei liegt unter <code>data/config.json</code>. Fehlende Einträge werden beim Start automatisch ergänzt und die Datei wird übersichtlich formatiert gespeichert.
+AniLoader erstellt beim ersten Start automatisch eine `config.yaml` im `data/` Ordner. Alle Einstellungen können über das Web-Interface (Tab „Einstellungen") oder direkt in der Datei geändert werden.
 
-Wichtige Schlüssel:
-- <code>languages</code>: Reihenfolge der zu prüfenden Sprachen (Standard: German Dub → German Sub → English Dub → English Sub)
-- <code>min_free_gb</code>: Mindest-freier Speicher in GB; darunter werden Downloads abgebrochen (Standard: 2.0)
-- <code>download_path</code>: Ziel-Stammordner für alle Downloads (Standard: <code>./Downloads</code>); wird automatisch angelegt
-- <code>port</code>: Port des Webservers (nur per Datei änderbar; hat keine Wirkung im CLI-Betrieb)
-- <code>autostart_mode</code>: Optionaler Autostart-Modus für das Webinterface (<code>default</code>|<code>german</code>|<code>new</code>|<code>check-missing</code>|<code>full-check</code>)
-- <code>refresh_titles</code>: Aktualisiert Serien-Titel beim Start (Standard: <code>true</code>). Gilt sowohl für das Webinterface als auch für <code>downloader.py</code>.
+### config.yaml
 
-Hinweise:
-- Für das CLI (<code>downloader.py</code>) wird <code>download_path</code> genutzt; <code>port</code> ist dort ohne Wirkung.
-- Bei der ersten Ausführung wird <code>download_path</code> gesetzt, falls noch nicht vorhanden, und der Ordner angelegt.
+```yaml
+server:
+  port: 5050
 
-### DNS für Titelabfragen (optional)
-- AniLoader kann die DNS-Auflösung für die reinen Titelabfragen (HTML-Requests in <code>get_series_title</code>/<code>get_episode_title</code>) gezielt über Cloudflare DNS <code>1.1.1.1</code> durchführen.
-- Dafür wird optional <code>dnspython</code> genutzt. Ist es installiert, werden die Ziel-Hosts für diese Requests via <code>1.1.1.1</code> aufgelöst. Ist es nicht installiert, verwendet AniLoader einfach dein System-DNS (Fallback, keine Fehler).
-- Es werden keine System- oder Router-Einstellungen geändert. Der DNS-Override gilt ausschließlich für die genannten Titelabfragen und lässt TLS/SNI unberührt (es wird weiterhin per Hostname verbunden).
+languages:
+  - German Dub
+  - German Sub
+  - English Sub
+  - English Dub
 
-Optional aktivieren:
+storage:
+  mode: standard                    # standard | separate
+  download_path: /app/Downloads     # Haupt-Download-Pfad
+  anime_path: /app/Downloads/Anime
+  series_path: /app/Downloads/Serien
+  anime_movies_path: /app/Downloads/Anime-Filme
+  serien_movies_path: /app/Downloads/Serien-Filme
+  anime_separate_movies: false
+  serien_separate_movies: false
+
+download:
+  min_free_gb: 2.0                  # Mindest-Speicherplatz (GB)
+  autostart_mode: null              # null | default | german | new | check
+  timeout_seconds: 900              # Timeout pro Episode (Sekunden)
+
+data:
+  folder: /app/data                 # Pfad für DB, Logs, Config
+```
+
+### Speicher-Modi
+
+#### Standard-Modus (`storage.mode: standard`)
+Alle Downloads landen in **einem Ordner** (`storage.download_path`):
+```
+Downloads/
+├── Naruto (2002) [imdbid-tt0409591]/
+│   ├── Season 01/
+│   │   ├── Naruto S01E001.mkv
+│   │   └── ...
+│   └── Season 02/
+└── Breaking Bad (2008) [imdbid-tt0903747]/
+    ├── Season 01/
+    └── ...
+```
+
+#### Separate-Modus (`storage.mode: separate`)
+Anime und Serien werden in **verschiedene Ordner** sortiert. Optional können Filme nochmal separat gespeichert werden:
+```
+Anime/
+├── Naruto (2002) [imdbid-tt0409591]/
+│   ├── Season 00/   ← Filme
+│   ├── Season 01/
+│   └── ...
+
+Serien/
+├── Breaking Bad (2008) [imdbid-tt0903747]/
+│   └── ...
+
+Anime-Filme/      ← Optional (anime_separate_movies: true)
+├── Naruto (2002) [imdbid-tt0409591]/
+│   └── Season 00/
+```
+
+### Sprachpriorität
+
+Die Sprachen in der Liste werden **von oben nach unten** durchprobiert. Wenn die erste Sprache für eine Episode nicht verfügbar ist, wird die nächste versucht.
+
+| Sprache | Beschreibung |
+|---|---|
+| `German Dub` | Deutsche Synchronfassung |
+| `German Sub` | Japanisch/Englisch mit deutschen Untertiteln |
+| `English Sub` | Japanisch mit englischen Untertiteln |
+| `English Dub` | Englische Synchronfassung |
+
+Die Reihenfolge kann im Web-Interface per **Drag & Drop** geändert werden.
+
+---
+
+## Benutzung
+
+### Web-Interface
+
+Nach dem Start ist das Interface unter `http://localhost:5050` (oder konfiguriertem Port) erreichbar.
+
+<p align="center">
+  <img src="web/static/AniLoader.png" alt="AniLoader" width="80">
+</p>
+
+### Download-Modi
+
+AniLoader bietet 4 Download-Modi, die jeweils einen unterschiedlichen Zweck erfüllen:
+
+#### ▶ Standard (`default`)
+- Lädt **alle nicht-vollständigen** Serien aus der Datenbank herunter
+- Nutzt die konfigurierte Sprachpriorität mit automatischem Fallback
+- Markiert Serien nach Abschluss als „komplett"
+- Speichert den Fortschritt (letzte Staffel/Episode) in der DB
+- Trackt fehlende deutsche Episoden für den German-Modus
+
+#### 🇩🇪 German (`german`)
+- Prüft alle Serien auf **fehlende deutsche Episoden**
+- Versucht, fehlende Videos in „German Dub" erneut herunterzuladen
+- Nützlich, wenn deutsche Synchros nachträglich erscheinen
+- Markiert `deutsch_komplett` in der DB wenn alles da ist
+
+#### 🆕 Neue Episoden (`new`)
+- Prüft **alle Serien** (auch vollständige) auf neue Episoden
+- Vergleicht mit dem zuletzt gespeicherten Stand (Staffel/Episode)
+- Ideal als regelmäßiger Cronjob / Autostart
+
+#### 🔍 Check (`check`)
+- **Integritätsprüfung** aller Downloads
+- Prüft: Datei existiert? Größe > 1 MB? Keine .part/.temp-Dateien?
+- Defekte oder fehlende Dateien werden automatisch erneut heruntergeladen
+
+### Serien hinzufügen
+
+Es gibt **4 Wege**, Serien zur Datenbank hinzuzufügen:
+
+1. **Web-UI → Link einfügen**: URL direkt eingeben
+2. **Web-UI → TXT-Upload**: Textdatei mit einer URL pro Zeile hochladen (Drag & Drop)
+3. **Web-UI → Suche**: Nach Titel suchen und per Klick hinzufügen
+4. **Tampermonkey-Skript**: Button direkt auf aniworld.to / s.to
+
+**Unterstützte URL-Formate:**
+```
+https://aniworld.to/anime/stream/naruto
+https://aniworld.to/anime/stream/naruto/staffel-1
+https://s.to/serie/stream/breaking-bad
+https://s.to/serie/stream/breaking-bad/staffel-2
+```
+
+### Tampermonkey Browser-Skript
+
+Das Tampermonkey-Skript fügt auf jeder Serien-Seite von aniworld.to und s.to einen **Download-Button** ein.
+
+#### Installation
+
+1. **Tampermonkey** Browser-Extension installieren:
+   - [Chrome](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
+   - [Firefox](https://addons.mozilla.org/de/firefox/addon/tampermonkey/)
+   - [Edge](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
+
+2. **Skript installieren**: `Tampermonkey.user.js` öffnen → „Install"
+
+3. **Server-Adresse konfigurieren** – im Skript die Verbindungsdaten anpassen:
+
+```javascript
+// Option A: Domain (z.B. hinter Reverse Proxy)
+const USE_DOMAIN    = true;
+const SERVER_DOMAIN = "aniloader.example.com";
+const USE_HTTPS     = true;
+
+// Option B: Direkte IP (z.B. im lokalen Netzwerk)
+const USE_DOMAIN    = false;
+const SERVER_IP     = "192.168.1.100";
+const SERVER_PORT   = 5050;
+
+// Basic-Auth (optional, falls hinter nginx mit Passwortschutz)
+const USE_AUTH  = false;
+const AUTH_USER = "";
+const AUTH_PASS = "";
+```
+
+#### Button-Zustände
+
+| Button | Bedeutung |
+|---|---|
+| 📤 **Downloaden** | Serie noch nicht in der DB – Klick fügt hinzu & startet Download |
+| 📄 **In der Liste** | Serie ist in der DB, wartet auf Download |
+| ⬇️ **Wird geladen…** | Wird gerade heruntergeladen |
+| ✅ **Gedownloaded** | Alle Episoden komplett |
+| ⛔ **Server offline** | AniLoader-Server nicht erreichbar |
+
+---
+
+## API-Referenz
+
+AniLoader stellt eine REST-API bereit, die auch vom Web-Interface und dem Tampermonkey-Skript genutzt wird. Swagger-Docs sind verfügbar unter `http://localhost:5050/docs`.
+
+### Endpunkte
+
+| Methode | Pfad | Beschreibung |
+|---|---|---|
+| `GET` | `/` | Web-Interface (HTML) |
+| `GET` | `/health` | Health-Check (`{"status": "ok"}`) |
+| `GET` | `/status` | Aktueller Download-Status |
+| `POST` | `/start_download` | Download starten (`{"mode": "default"}`) |
+| `GET` | `/start_download?mode=default` | Download starten (GET-Variante) |
+| `POST` | `/stop_download` | Download stoppen |
+| `GET` | `/database` | Alle Einträge (`?q=`, `?sort=`, `?dir=`, `?include_deleted=`) |
+| `GET` | `/database/stats` | DB-Statistiken |
+| `POST` | `/export` | URL hinzufügen (`{"url": "..."}`) – Tampermonkey-kompatibel |
+| `POST` | `/add_link` | URL hinzufügen (Web-UI) |
+| `DELETE` | `/anime/{id}` | Eintrag löschen (`?hard=true` für permanentes Löschen) |
+| `POST` | `/anime/{id}/restore` | Gelöschten Eintrag wiederherstellen |
+| `PUT` | `/anime/{id}` | Eintrag aktualisieren |
+| `POST` | `/upload_txt` | TXT-Datei mit URLs importieren (multipart/form-data) |
+| `POST` | `/search` | Suche (`{"query": "...", "platform": "both"}`) |
+| `GET` | `/config` | Aktuelle Konfiguration |
+| `POST` | `/config` | Konfiguration aktualisieren |
+| `GET` | `/disk` | Freier Speicherplatz |
+| `GET` | `/logs` | Alle Logs |
+| `GET` | `/last_run` | Log des letzten/aktuellen Laufs |
+| `GET` | `/counts/{id}` | Episoden-Zählung auf der Festplatte |
+
+### Beispiele
+
 ```bash
-pip install dnspython
-```
-Hinweis: Wenn wirklich „alles“ (inkl. externem <code>aniworld</code>-CLI) über 1.1.1.1 laufen soll, stell das DNS systemweit in Windows/Router um.
+# Status abfragen
+curl http://localhost:5050/status
 
-## Web-UI Features
-- Start-Buttons für die Modi (inkl. „Kompletter Check“); während eines Laufs sind die Buttons deaktiviert
-- Status-Anzeige inkl. „kein Speicher“ (Einheit automatisch in TB/GB/MB)
-- Live-Logs mit Filter und Kopieren
-  - **Log-Ansicht umschalten**: Radio-Buttons zum Wechseln zwischen "Alle Logs" (seit Serverstart) und "Letzter Run" (nur aktueller Durchlauf)
-- Datenbank-Tab: filtern/sortieren, Liste der fehlenden deutschen Folgen, Knopf „Als nächstes" (Queue)
-- Warteschlangen-Tabellen-Ansicht inkl. Leeren/Einträge entfernen
-- Einstellungen: Download-Speicherort direkt setzen oder bequem per „Ordner wählen…" über den Explorer auswählen; Port ist nur in der <code>config.json</code> änderbar
-  - Schalter: „Titelaktualisierung beim Start aktivieren"
+# Download starten
+curl -X POST http://localhost:5050/start_download \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "default"}'
 
-## Unraid Integration & Automatisierung
+# URL hinzufügen
+curl -X POST http://localhost:5050/export \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://aniworld.to/anime/stream/naruto"}'
 
-AniLoader kann vollautomatisch auf Unraid-Servern laufen und dich per Discord über neue Episoden benachrichtigen.
-
-### User Scripts Einrichtung
-
-**Voraussetzung:** Unraid Plugin "User Scripts" installieren
-
-Es gibt drei vorgefertigte Bash-Scripts im Repository:
-
-#### check-german.sh
-Prüft **wöchentlich** auf neue deutsche Synchronisationen bereits vorhandener Episoden via API-Call.
-
-**Empfohlener Zeitplan:** Sonntags 5:00 Uhr
-```
-0 5 * * 0
+# Suchen
+curl -X POST http://localhost:5050/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "naruto", "platform": "aniworld"}'
 ```
 
-#### check-new.sh
-Prüft **täglich** auf komplett neue Episoden über alle verfolgten Serien via API-Call.
+---
 
-**Empfohlener Zeitplan:** Täglich 6:00 Uhr
-```
-0 6 * * *
-```
-
-#### last_run_summary.sh
-Liest die lokale `last_run.txt` Datei aus und sendet eine Discord-Benachrichtigung. **Kein API-Call nötig!**
-
-**Empfohlener Zeitplan:** Nach jedem manuellen Run oder als Alternative zu den obigen Scripts
-```bash
-# Manueller Aufruf nach Download
-./last_run_summary.sh
-
-# Oder automatisch alle 2 Stunden
-0 */2 * * *
-```
-
-**Vorteil:** Funktioniert auch ohne laufenden Webserver, perfekt für lokale Installationen!
-
-### Features der Scripts
-
-- **API-Integration** (check-german.sh & check-new.sh): Kommuniziert mit deinem AniLoader-Server via REST-API
-- **Lokale Verarbeitung** (last_run_summary.sh): Liest direkt die Log-Datei, kein Server nötig
-- **Basic Auth**: Unterstützt passwortgeschützte Domains (nur API-Scripts)
-- **Wait-Logic**: Wartet bis zu 120 Minuten, falls ein anderer Job noch läuft (nur API-Scripts)
-- **Discord Webhooks mit Fields**: Übersichtliche Gruppierung nach Serien mit Discord Embed Fields
-- **URL-Parsing**: Konvertiert AniWorld-URLs automatisch zu lesbaren Episode-Namen
-  - `https://aniworld.to/.../staffel-3/episode-11` → `Spy X Family S03E11`
-- **Intelligente Gruppierung**: Mehrere Episoden einer Serie werden zusammengefasst
-- **Multi-Embed Support**: Teilt lange Listen automatisch auf (Discord 25 Fields Limit)
-- **Mehrere Webhooks**: Sende Benachrichtigungen gleichzeitig an mehrere Discord-Kanäle
-- **Intelligente Filterung**: Nur Benachrichtigung wenn tatsächlich neue Episoden gefunden wurden
-
-### Discord Benachrichtigungsformat
-
-Die Scripts senden strukturierte Discord-Embeds mit Fields:
+## Projektstruktur
 
 ```
-🇩🇪 AniLoader - Deutsche Episoden Check
-✅ 28 neue deutsche Episode(n) gefunden!
-
-┌─ Boruto Naruto Next Generations (21x)
-│  - S05E48
-│  - S05E49
-│  - ...
-│  - S06E21
+claude-code/
+├── main.py                      # Einstiegspunkt – startet Uvicorn
+├── requirements.txt             # Python-Abhängigkeiten
+├── Dockerfile                   # Multi-stage Docker Build
+├── docker-compose.yml           # Docker Compose Konfiguration
+├── Tampermonkey.user.js         # Browser-Erweiterung v2.0
+├── README.md                    # Diese Datei
 │
-┌─ My Hero Academia
-│  - S08E11
+├── app/                         # Python-Backend
+│   ├── __init__.py
+│   ├── __main__.py              # python -m app
+│   ├── config.py                # YAML-Konfigurationsmanagement
+│   ├── logger.py                # Thread-safe Logging-System
+│   ├── database.py              # SQLite CRUD-Operationen
+│   ├── scraper.py               # HTML-Scraper (aniworld.to + s.to)
+│   ├── file_manager.py          # Dateipfade & Integritätsprüfung
+│   ├── downloader.py            # Download-Orchestrierung (4 Modi)
+│   └── api/
+│       ├── __init__.py
+│       ├── server.py            # FastAPI App Factory & Lifespan
+│       └── routes.py            # Alle REST-API Endpunkte
 │
-┌─ Spy X Family
-│  - S03E11
+├── web/                         # Frontend
+│   ├── static/
+│   │   ├── AniLoader.png        # Logo / Icon
+│   │   ├── style.css            # Dark-Theme Styles
+│   │   └── app.js               # Vanilla JS Client-Logik
+│   └── templates/
+│       └── index.html           # Single-Page Web-Interface
+│
+└── data/                        # (wird zur Laufzeit erstellt)
+    ├── config.yaml              # Konfiguration
+    ├── AniLoader.db             # SQLite Datenbank
+    ├── last_run.txt             # Log des aktuellen Laufs
+    └── all_logs.txt             # Gesamte Log-History
 ```
 
-**Features:**
-- Serienname als Field-Titel
-- Anzahl der Episoden bei mehreren: `(21x)`
-- Saubere Episode-Liste darunter
-- Einzelne Episoden in eigenen Fields
-- Automatische Aufteilung bei >25 Serien
+---
 
-### Discord Webhooks
+## Technische Details
 
-#### Webhook erstellen
-1. Discord-Server → Server-Einstellungen → Integrationen
-2. "Webhook erstellen" → Kanal auswählen
-3. Webhook-URL kopieren
+### Architektur
 
-**Hinweis:** Webhooks funktionieren nur auf Discord-Servern, nicht in Gruppenchats oder DMs!
+| Komponente | Technologie | Zweck |
+|---|---|---|
+| Web-Framework | **FastAPI** + Uvicorn | Async HTTP-Server mit Auto-Docs |
+| Downloads | **aniworld CLI** (Subprocess) | Bleibt automatisch aktuell via pip |
+| HTTP-Client | **niquests** mit DoH | DNS-over-HTTPS umgeht ISP-Sperren |
+| HTML-Parsing | **BeautifulSoup** + lxml | Scraping der Serien-Seiten |
+| Datenbank | **SQLite** (WAL-Modus) | Thread-safe, kein externer Server nötig |
+| Konfiguration | **YAML** (PyYAML) | Menschenlesbar, atomares Speichern |
+| Frontend | **Vanilla JS** + CSS | Kein Framework, kein Build-Step |
 
-#### Konfiguration in den Scripts
+### Datenbank-Schema
 
-Alle drei Scripts haben am Anfang einen Konfigurationsbereich:
+Eine einzige Tabelle `anime`:
 
-**check-german.sh & check-new.sh (API-basiert):**
+| Spalte | Typ | Beschreibung |
+|---|---|---|
+| `id` | INTEGER PK | Auto-Increment ID |
+| `title` | TEXT | Serien-Titel |
+| `url` | TEXT UNIQUE | Serien-URL |
+| `complete` | INTEGER | 0/1 – Alle Episoden heruntergeladen? |
+| `deutsch_komplett` | INTEGER | 0/1 – Alle deutschen Episoden vorhanden? |
+| `deleted` | INTEGER | 0/1 – Soft-Delete |
+| `fehlende_deutsch_folgen` | TEXT (JSON) | Liste fehlender deutscher Episode-URLs |
+| `last_film` | INTEGER | Letzte heruntergeladene Film-Nummer |
+| `last_episode` | INTEGER | Letzte heruntergeladene Episode-Nummer |
+| `last_season` | INTEGER | Letzte heruntergeladene Staffel-Nummer |
+| `folder_name` | TEXT | Jellyfin-Ordnername (z.B. `Title (2020) [imdbid-xxx]`) |
+
+### Sprach-Erkennung
+
+AniLoader erkennt Sprachen über die **Flag-Images** auf den Serien-Seiten:
+
+| Flag-Datei | Sprache |
+|---|---|
+| `german.svg` | German Dub |
+| `japanese-german.svg` | German Sub |
+| `japanese-english.svg` | English Sub |
+| `english.svg` | English Dub |
+
+Wenn Sprachinformationen auf der Staffelseite nicht verfügbar sind (häufig bei s.to), wird die **Episoden-Seite** einzeln abgefragt. Falls auch dort keine Info vorhanden ist, werden alle konfigurierten Sprachen der Reihe nach durchprobiert (Kaskade).
+
+### DNS-over-HTTPS
+
+AniLoader nutzt **niquests** mit Google DNS-over-HTTPS (`doh+google://`) als Resolver. Das umgeht DNS-Sperren von Internet-Providern, die aniworld.to und s.to blockieren, ohne dass ein VPN nötig ist.
+
+---
+
+## FAQ / Fehlerbehebung
+
+### Der Server startet, aber ich sehe im Browser nichts
+- Prüfe ob Port 5050 bereits belegt ist: `netstat -an | findstr 5050` (Windows) bzw. `ss -tlnp | grep 5050` (Linux)
+- Ändere den Port in der `config.yaml` oder im Einstellungen-Tab
+
+### Downloads funktionieren nicht
+- Prüfe ob `aniworld` installiert ist: `aniworld --help`
+- Prüfe ob `ffmpeg` im PATH ist: `ffmpeg -version`
+- Schau in die Logs (Download-Tab oder `data/last_run.txt`)
+
+### „DNS-Fehler" oder Seite nicht erreichbar
+- AniLoader nutzt DNS-over-HTTPS (Google) automatisch
+- Falls das nicht funktioniert, prüfe die Firewall-Einstellungen für ausgehende HTTPS-Verbindungen
+
+### Tampermonkey-Skript zeigt „Server offline"
+- Stelle sicher, dass der AniLoader-Server läuft
+- Prüfe die `SERVER_IP` und `SERVER_PORT` im Skript
+- Bei Reverse-Proxy: `USE_DOMAIN = true` und korrekte Domain eintragen
+- Browser-Konsole prüfen (F12) für detaillierte Fehlermeldungen
+
+### Docker: „Permission denied" für Download-Ordner
 ```bash
-# API Endpoint
-API_ENDPOINT="https://your-domain.example.com"
-API_AUTH="username:password"
-
-# Discord Webhooks (mehrere möglich)
-DISCORD_WEBHOOK_URLS=(
-    "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    # "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"
-)
+# Host-Ordner mit korrekten Rechten erstellen
+mkdir -p data Downloads
+chmod 777 Downloads
 ```
 
-**last_run_summary.sh (Lokale Datei):**
-```bash
-# Pfad zur last_run.txt
-LASTRUN_FILE="/mnt/user/Docker/AniLoader/data/last_run.txt"
-
-# Discord Webhooks (mehrere möglich)
-DISCORD_WEBHOOK_URLS=(
-    "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-    # "https://discord.com/api/webhooks/ZWEITE_WEBHOOK_URL"
-)
+### Wie kann ich den Autostart aktivieren?
+In der `config.yaml` oder im Einstellungen-Tab:
+```yaml
+download:
+  autostart_mode: default   # oder: german, new, check
 ```
+Beim nächsten Server-Start wird der gewählte Modus automatisch gestartet.
 
-**WICHTIG:** Erstelle lokale Kopien für sensible Daten:
-```bash
-cp check-german.sh check-german-local.sh
-cp check-new.sh check-new-local.sh
-cp last_run_summary.sh last_run_summary-local.sh
-```
+### Wie funktioniert der Check-Modus?
+Check prüft **alle** existierenden Downloads:
+1. Für jede Serie werden alle bekannten Staffeln/Episoden abgefragt
+2. Für jede Episode wird geprüft: Datei vorhanden? > 1 MB? Keine .part-Datei?
+3. Fehlende oder defekte Dateien werden erneut heruntergeladen
 
-Die `*.local.sh` Dateien werden von .gitignore ignoriert!
+---
 
-#### Discord Embed-Farben
-
-Die Scripts nutzen Farbcodes für Discord-Embeds:
-- `3066993` = Grün (Erfolg)
-- `15158332` = Rot (Fehler)
-- `3447003` = Blau (Info)
-
-### Schedule & Cron
-
-**Cron-Format:** `Minute Stunde Tag Monat Wochentag`
-
-```
-┌─── Minute (0-59)
-│ ┌─── Stunde (0-23)
-│ │ ┌─── Tag im Monat (1-31)
-│ │ │ ┌─── Monat (1-12)
-│ │ │ │ ┌─── Wochentag (0-7, 0&7=Sonntag)
-│ │ │ │ │
-* * * * *
-```
-
-**Beispiele:**
-- `0 6 * * *` = Täglich um 6:00 Uhr
-- `0 5 * * 0` = Jeden Sonntag um 5:00 Uhr
-- `*/30 * * * *` = Alle 30 Minuten
-- `0 8,20 * * *` = Täglich um 8:00 und 20:00 Uhr
-- `0 12 * * 1-5` = Montag bis Freitag um 12:00 Uhr
-
-**Warum 1 Stunde Abstand?**
-Der German-Check läuft Sonntags um 5:00 Uhr, der New-Check täglich um 6:00 Uhr. So kann der German-Check in Ruhe abschließen, bevor der New-Check startet. Die Wait-Logic sorgt dafür, dass bei Überschneidungen bis zu 2 Stunden gewartet wird.
-
-### Script-Anpassung für deine Umgebung
-
-#### API-Scripts (check-german.sh & check-new.sh)
-1. **API_ENDPOINT**: Deine AniLoader-Domain oder IP
-2. **API_AUTH**: Falls Basic Auth aktiviert, Format `"username:password"`
-3. **DISCORD_WEBHOOK_URLS**: Ein oder mehrere Webhook-URLs
-
-Beispiel:
-```bash
-API_ENDPOINT="https://aniloader.meinedomain.de"
-API_AUTH="admin:meinPasswort123"
-DISCORD_WEBHOOK_URLS=(
-    "https://discord.com/api/webhooks/123456789/abcdefghijk"
-)
-```
-
-#### Lokales Script (last_run_summary.sh)
-1. **LASTRUN_FILE**: Absoluter Pfad zur `last_run.txt`
-2. **DISCORD_WEBHOOK_URLS**: Ein oder mehrere Webhook-URLs
-
-Beispiel:
-```bash
-LASTRUN_FILE="/mnt/user/Docker/AniLoader/data/last_run.txt"
-DISCORD_WEBHOOK_URLS=(
-    "https://discord.com/api/webhooks/123456789/abcdefghijk"
-)
-```
-
-**Wichtig:** 
-- Die API-Scripts benötigen den `/last_run` Endpoint (neuere AniLoader-Versionen)
-- Das lokale Script funktioniert auch ohne laufenden Webserver!
-
-## Log-System
-
-AniLoader nutzt ein zweistufiges datei-basiertes Log-System.
-
-### Datei-basierte Logs
-
-**Vorteile:**
-- Kein RAM-Verbrauch bei langem Serverbetrieb
-- Logs überleben Server-Neustarts
-- Perfekt für automatisierte Scripts
-
-#### all_logs.txt
-- Speicherort: `data/all_logs.txt`
-- Inhalt: **Komplette Log-Historie** seit Installation
-- Wird kontinuierlich erweitert (kein automatisches Löschen)
-- API-Endpoint: `/logs`
-
-#### last_run.txt
-- Speicherort: `data/last_run.txt`
-- Inhalt: **Nur der letzte Durchlauf**
-- Wird bei jedem neuen Run geleert und neu geschrieben
-- API-Endpoint: `/last_run`
-- Ideal für Scripts: Verhindert Duplikate beim Zählen von Episoden
-
-### Web-UI Log-Ansicht
-
-Im Web-Interface kannst du zwischen beiden Log-Quellen umschalten:
-
-- **"Alle Logs"**: Zeigt `all_logs.txt` (komplette Historie)
-- **"Letzter Run"**: Zeigt `last_run.txt` (nur aktueller Durchlauf)
-
-Die Umschaltung erfolgt live ohne Seitenneuladung via Radio-Buttons oberhalb der Log-Anzeige.
-
-### Für Script-Entwickler
-
-**Wichtig:** Nutze immer `/last_run` statt `/logs` wenn du Episoden zählen willst!
-
-```bash
-# ❌ FALSCH - zählt historische Logs mehrfach
-LOG_CONTENT=$(curl -s "http://localhost:5050/logs")
-
-# ✅ RICHTIG - nur der aktuelle Run
-LOG_CONTENT=$(curl -s "http://localhost:5050/last_run")
-```
-
-## API
-
-Alle Endpunkte laufen standardmäßig unter <code>http://localhost:5050</code>.
-
-### Start Download
-- URL: <code>/start_download</code>
-- Methode: GET oder POST
-- Parameter: <code>mode</code> = <code>default</code> | <code>german</code> | <code>new</code> | <code>check-missing</code> | <code>full-check</code>
-- Antwort: <code>{"status":"started","mode":"..."}</code> oder <code>409 already_running</code>
-
-Beispiele:
-```bash
-curl "http://localhost:5050/start_download"
-curl "http://localhost:5050/start_download?mode=german"
-curl "http://localhost:5050/start_download?mode=new"
-curl "http://localhost:5050/start_download?mode=check-missing"
-```
-
-### Status
-- URL: <code>/status</code>
-- Methode: GET
-- Liefert u. a.: <code>status</code> (idle|running|finished|kein-speicher), <code>mode</code>, <code>current_index</code>, <code>current_title</code>, <code>started_at</code>, sowie <code>current_season</code>/<code>current_episode</code>/<code>current_is_film</code> während eines Laufs.
-
-Beispiel:
-```json
-{"status":"running","mode":"new","current_index":1,"current_title":"Naruto","started_at":1725300000.0}
-```
-
-### Logs
-- URL: <code>/logs</code>
-- Methode: GET
-- Liefert **alle Logs seit Serverstart** aus `all_logs.txt` als JSON-Array
-- Nutze diesen Endpoint für die komplette Historie im Web-UI
-
-Beispiel:
-```json
-[
-  "[2026-01-06 10:30:15] [INFO] Server gestartet",
-  "[2026-01-06 10:31:20] [SUCCESS] Naruto: Episode 5 heruntergeladen",
-  "[2026-01-06 11:45:00] [GERMAN] One Piece: Episode 10 erfolgreich auf deutsch"
-]
-```
-
-### Last Run
-- URL: <code>/last_run</code>
-- Methode: GET
-- Liefert **nur Logs vom letzten Durchlauf** aus `last_run.txt` als JSON-Array
-- Ideal für automatisierte Scripts: Verhindert Duplikate beim Episodenzählen
-- Wird bei jedem neuen Run geleert
-
-**Wichtig für Scripts:** Nutze immer `/last_run` statt `/logs` zum Zählen neuer Episoden!
-
-Beispiel:
-```json
-[
-  "[2026-01-06 12:00:00] [INFO] Starte New-Check...",
-  "[2026-01-06 12:05:30] [SUCCESS] Demon Slayer: Episode 23 heruntergeladen",
-  "[2026-01-06 12:10:15] [INFO] Run abgeschlossen"
-]
-```
-
-### Disk
-- URL: <code>/disk</code>
-- Methode: GET
-- Liefert freien Speicher in GB: <code>{"free_gb": 512.3}</code>
-
-### Config
-- URL: <code>/config</code>
-- Methoden: GET | POST
-- GET liefert z. B.:
-```json
-{"languages":["German Dub","German Sub","English Dub","English Sub"],"min_free_gb":2.0,"download_path":"C:\\Pfad\\zu\\Downloads","port":5050,"autostart_mode":null}
-```
-- POST Body (Beispiel):
-```json
-{"download_path":"D:\\Media\\Anime"}
-```
-Hinweise:
-- <code>download_path</code> kann per POST geändert werden. Der Ordner wird bei Bedarf angelegt.
-- <code>port</code> ist nur über die Datei <code>data/config.json</code> änderbar und wird beim Serverstart übernommen.
-
-### Datenbank
-- URL: <code>/database</code>
-- Methode: GET
-- Parameter:
-  - <code>q</code>: Suchtext für <code>title</code> oder <code>url</code>
-  - <code>complete</code>: 0 | 1
-  - <code>deleted</code>: 0 | 1
-  - <code>deutsch</code>: 0 | 1 (Filter auf <code>deutsch_komplett</code>)
-  - <code>sort_by</code>: <code>id</code> | <code>title</code> | <code>last_film</code> | <code>last_episode</code> | <code>last_season</code>
-  - <code>order</code>: <code>asc</code> | <code>desc</code>
-  - <code>limit</code> / <code>offset</code>
-
-### Counts
-- URL: <code>/counts</code>
-- Methode: GET
-- Parameter: <code>id</code> (DB-ID) oder <code>title</code> (Serienordner unter Downloads)
-- Antwort: <code>{ per_season: {"1":12,...}, total_seasons, total_episodes, films, title }</code>
-
-### Export
-- URL: <code>/export</code>
-- Methode: POST
-- Body: <code>{ "url": "https://..." }</code>
-- Fügt eine Serien-URL in die DB ein (für Tampermonkey-Button)
-
-### Check
-- URL: <code>/check</code>
-- Methode: GET
-- Parameter: <code>url</code>
-- Prüft, ob die URL in der DB existiert (und nicht als deleted markiert ist)
-
-### Queue
-- URL: <code>/queue</code>
-- Methoden:
-  - GET: Liste der Queue-Einträge
-  - POST: <code>{"anime_id": 42}</code> → fügt Anime zur Queue hinzu
-  - DELETE: ohne Parameter leert die Queue; mit <code>?id=QID</code> oder <code>?anime_id=AID</code> löscht gezielt
-
-## Tampermonkey
-Userscript: https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js
-
-Konfiguration im Script:
-```js
-const SERVER_IP = "localhost"; // ggf. IP/Hostname deines AniLoader-Servers
-```
-
-Funktionsweise:
-- Prüft beim Laden per <code>/database</code>/<code>/status</code>, ob die Serie existiert bzw. gerade geladen wird
-- Legt ggf. per <code>POST /export</code> den Eintrag an
-- Startet falls nicht laufend <code>/start_download</code> im Standardmodus
-- Button deaktiviert sich, wenn bereits vorhanden/aktiver Download
-
-## Hinweise
-- Die Pfade der Dateien werden auf Windows-Länge (<code>MAX_PATH</code>) geprüft; sehr lange Titel werden automatisch gekürzt
-- Wird eine German-Dub-Version gefunden, löscht AniLoader ältere Sub-/englische Versionen derselben Folge
-- Das System markiert „gelöschte“ Serien (falls Ordner entfernt) und setzt DB-Felder zurück; diese Einträge können reaktiviert werden, wenn dieselbe URL erneut exportiert wird
-- Autostart-Modus kann über <code>/config</code> gesetzt werden (<code>default</code>|<code>german</code>|<code>new</code>|<code>check-missing</code>)
-
-## Beispiele
-
-Dateinamen nach Download:
-```
-S01E005 - Der Ninja-Test.mp4
-S01E006 - Kampf der Klingen [Sub].mp4
-Film01 - Naruto Movie.mp4
-```
-
-Beispiel-Einträge in <code>AniLoader.txt</code>:
-```
-https://aniworld.to/anime/stream/a-certain-magical-index
-https://s.to/serie/stream/family-guy
-```
-
-## Debugging & Troubleshooting
-- „aniworld: command not found“: <code>aniworld</code> ist nicht installiert oder nicht im PATH; siehe Installation Schritt 4
-- Keine Logs im UI: <code>/logs</code> im Browser prüfen
-- „Kein Speicher“: <code>/disk</code> prüfen und <code>min_free_gb</code> in <code>/config</code> anpassen
-- Remote-Zugriff: Bei <code>host=0.0.0.0</code> ist der Server von außen erreichbar; sichere dein Netz/Firewall. Für Produktivbetrieb nutze einen WSGI-Server (Waitress) und setze ggf. Reverse Proxy/Auth davor
-
-## Lizenz
-
-MIT-Lizenz (siehe LICENSE). Urheberrechte der verwendeten Projekte liegen bei den jeweiligen Autoren.
-
-<p align="right">(<a href="#readme-top">Nach oben</a>)</p>
+<p align="center">
+  <img src="web/static/AniLoader.png" alt="AniLoader" width="60"><br>
+  <sub>Made with ❤️ for Anime & Serien</sub>
+</p>

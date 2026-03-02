@@ -1,327 +1,234 @@
 // ==UserScript==
-// @name         AniWorld & S.to Download-Button
+// @name         AniLoader Export-Button
 // @namespace    AniLoader
-// @version      1.7
+// @version      2.0
 // @icon         https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png
-// @description  Fügt einen Export-Button unter die Episodenliste ein, prüft, ob der Anime-Link schon in der DB ist, und sendet ihn bei Klick an ein lokales Python-Skript. Funktioniert für AniWorld und S.to.
+// @description  Fügt einen Download-Button auf aniworld.to / s.to ein, der Serien an den AniLoader-Server sendet.
 // @author       Wim
 // @downloadURL  https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js
 // @updateURL    https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js
 // @match        https://aniworld.to/*
 // @match        https://s.to/*
 // @grant        GM_xmlhttpRequest
-// @connect      deine.domain.com
-// @connect      10.10.10.10
+// @grant        GM.xmlHttpRequest
+// @connect      *
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
-    // 🌐 === SERVER KONFIGURATION ===
-    // Passe diese Werte an deine Umgebung an:
-    
-    // Option 1: Domain verwenden (nginx reverse proxy mit SSL)
-    const USE_DOMAIN = true;// true = Domain verwenden, false = IP verwenden
-    const SERVER_DOMAIN = "deine.domain.com";// Deine Domain
-    const USE_HTTPS = true; 
+    // ════════════════════════════════════════════
+    //  SERVER-KONFIGURATION – Bitte anpassen!
+    // ════════════════════════════════════════════
 
-    // Option 2: IP-Adresse verwenden (direkter Zugriff)
-    const SERVER_IP = "10.10.10.10";
+    // Option A: Domain (z.B. hinter nginx/Caddy Reverse-Proxy)
+    const USE_DOMAIN  = false;
+    const SERVER_DOMAIN = "aniloader.example.com";
+    const USE_HTTPS   = true;
+
+    // Option B: Direkte IP
+    const SERVER_IP   = "127.0.0.1";
     const SERVER_PORT = 5050;
-    
-    // Basic Auth (für nginx Passwortschutz)
-    const AUTH_USERNAME = "Username";// Benutzername für Basic Auth
-    const AUTH_PASSWORD = "Password";// Passwort für Basic Auth
-    const USE_AUTH = true;// true = Basic Auth verwenden, false = ohne Auth
 
-    // === HILFSFUNKTIONEN ===
-    function getBaseUrl() {
+    // Basic-Auth (optional, für Reverse-Proxy)
+    const USE_AUTH     = false;
+    const AUTH_USER    = "";
+    const AUTH_PASS    = "";
+
+    // ════════════════════════════════════════════
+
+    const GMX = typeof GM !== 'undefined' && GM.xmlHttpRequest ? GM.xmlHttpRequest : GM_xmlhttpRequest;
+
+    function baseUrl() {
         if (USE_DOMAIN) {
-            const protocol = USE_HTTPS ? 'https' : 'http';
-            return `${protocol}://${SERVER_DOMAIN}`;
-        } else {
-            return `http://${SERVER_IP}:${SERVER_PORT}`;
+            return `${USE_HTTPS ? 'https' : 'http'}://${SERVER_DOMAIN}`;
         }
+        return `http://${SERVER_IP}:${SERVER_PORT}`;
     }
 
-    function getAuthHeaders() {
-        const headers = {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-        };
-        if (USE_AUTH && AUTH_USERNAME && AUTH_PASSWORD) {
-            headers.Authorization = 'Basic ' + btoa(AUTH_USERNAME + ':' + AUTH_PASSWORD);
+    function authHeaders() {
+        const h = { 'Cache-Control': 'no-cache' };
+        if (USE_AUTH && AUTH_USER) {
+            h.Authorization = 'Basic ' + btoa(`${AUTH_USER}:${AUTH_PASS}`);
         }
-        return headers;
+        return h;
     }
 
-    async function apiGet(path) {
-        const separator = path.includes('?') ? '&' : '?';
-        const url = `${getBaseUrl()}${path}${separator}_t=${Date.now()}`;
-        console.log('[AniLoader] GET:', url);
+    function apiGet(path) {
+        const sep = path.includes('?') ? '&' : '?';
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GMX({
                 method: 'GET',
-                url: url,
-                headers: getAuthHeaders(),
-                onload: (response) => {
-                    if (response.status >= 200 && response.status < 300) {
-                        try {
-                            resolve(JSON.parse(response.responseText));
-                        } catch (e) {
-                            reject(new Error('JSON parse error'));
-                        }
-                    } else {
-                        reject(new Error('API ' + response.status));
-                    }
+                url: `${baseUrl()}${path}${sep}_t=${Date.now()}`,
+                headers: authHeaders(),
+                timeout: 6000,
+                onload: r => {
+                    if (r.status >= 200 && r.status < 300) {
+                        try { resolve(JSON.parse(r.responseText)); }
+                        catch { reject(new Error('JSON parse')); }
+                    } else reject(new Error(`HTTP ${r.status}`));
                 },
-                onerror: () => reject(new Error('Network error')),
-                ontimeout: () => reject(new Error('Timeout'))
+                onerror: () => reject(new Error('network')),
+                ontimeout: () => reject(new Error('timeout'))
             });
         });
     }
-    async function apiPost(path, body) {
-        const url = `${getBaseUrl()}${path}`;
-        console.log('[AniLoader] POST:', url, body);
-        const headers = {
-            'Content-Type':'application/json',
-            ...getAuthHeaders()
-        };
+
+    function apiPost(path, body) {
         return new Promise((resolve, reject) => {
-            GM.xmlHttpRequest({
+            GMX({
                 method: 'POST',
-                url: url,
-                headers: headers,
-                data: JSON.stringify(body||{}),
-                onload: (response) => {
-                    if (response.status >= 200 && response.status < 300) {
-                        try {
-                            resolve(JSON.parse(response.responseText));
-                        } catch (e) {
-                            reject(new Error('JSON parse error'));
-                        }
-                    } else {
-                        reject(new Error('API ' + response.status));
-                    }
+                url: `${baseUrl()}${path}`,
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                data: JSON.stringify(body || {}),
+                timeout: 10000,
+                onload: r => {
+                    if (r.status >= 200 && r.status < 300) {
+                        try { resolve(JSON.parse(r.responseText)); }
+                        catch { reject(new Error('JSON parse')); }
+                    } else reject(new Error(`HTTP ${r.status}`));
                 },
-                onerror: () => reject(new Error('Network error')),
-                ontimeout: () => reject(new Error('Timeout'))
+                onerror: () => reject(new Error('network')),
+                ontimeout: () => reject(new Error('timeout'))
             });
         });
     }
 
-    function getAnimeBaseUrl() {
-        const url = window.location.href;
-        let match;
+    // ── Serien-URL extrahieren ──
 
-        if(url.includes("aniworld.to")) {
-            match = url.match(/https:\/\/aniworld\.to\/anime\/stream\/([^\/]+)/);
-            return match ? `https://aniworld.to/anime/stream/${match[1]}` : url;
+    function seriesUrl() {
+        const href = location.href;
+        let m;
+        if (href.includes('aniworld.to')) {
+            m = href.match(/https:\/\/aniworld\.to\/anime\/stream\/([^\/]+)/);
+            return m ? `https://aniworld.to/anime/stream/${m[1]}` : null;
         }
-
-        if(url.includes("s.to")) {
-            match = url.match(/https:\/\/s\.to\/serie\/stream\/([^\/]+)/);
-            return match ? `https://s.to/serie/stream/${match[1]}` : url;
+        if (href.includes('s.to')) {
+            m = href.match(/https:\/\/s\.to\/serie\/stream\/([^\/]+)/);
+            return m ? `https://s.to/serie/stream/${m[1]}` : null;
         }
-
-        return url;
+        return null;
     }
 
-    const streamContainer = document.querySelector('#stream') || document.querySelector('.episodes-list');
-    if (!streamContainer) return;
+    const url = seriesUrl();
+    if (!url) return; // kein Stream-URL → Skript ignorieren
 
-    // Wrapper, in den entweder der Button oder ein Offline-Hinweis gerendert wird
-    const buttonWrapper = document.createElement("div");
-    buttonWrapper.style.marginTop = "16px";
-    buttonWrapper.style.marginBottom = "16px";
-    buttonWrapper.style.textAlign = "left";
+    // ── Container finden ──
 
-    // Button-Element (wird nur eingefügt, wenn der Server online ist)
-    const exportButton = document.createElement("button");
-    exportButton.innerText = "📤 Downloaden";
-    exportButton.style.backgroundColor = "rgba(99,124,249,1)";
-    exportButton.style.color = "white";
-    exportButton.style.fontSize = "15px";
-    exportButton.style.fontWeight = "bold";
-    exportButton.style.padding = "10px 18px";
-    exportButton.style.border = "none";
-    exportButton.style.borderRadius = "8px";
-    exportButton.style.cursor = "pointer";
-    exportButton.style.boxShadow = "0px 3px 8px rgba(0,0,0,0.25)";
-    exportButton.style.transition = "all 0.25s ease-in-out";
+    const anchor = document.querySelector('#stream') || document.querySelector('.episodes-list');
+    if (!anchor) return;
 
-    exportButton.addEventListener("mouseover", () => {
-        if(!exportButton.disabled) exportButton.style.backgroundColor = "rgba(79,104,229,1)";
-    });
-    exportButton.addEventListener("mouseout", () => {
-        if(!exportButton.disabled) exportButton.style.backgroundColor = "rgba(99,124,249,1)";
+    // ── UI-Elemente ──
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin:16px 0;text-align:left;';
+
+    const btn = document.createElement('button');
+    Object.assign(btn.style, {
+        fontSize: '15px', fontWeight: 'bold', padding: '10px 18px',
+        border: 'none', borderRadius: '8px', cursor: 'pointer',
+        color: '#fff', boxShadow: '0 3px 8px rgba(0,0,0,.25)',
+        transition: 'all .2s'
     });
 
-    // Offline-Hinweis (gleich groß wie der Download-Button, weiß, mit Symbol)
-    const offlineInfo = document.createElement('button');
-    offlineInfo.textContent = '⛔ Server offline';
-    offlineInfo.style.backgroundColor = '#ffffff';
-    offlineInfo.style.color = '#333';
-    offlineInfo.style.fontSize = '15px';
-    offlineInfo.style.fontWeight = 'bold';
-    offlineInfo.style.padding = '10px 18px';
-    offlineInfo.style.border = '1px solid rgba(108,117,125,0.35)';
-    offlineInfo.style.borderRadius = '8px';
-    offlineInfo.style.cursor = 'not-allowed';
-    offlineInfo.style.boxShadow = '0px 3px 8px rgba(0,0,0,0.15)';
-    offlineInfo.style.transition = 'all 0.25s ease-in-out';
-    offlineInfo.disabled = true;
+    const offlineBtn = document.createElement('button');
+    offlineBtn.textContent = '⛔ Server offline';
+    Object.assign(offlineBtn.style, {
+        fontSize: '15px', fontWeight: 'bold', padding: '10px 18px',
+        border: '1px solid rgba(108,117,125,.35)', borderRadius: '8px',
+        cursor: 'not-allowed', color: '#333', backgroundColor: '#fff',
+        boxShadow: '0 3px 8px rgba(0,0,0,.15)'
+    });
+    offlineBtn.disabled = true;
 
-    // Compute and set button state based on DB + status
-    async function refreshButton() {
-        const animeUrl = getAnimeBaseUrl();
+    // ── Button-State berechnen ──
+
+    function setBtn(label, bg, disabled) {
+        btn.textContent = label;
+        btn.style.backgroundColor = bg;
+        btn.disabled = !!disabled;
+        btn.style.cursor = disabled ? 'not-allowed' : 'pointer';
+    }
+
+    async function refreshBtn() {
         let entry = null;
         try {
-            const db = await apiGet(`/database?q=${encodeURIComponent(animeUrl)}`);
-            entry = Array.isArray(db) ? db.find(r => r.url === animeUrl) : null;
-        } catch(e) { /* ignore */ }
-        let status = null;
-        try { status = await apiGet('/status'); } catch(e) { /* ignore */ }
-        const running = status && status.status === 'running';
-        const currentTitle = status && status.current_title;
+            const db = await apiGet(`/database?q=${encodeURIComponent(url)}`);
+            entry = Array.isArray(db) ? db.find(r => r.url === url) : null;
+        } catch { /* ignore */ }
 
-        // Decide label/style
-        let label = '📤 Downloaden';
-        let bg = 'rgba(99,124,249,1)'; // primary
-        let disabled = false;
+        let status = null;
+        try { status = await apiGet('/status'); } catch { /* ignore */ }
+
+        const running = status?.status === 'running';
 
         if (!entry || entry.deleted) {
-            // not in DB or deleted -> offer Downloaden
-            label = '📤 Downloaden';
-            bg = 'rgba(99,124,249,1)';
-            disabled = false;
+            setBtn('📤 Downloaden', 'rgba(99,124,249,1)', false);
         } else if (entry.complete) {
-            // complete -> Gedownloaded
-            label = '✅ Gedownloaded';
-            bg = 'rgba(0,200,0,0.8)';
-            disabled = true;
-        } else if (running && currentTitle && entry.title === currentTitle) {
-            // currently downloading this title
-            label = '⬇️ Downloaded';
-            bg = 'rgba(255,184,107,0.9)'; // warning
-            disabled = true;
+            setBtn('✅ Gedownloaded', 'rgba(0,200,0,.8)', true);
+        } else if (running && status.current_title && entry.title === status.current_title) {
+            setBtn('⬇️ Wird geladen…', 'rgba(255,184,107,.9)', true);
         } else {
-            // in DB but not complete and not currently downloading -> disabled per requirement
-            label = '📄 In der Liste';
-            bg = 'rgba(108,117,125,0.9)'; // secondary
-            disabled = true;
+            setBtn('📄 In der Liste', 'rgba(108,117,125,.9)', true);
         }
-
-        exportButton.innerText = label;
-        exportButton.style.backgroundColor = bg;
-        exportButton.disabled = !!disabled;
-        exportButton.style.cursor = disabled ? 'not-allowed' : 'pointer';
     }
 
-    // Click -> ensure in DB if needed, then start download if not running
-    exportButton.addEventListener("click", async () => {
-        if (exportButton.disabled) return;
-        const animeUrl = getAnimeBaseUrl();
+    // ── Klick-Handler ──
+
+    btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
         try {
-            // Check DB state
-            const db = await apiGet(`/database?q=${encodeURIComponent(animeUrl)}`);
-            let entry = Array.isArray(db) ? db.find(r => r.url === animeUrl) : null;
+            // In DB einfügen oder wiederherstellen
+            const db = await apiGet(`/database?q=${encodeURIComponent(url)}`);
+            const entry = Array.isArray(db) ? db.find(r => r.url === url) : null;
             if (!entry || entry.deleted) {
-                // add/reactivate
-                const res = await apiPost('/export', { url: animeUrl });
-                if (!(res && res.status === 'ok')) throw new Error('Export failed');
+                const res = await apiPost('/export', { url });
+                if (!res || res.status !== 'ok') throw new Error('Export fehlgeschlagen');
             }
-            // Check if a download is already running
+            // Falls nichts läuft → Standard-Download starten
             const s = await apiGet('/status');
-            const running = s && s.status === 'running';
-            if (!running) {
+            if (s?.status !== 'running') {
                 await apiPost('/start_download', { mode: 'default' });
             }
-            // reflect state
-            await refreshButton();
+            await refreshBtn();
         } catch (e) {
-            console.error(e);
-            exportButton.innerText = "⚠ Fehler!";
-            exportButton.style.backgroundColor = "rgba(200,0,0,0.8)";
+            console.error('[AniLoader]', e);
+            setBtn('⚠ Fehler!', 'rgba(200,0,0,.8)', true);
+            setTimeout(refreshBtn, 3000);
         }
     });
 
-    // Server-Check und UI-Umschaltung
-    async function isServerOnline() {
+    // ── Online/Offline-Umschaltung ──
+
+    let wasOnline = null;
+    let refreshInterval = null;
+
+    async function checkServer() {
+        let online = false;
         try {
-            const url = `${getBaseUrl()}/status?_t=${Date.now()}`;
-            console.log('[AniLoader] Checking server:', url);
-            return new Promise((resolve) => {
-                GM.xmlHttpRequest({
-                    method: 'GET',
-                    url: url,
-                    headers: getAuthHeaders(),
-                    timeout: 5000,
-                    onload: (response) => {
-                        console.log('[AniLoader] Server response:', response.status);
-                        if (response.status >= 200 && response.status < 300) {
-                            try {
-                                const data = JSON.parse(response.responseText);
-                                console.log('[AniLoader] Server data:', data);
-                            } catch (e) { /* ignore */ }
-                            resolve(true);
-                        } else {
-                            resolve(false);
-                        }
-                    },
-                    onerror: (e) => {
-                        console.error('[AniLoader] Server-Check Fehler:', e);
-                        resolve(false);
-                    },
-                    ontimeout: () => {
-                        console.error('[AniLoader] Server-Check Timeout');
-                        resolve(false);
-                    }
-                });
-            });
-        } catch (e) {
-            console.error('[AniLoader] Server-Check Fehler:', e);
-            return false;
-        }
-    }
+            await apiGet('/health');
+            online = true;
+        } catch { /* offline */ }
 
-    let onlineState = null; // unknown | true | false
-    let refreshTimer = null;
+        if (online === wasOnline) return;
+        wasOnline = online;
+        wrap.innerHTML = '';
+        if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
 
-    async function renderByServerState() {
-        const isOnline = await isServerOnline();
-        console.log('[AniLoader] Server online:', isOnline, '| Previous state:', onlineState);
-        if (isOnline === onlineState) return; // no change
-        onlineState = isOnline;
-        // clear wrapper
-        buttonWrapper.innerHTML = '';
-        if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-
-        if (isOnline) {
-            console.log('[AniLoader] ✅ Server ONLINE - Zeige Download-Button');
-            // show button and start periodic refresh
-            buttonWrapper.appendChild(exportButton);
-            await refreshButton();
-            refreshTimer = setInterval(refreshButton, 15000);
+        if (online) {
+            wrap.appendChild(btn);
+            await refreshBtn();
+            refreshInterval = setInterval(refreshBtn, 15000);
         } else {
-            console.log('[AniLoader] ❌ Server OFFLINE - Zeige Offline-Hinweis');
-            // show offline info
-            buttonWrapper.appendChild(offlineInfo);
+            wrap.appendChild(offlineBtn);
         }
     }
 
-    // mount wrapper next to stream container and start polling server state
-    streamContainer.insertAdjacentElement("afterend", buttonWrapper);
+    // ── Initialisierung ──
 
-    console.log('[AniLoader] 🚀 Skript gestartet');
-    console.log('[AniLoader] Server:', `http://${SERVER_IP}:${SERVER_PORT}`);
-    console.log('[AniLoader] URL:', getAnimeBaseUrl());
+    anchor.insertAdjacentElement('afterend', wrap);
+    wrap.appendChild(offlineBtn); // sofort Offline anzeigen
 
-    // Show offline placeholder immediately (do not wait for /health)
-    buttonWrapper.appendChild(offlineInfo);
-
-    // Then check server status and update UI accordingly
-    console.log('[AniLoader] Starte Server-Check...');
-    renderByServerState();
-    setInterval(renderByServerState, 10000);
+    checkServer();
+    setInterval(checkServer, 10000);
 })();

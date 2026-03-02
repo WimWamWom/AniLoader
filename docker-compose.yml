@@ -5,21 +5,20 @@ services:
     build: .
     container_name: aniloader
     ports:
-      - "5000:5000"  # Port anpassen falls nötig
+      - "5050:5050"
     volumes:
-      # Persistente Daten (Datenbank, Konfiguration)
+      # Persistente Daten (DB, Config, Logs)
       - ./data:/app/data
-      # Download-Verzeichnis (bei storage_mode: standard)
+      # Download-Verzeichnis (Standard-Modus)
       - ./Downloads:/app/Downloads
-      # Optional: Separate Pfade für Animes (bei storage_mode: separate)
-      # - /pfad/zu/deinen/animes:/animes
-      # Optional: Separate Pfade für Serien (bei storage_mode: separate)
-      # - /pfad/zu/deinen/serien:/serien
+      # ── Separate Pfade (optional, bei storage.mode: separate) ──
+      # - /pfad/zu/animes:/animes
+      # - /pfad/zu/serien:/serien
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
       interval: 30s
       timeout: 10s
       retries: 3

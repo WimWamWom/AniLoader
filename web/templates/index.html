@@ -22,6 +22,7 @@
   <button class="tab-btn active" data-tab="tab-download">Download</button>
   <button class="tab-btn" data-tab="tab-add">Hinzufügen</button>
   <button class="tab-btn" data-tab="tab-db">Datenbank</button>
+  <button class="tab-btn" data-tab="tab-logs">Logs</button>
   <button class="tab-btn" data-tab="tab-settings">Einstellungen</button>
 </nav>
 
@@ -86,11 +87,12 @@
     </div>
   </div>
 
-  <!-- Log -->
+  <!-- Mini-Log -->
   <div class="card">
-    <h3>Log</h3>
-    <div id="log-output" class="log-output">Warte auf Logs...</div>
+    <h3>Log <small style="font-weight:normal;color:var(--text-muted);font-size:0.7em;">– letzte Zeilen</small></h3>
+    <div id="log-output-mini" class="log-output log-mini">Warte auf Logs...</div>
   </div>
+
 </div>
 
 <!-- ═══════════════════════ Hinzufügen Tab ═══════════════════════ -->
@@ -121,7 +123,7 @@
   <div class="card">
     <h3>Suche</h3>
     <div style="display:flex; gap:8px; margin-bottom:12px;">
-      <input type="text" id="search-query" placeholder="Suchbegriff...">
+      <input type="text" id="search-query" placeholder="Suchbegriff..." autocomplete="off">
       <select id="search-platform" style="width:auto; min-width:140px;">
         <option value="both">Beide</option>
         <option value="aniworld">AniWorld (Anime)</option>
@@ -163,6 +165,36 @@
         </tbody>
       </table>
     </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Logs Tab ═══════════════════════ -->
+<div id="tab-logs" class="tab-content">
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+      <h3 style="margin-bottom:0;">Logs</h3>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em; color:var(--text-muted); cursor:pointer;">
+          <input type="checkbox" id="log-autoscroll" checked> Auto-Scroll
+        </label>
+        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em; color:var(--text-muted); cursor:pointer;">
+          <input type="checkbox" id="log-auto-refresh" checked onchange="toggleLogAutoRefresh()"> Auto-Refresh
+        </label>
+        <button class="btn btn-secondary btn-sm" onclick="refreshFullLog()" title="Jetzt aktualisieren">⟳ Aktualisieren</button>
+      </div>
+    </div>
+    <div class="log-filter-bar">
+      <input type="text" id="log-filter" placeholder="Filter (z.B. ERROR, Serienname...)" oninput="renderFormattedLog()">
+      <div class="log-level-buttons">
+        <button class="log-level-btn active" data-level="all" onclick="setLogLevel('all')">Alle</button>
+        <button class="log-level-btn" data-level="error" onclick="setLogLevel('error')">Fehler</button>
+        <button class="log-level-btn" data-level="warn" onclick="setLogLevel('warn')">Warnungen</button>
+        <button class="log-level-btn" data-level="ok" onclick="setLogLevel('ok')">Erfolg</button>
+        <button class="log-level-btn" data-level="dl" onclick="setLogLevel('dl')">Downloads</button>
+      </div>
+    </div>
+    <div id="log-stats" class="log-stats"></div>
+    <div id="log-output-full" class="log-output log-formatted">Warte auf Logs...</div>
   </div>
 </div>
 

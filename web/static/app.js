@@ -29,6 +29,7 @@ function initTabs() {
       // Tab-spezifisches Laden
       if (btn.dataset.tab === 'tab-db') loadDatabase();
       if (btn.dataset.tab === 'tab-settings') loadSettings();
+      if (btn.dataset.tab === 'tab-logs') refreshFullLog();
     });
   });
 }
@@ -82,10 +83,195 @@ async function stopDownload() {
 async function refreshLog() {
   try {
     const data = await api('/last_run');
-    const el = $('#log-output');
-    el.textContent = data.log || '';
-    el.scrollTop = el.scrollHeight;
+    const el = $('#log-output-mini');
+    if (el) {
+      const lines = (data.log || '').trim().split('\n');
+      el.textContent = lines.slice(-15).join('\n');
+      el.scrollTop = el.scrollHeight;
+    }
   } catch (e) { /* ignore */ }
+}
+
+// ──────────────────────── Logs Tab ────────────────────────
+
+let logLevel = 'all';       // 'all' | 'error' | 'warn' | 'ok' | 'dl'
+let rawLogText = '';
+let logAutoRefreshInterval = null;
+
+// Tag → CSS-Klasse Mapping
+const TAG_CLASSES = {
+  'OK': 'tag-ok', 'DONE': 'tag-done', 'DL': 'tag-dl', 'CMD': 'tag-cmd',
+  'SKIP': 'tag-skip', 'WARN': 'tag-warn', 'ERROR': 'tag-error', 'FATAL': 'tag-fatal',
+  'FAIL': 'tag-fail', 'SERVER': 'tag-server', 'DB': 'tag-db', 'DB-ERROR': 'tag-error',
+  'CONFIG': 'tag-config', 'CONFIG-WARN': 'tag-warn', 'IMPORT': 'tag-import',
+  'SCRAPER': 'tag-scraper', 'MODE': 'tag-mode', 'START': 'tag-start',
+  'STOP': 'tag-stop', 'SERIE': 'tag-serie', 'NEW': 'tag-new',
+  'CHECK': 'tag-check', 'GERMAN': 'tag-german', 'ANIWORLD': 'tag-aniworld',
+  'ANIWORLD-ERR': 'tag-error', 'AUTOSTART': 'tag-start', 'SUCHE': 'tag-scraper',
+  'LOG-ERROR': 'tag-error',
+};
+
+// Tag → Level-Gruppe (für Filter)
+const TAG_TO_LEVEL = {
+  'ERROR': 'error', 'FATAL': 'error', 'FAIL': 'error',
+  'DB-ERROR': 'error', 'ANIWORLD-ERR': 'error', 'LOG-ERROR': 'error',
+  'CONFIG-WARN': 'error',
+  'WARN': 'warn',
+  'OK': 'ok', 'DONE': 'ok', 'START': 'ok', 'NEW': 'ok',
+  'DL': 'dl', 'CMD': 'dl', 'ANIWORLD': 'dl',
+};
+
+function parseLogLine(line) {
+  // Format: [2025-03-02 14:30:00] [TAG] message
+  const m = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*\[([^\]]+)\]\s*(.*)$/);
+  if (m) {
+    return { timestamp: m[1], tag: m[2], message: m[3], raw: line };
+  }
+  // Separator lines (═══ or ───)
+  if (/^[\[?\d].*[═─]{5,}/.test(line) || /^[═─]{5,}/.test(line)) {
+    const m2 = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*(.*)$/);
+    if (m2) {
+      return { timestamp: m2[1], tag: null, message: m2[2], raw: line, isSeparator: true };
+    }
+    return { timestamp: null, tag: null, message: line, raw: line, isSeparator: true };
+  }
+  // Timestamp but no tag
+  const m3 = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*(.*)$/);
+  if (m3) {
+    return { timestamp: m3[1], tag: null, message: m3[2], raw: line };
+  }
+  return { timestamp: null, tag: null, message: line, raw: line };
+}
+
+function matchesLevel(tag, level) {
+  if (level === 'all') return true;
+  if (!tag) return level === 'all';
+  const tagLevel = TAG_TO_LEVEL[tag.toUpperCase()] || 'all';
+  return tagLevel === level;
+}
+
+function renderFormattedLog() {
+  const container = $('#log-output-full');
+  if (!container) return;
+
+  const filterText = ($('#log-filter')?.value || '').toLowerCase();
+  const lines = rawLogText.trim().split('\n').filter(l => l.trim());
+
+  if (!lines.length || (lines.length === 1 && !lines[0].trim())) {
+    container.innerHTML = '<span style="color:#666">Keine Logs vorhanden.</span>';
+    updateLogStats([]);
+    return;
+  }
+
+  const parsed = lines.map(parseLogLine);
+
+  // Filter
+  const filtered = parsed.filter(p => {
+    // Level filter
+    if (logLevel !== 'all' && !matchesLevel(p.tag, logLevel) && !p.isSeparator) return false;
+    // Text filter
+    if (filterText && !p.raw.toLowerCase().includes(filterText)) return false;
+    return true;
+  });
+
+  // Render
+  const html = filtered.map(p => {
+    if (p.isSeparator) {
+      return `<div class="log-line log-separator">${escH(p.raw)}</div>`;
+    }
+
+    const ts = p.timestamp
+      ? `<span class="log-ts">${escH(p.timestamp)}</span>`
+      : '';
+
+    let tagHtml = '';
+    if (p.tag) {
+      const cls = TAG_CLASSES[p.tag.toUpperCase()] || TAG_CLASSES[p.tag.split('-')[0]?.toUpperCase()] || 'tag-default';
+      tagHtml = `<span class="log-tag ${cls}">${escH(p.tag)}</span>`;
+    }
+
+    const msg = highlightMessage(p.message || '', p.tag);
+
+    return `<div class="log-line">${ts}${tagHtml}<span class="log-msg">${msg}</span></div>`;
+  }).join('');
+
+  container.innerHTML = html || '<span style="color:#666">Keine passenden Eintr\u00e4ge.</span>';
+
+  // Auto-scroll
+  if ($('#log-autoscroll')?.checked) {
+    container.scrollTop = container.scrollHeight;
+  }
+
+  updateLogStats(parsed);
+}
+
+function highlightMessage(msg, tag) {
+  let s = escH(msg);
+  // Season/Episode Nummern hervorheben
+  s = s.replace(/(S\d{2}E\d{3})/g, '<strong style="color:var(--primary)">$1</strong>');
+  // URLs erkennen
+  s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:var(--primary);text-decoration:underline;">$1</a>');
+  // Dateinamen (.mkv, .mp4)
+  s = s.replace(/([^\s<]+\.(mkv|mp4|txt))/gi, '<span style="color:#aaf">$1</span>');
+  return s;
+}
+
+function updateLogStats(parsed) {
+  const stats = $('#log-stats');
+  if (!stats) return;
+
+  let errors = 0, warns = 0, oks = 0, dls = 0, total = parsed.length;
+  for (const p of parsed) {
+    if (!p.tag) continue;
+    const lv = TAG_TO_LEVEL[p.tag.toUpperCase()];
+    if (lv === 'error') errors++;
+    else if (lv === 'warn') warns++;
+    else if (lv === 'ok') oks++;
+    else if (lv === 'dl') dls++;
+  }
+
+  stats.innerHTML = `
+    <span class="log-stat-item"><span class="log-stat-dot" style="background:var(--text-muted)"></span> ${total} Zeilen</span>
+    <span class="log-stat-item"><span class="log-stat-dot" style="background:var(--success)"></span> ${oks} Erfolg</span>
+    <span class="log-stat-item"><span class="log-stat-dot" style="background:var(--primary)"></span> ${dls} Downloads</span>
+    <span class="log-stat-item"><span class="log-stat-dot" style="background:var(--warning)"></span> ${warns} Warnungen</span>
+    <span class="log-stat-item"><span class="log-stat-dot" style="background:var(--danger)"></span> ${errors} Fehler</span>
+  `;
+}
+
+function setLogLevel(level) {
+  logLevel = level;
+  $$('.log-level-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.level === level);
+  });
+  renderFormattedLog();
+}
+
+async function refreshFullLog() {
+  try {
+    const data = await api('/last_run');
+    rawLogText = data.log || '';
+    renderFormattedLog();
+  } catch (e) {
+    const container = $('#log-output-full');
+    if (container) container.innerHTML = '<span style="color:var(--danger)">Logs konnten nicht geladen werden.</span>';
+  }
+}
+
+function toggleLogAutoRefresh() {
+  const enabled = $('#log-auto-refresh')?.checked;
+  if (enabled && !logAutoRefreshInterval) {
+    logAutoRefreshInterval = setInterval(refreshFullLog, 8000);
+  } else if (!enabled && logAutoRefreshInterval) {
+    clearInterval(logAutoRefreshInterval);
+    logAutoRefreshInterval = null;
+  }
+}
+
+function escH(str) {
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
 }
 
 // ──────────────────────── Hinzufügen Tab ────────────────────────
@@ -124,22 +310,30 @@ async function uploadTxt() {
   }
 }
 
-async function searchAnime() {
+async function searchAnime(limit) {
   const query = $('#search-query').value.trim();
   const platform = $('#search-platform').value;
-  if (!query) return;
+  if (!query) { $('#search-results').innerHTML = ''; return; }
 
-  $('#search-results').innerHTML = '<p>Suche...</p>';
+  if (!limit) $('#search-results').innerHTML = '<p>Suche...</p>';
 
   try {
+    const body = { query, platform };
+    if (limit) body.limit = limit;
     const data = await api('/search', {
       method: 'POST',
-      body: JSON.stringify({ query, platform }),
+      body: JSON.stringify(body),
     });
     renderSearchResults(data.results || []);
   } catch (e) {
     $('#search-results').innerHTML = '<p>Suche fehlgeschlagen</p>';
   }
+}
+
+let _searchTimer = null;
+function liveSearch() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => searchAnime(5), 300);
 }
 
 function renderSearchResults(results) {
@@ -407,8 +601,12 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshStatus();
   statusInterval = setInterval(refreshStatus, 5000);
 
-  // Log-Polling
+  // Mini-Log Polling
+  refreshLog();
   setInterval(refreshLog, 8000);
+
+  // Log-Auto-Refresh (Logs-Tab)
+  logAutoRefreshInterval = setInterval(refreshFullLog, 8000);
 
   // Disk Info
   api('/disk').then(d => {
@@ -418,10 +616,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Enter-Key für Suche
+  // Enter-Key für Suche (alle Ergebnisse)
   $('#search-query')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') searchAnime();
   });
+  // Live-Suche beim Tippen (max 5)
+  $('#search-query')?.addEventListener('input', liveSearch);
   $('#add-url')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') addLink();
   });

@@ -249,6 +249,12 @@ async def search(request: Request):
         )
 
     results = scraper.search_anime(query, platform)
+
+    # Optionales Limit (für Live-Suche)
+    limit = body.get("limit")
+    if limit and isinstance(limit, int) and limit > 0:
+        results = results[:limit]
+
     return {"status": "ok", "results": results}
 
 
