@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AniLoader</title>
+  <link rel="icon" type="image/png" href="/static/AniLoader.png">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <img src="/static/AniLoader.png" alt="AniLoader" class="header-logo">
+  <h1>AniLoader</h1>
+  <span id="status-badge" class="status-badge badge-idle">idle</span>
+  <span id="disk-info" style="margin-left:auto; color:var(--text-muted); font-size:0.85em;"></span>
+</header>
+
+<!-- Tab-Bar -->
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-download">Download</button>
+  <button class="tab-btn" data-tab="tab-add">Hinzufügen</button>
+  <button class="tab-btn" data-tab="tab-db">Datenbank</button>
+  <button class="tab-btn" data-tab="tab-settings">Einstellungen</button>
+</nav>
+
+<!-- ═══════════════════════ Download Tab ═══════════════════════ -->
+<div id="tab-download" class="tab-content active">
+
+  <!-- Steuerung -->
+  <div class="card">
+    <h3>Download-Steuerung</h3>
+    <div class="btn-group" style="margin-bottom:16px;">
+      <button class="btn btn-primary btn-start" onclick="startDownload('default')">▶ Standard</button>
+      <button class="btn btn-success btn-start" onclick="startDownload('german')">🇩🇪 German</button>
+      <button class="btn btn-warning btn-start" onclick="startDownload('new')">🆕 Neue Episoden</button>
+      <button class="btn btn-secondary btn-start" onclick="startDownload('check')">🔍 Check</button>
+      <button class="btn btn-danger" id="btn-stop" onclick="stopDownload()" disabled>⏹ Stop</button>
+    </div>
+  </div>
+
+  <!-- Aktueller Status -->
+  <div class="card">
+    <h3>Aktueller Download</h3>
+    <div class="progress-grid">
+      <div class="progress-item">
+        <div class="value" id="dl-title" style="font-size:1em;">–</div>
+        <div class="label">Aktuelle Serie</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="dl-mode">–</div>
+        <div class="label">Modus</div>
+      </div>
+      <div class="progress-item">
+        <div class="value"><span id="dl-season">–</span> <span id="dl-episode">–</span></div>
+        <div class="label">Staffel / Episode</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="dl-started" style="font-size:0.9em;">–</div>
+        <div class="label">Gestartet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="card">
+    <h3>Fortschritt</h3>
+    <div class="progress-grid">
+      <div class="progress-item">
+        <div class="value" id="prog-series">0/0</div>
+        <div class="label">Serien</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="prog-downloaded">0</div>
+        <div class="label">Heruntergeladen</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="prog-skipped">0</div>
+        <div class="label">Übersprungen</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="prog-failed">0</div>
+        <div class="label">Fehlgeschlagen</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <h3>Log</h3>
+    <div id="log-output" class="log-output">Warte auf Logs...</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Hinzufügen Tab ═══════════════════════ -->
+<div id="tab-add" class="tab-content">
+
+  <!-- Link einfügen -->
+  <div class="card">
+    <h3>Link hinzufügen</h3>
+    <div style="display:flex; gap:8px;">
+      <input type="url" id="add-url" placeholder="https://aniworld.to/anime/stream/... oder https://s.to/serie/stream/...">
+      <button class="btn btn-primary" onclick="addLink()">Hinzufügen</button>
+    </div>
+    <small id="add-msg" style="display:none; margin-top:8px;"></small>
+  </div>
+
+  <!-- TXT Upload -->
+  <div class="card">
+    <h3>TXT-Datei hochladen</h3>
+    <div id="upload-area" class="upload-area">
+      <p>Datei hierher ziehen oder klicken</p>
+      <small style="color:var(--text-muted)">Eine URL pro Zeile</small>
+    </div>
+    <input type="file" id="file-input" accept=".txt" style="display:none" onchange="uploadTxt()">
+    <small id="upload-msg" style="display:none; margin-top:8px;"></small>
+  </div>
+
+  <!-- Suche -->
+  <div class="card">
+    <h3>Suche</h3>
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <input type="text" id="search-query" placeholder="Suchbegriff...">
+      <select id="search-platform" style="width:auto; min-width:140px;">
+        <option value="both">Beide</option>
+        <option value="aniworld">AniWorld (Anime)</option>
+        <option value="sto">S.to (Serien)</option>
+      </select>
+      <button class="btn btn-primary" onclick="searchAnime()">Suchen</button>
+    </div>
+    <small id="search-msg" style="display:none; margin-bottom:8px;"></small>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Datenbank Tab ═══════════════════════ -->
+<div id="tab-db" class="tab-content">
+  <div class="card">
+    <h3>Datenbank</h3>
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <input type="text" id="db-search" placeholder="Suche..." oninput="loadDatabase()">
+      <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+        <input type="checkbox" id="db-show-deleted" onchange="loadDatabase()"> Gelöschte anzeigen
+      </label>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th onclick="sortDb('id')" style="width:50px">ID</th>
+            <th onclick="sortDb('complete')" style="width:100px">Status</th>
+            <th onclick="sortDb('title')">Titel</th>
+            <th style="width:50px">Typ</th>
+            <th style="width:50px">DE</th>
+            <th style="width:100px">Fortschritt</th>
+            <th style="width:80px">Filme</th>
+            <th style="width:60px">Aktion</th>
+          </tr>
+        </thead>
+        <tbody id="db-tbody">
+          <tr><td colspan="8" style="text-align:center">Lade...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Einstellungen Tab ═══════════════════════ -->
+<div id="tab-settings" class="tab-content">
+
+  <!-- Server -->
+  <div class="card">
+    <h3>Server</h3>
+    <div class="setting-row">
+      <label>Port</label>
+      <input type="number" id="cfg-port" min="1" max="65535" value="5050">
+    </div>
+  </div>
+
+  <!-- Sprachen -->
+  <div class="card">
+    <h3>Sprachpriorität</h3>
+    <p style="color:var(--text-muted); font-size:0.85em; margin-bottom:8px;">Drag &amp; Drop zum Umsortieren</p>
+    <ul id="lang-list" class="lang-list"></ul>
+  </div>
+
+  <!-- Speicher -->
+  <div class="card">
+    <h3>Speicher</h3>
+    <div class="setting-row">
+      <label>Modus</label>
+      <select id="cfg-storage-mode" onchange="toggleStoragePaths()">
+        <option value="standard">Standard (ein Ordner)</option>
+        <option value="separate">Separate Ordner</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <label>Download-Pfad</label>
+      <input type="text" id="cfg-download-path">
+    </div>
+    <div id="separate-paths" style="display:none;">
+      <div class="setting-row">
+        <label>Anime-Pfad</label>
+        <input type="text" id="cfg-anime-path">
+      </div>
+      <div class="setting-row">
+        <label>Serien-Pfad</label>
+        <input type="text" id="cfg-series-path">
+      </div>
+      <div class="setting-row">
+        <label style="min-width:auto;">
+          <input type="checkbox" id="cfg-anime-sep-movies"> Anime-Filme separater Ordner
+        </label>
+      </div>
+      <div class="setting-row">
+        <label>Anime-Filme-Pfad</label>
+        <input type="text" id="cfg-anime-movies-path">
+      </div>
+      <div class="setting-row">
+        <label style="min-width:auto;">
+          <input type="checkbox" id="cfg-serien-sep-movies"> Serien-Filme separater Ordner
+        </label>
+      </div>
+      <div class="setting-row">
+        <label>Serien-Filme-Pfad</label>
+        <input type="text" id="cfg-serien-movies-path">
+      </div>
+    </div>
+  </div>
+
+  <!-- Download-Einstellungen -->
+  <div class="card">
+    <h3>Download</h3>
+    <div class="setting-row">
+      <label>Min. freier Speicher (GB)</label>
+      <input type="number" id="cfg-min-free" min="0" step="0.5" value="2.0">
+    </div>
+    <div class="setting-row">
+      <label>Timeout (Sekunden)</label>
+      <input type="number" id="cfg-timeout" min="60" step="60" value="900">
+    </div>
+    <div class="setting-row">
+      <label>Autostart-Modus</label>
+      <select id="cfg-autostart">
+        <option value="">Deaktiviert</option>
+        <option value="default">Standard</option>
+        <option value="german">German</option>
+        <option value="new">Neue Episoden</option>
+        <option value="check">Check</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Speichern -->
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" onclick="saveSettings()">Einstellungen speichern</button>
+    <small id="settings-msg" style="display:none; margin-left:12px;"></small>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

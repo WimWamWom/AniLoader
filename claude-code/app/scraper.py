@@ -1,0 +1,607 @@
+"""
+AniLoader – HTML-Scraper für aniworld.to und s.to.
+
+Extrahiert Serien-Titel, Staffeln, Episoden und verfügbare Sprachen.
+Nutzt niquests mit DNS-over-HTTPS für blockadefreien Zugriff.
+"""
+
+import re
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
+
+from bs4 import BeautifulSoup
+from niquests import Session
+
+from .logger import log
+
+# ──────────────────────── HTTP Session ────────────────────────
+
+_session: Optional[Session] = None
+
+
+def _get_session() -> Session:
+    """Lazy-Init einer niquests-Session mit DNS-over-HTTPS."""
+    global _session
+    if _session is None:
+        _session = Session(
+            resolver=["doh+google://"],
+            headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/125.0.0.0 Safari/537.36"
+                ),
+                "Referer": "https://aniworld.to/",
+            },
+        )
+    return _session
+
+
+def _fetch(url: str) -> str:
+    """Fetch HTML für eine URL."""
+    resp = _get_session().get(url, timeout=15)
+    resp.raise_for_status()
+    text = str(resp.text)
+    return text
+
+
+# ──────────────────────── URL-Hilfsfunktionen ────────────────────────
+
+
+def get_base_url(url: str) -> str:
+    """Extrahiert die Serien-Basis-URL (ohne Staffel/Episode)."""
+    if "aniworld.to" in url:
+        m = re.match(r"(https://aniworld\.to/anime/stream/[^/]+)", url)
+        return m.group(1) if m else url
+    if "s.to" in url:
+        m = re.match(r"(https://s\.to/serie/stream/[^/]+)", url)
+        return m.group(1) if m else url
+    return url
+
+
+def is_aniworld(url: str) -> bool:
+    return "aniworld.to" in url
+
+
+def is_sto(url: str) -> bool:
+    return "s.to" in url
+
+
+def build_season_url(base_url: str, season: int) -> str:
+    """Baut die URL für eine Staffel."""
+    return f"{base_url}/staffel-{season}"
+
+
+def build_film_url(base_url: str) -> str:
+    """Baut die URL für die Filme-Seite."""
+    return f"{base_url}/filme"
+
+
+def build_episode_url(base_url: str, season: int, episode: int) -> str:
+    """Baut die URL für eine einzelne Episode."""
+    if season == 0:
+        return f"{base_url}/filme/film-{episode}"
+    return f"{base_url}/staffel-{season}/episode-{episode}"
+
+
+# ──────────────────────── Serien-Titel ────────────────────────
+
+
+def get_series_title(url: str) -> Optional[str]:
+    """Extrahiert den Serien-Titel von der Serien-Seite."""
+    base_url = get_base_url(url)
+    try:
+        html = _fetch(base_url)
+        soup = BeautifulSoup(html, "lxml")
+
+        if is_aniworld(url):
+            # <div class="series-title"><h1><span>Title</span></h1></div>
+            title_div = soup.find("div", class_="series-title")
+            if title_div:
+                h1 = title_div.find("h1")
+                if h1:
+                    span = h1.find("span")
+                    return span.get_text(strip=True) if span else h1.get_text(strip=True)
+            # Fallback
+            h1 = soup.find("h1")
+            if h1:
+                return h1.get_text(strip=True)
+
+        elif is_sto(url):
+            # <h1 itemprop="name">Title</h1>
+            h1 = soup.find("h1", attrs={"itemprop": "name"})
+            if h1:
+                return h1.get_text(strip=True)
+            # Fallback: series-title Div (s.to nutzt ähnliche Struktur)
+            title_div = soup.find("div", class_="series-title")
+            if title_div:
+                h1 = title_div.find("h1")
+                if h1:
+                    span = h1.find("span")
+                    return span.get_text(strip=True) if span else h1.get_text(strip=True)
+            h1 = soup.find("h1")
+            if h1:
+                return h1.get_text(strip=True)
+
+    except Exception as e:
+        log(f"[SCRAPER] Titel-Fehler für {url}: {e}")
+
+    return None
+
+
+# ──────────────────────── Staffel-Nummern ────────────────────────
+
+
+def get_season_numbers(url: str) -> List[int]:
+    """
+    Gibt eine Liste der verfügbaren Staffel-Nummern zurück.
+    0 wird für Filme verwendet (falls vorhanden).
+    """
+    base_url = get_base_url(url)
+    try:
+        html = _fetch(base_url)
+        soup = BeautifulSoup(html, "lxml")
+        seasons: List[int] = []
+
+        if is_aniworld(base_url):
+            nav = soup.find("div", class_="hosterSiteDirectNav")
+            scope = nav if nav else soup
+            for ul in scope.find_all("ul"):
+                text = ul.get_text(" ", strip=True)
+                if "Staffeln" in text or "Staffel" in text:
+                    for a in ul.find_all("a"):
+                        num = a.get_text(strip=True)
+                        if num.isdigit():
+                            seasons.append(int(num))
+            # Filme prüfen
+            if soup.find("a", href=re.compile(r"/filme\s*$")):
+                seasons.insert(0, 0)
+            # Fallback: Suche nach "Filme" Link im Text
+            for a in soup.find_all("a"):
+                href = a.get("href", "")
+                href = str(href)
+                if href.endswith("/filme") and 0 not in seasons:
+                    seasons.insert(0, 0)
+                    break
+
+        elif is_sto(base_url):
+            nav = soup.find("nav", id="season-nav")
+            scope = nav if nav else soup
+            for a in scope.find_all("a", attrs={"data-season-pill": True}):
+                num_str = str(a.get("data-season-pill", "")).strip()
+                if num_str.isdigit():
+                    seasons.append(int(num_str))
+
+        return sorted(set(seasons))
+
+    except Exception as e:
+        log(f"[SCRAPER] Staffeln-Fehler für {url}: {e}")
+        return []
+
+
+# ──────────────────────── Hat Filme? ────────────────────────
+
+
+def has_movies(url: str) -> bool:
+    """Prüft ob die Serie Filme hat."""
+    seasons = get_season_numbers(url)
+    return 0 in seasons
+
+
+# ──────────────── Episoden pro Staffel (mit Sprachen) ──────────────────
+
+
+def get_episodes_for_season(
+    base_url: str, season: int
+) -> List[Dict]:
+    """
+    Gibt für eine Staffel alle Episoden mit verfügbaren Sprachen zurück.
+
+    Returns:
+        Liste von Dicts: [
+            {
+                "episode": 1,
+                "title_de": "...",
+                "title_en": "...",
+                "url": "https://...",
+                "languages": ["German Dub", "German Sub", "English Sub"],
+            },
+            ...
+        ]
+    """
+    if season == 0:
+        season_url = build_film_url(base_url)
+    else:
+        season_url = build_season_url(base_url, season)
+
+    try:
+        html = _fetch(season_url)
+    except Exception as e:
+        log(f"[SCRAPER] Episoden-Fehler für {season_url}: {e}")
+        return []
+
+    soup = BeautifulSoup(html, "lxml")
+
+    if is_aniworld(base_url):
+        return _parse_aniworld_season(soup, base_url, season)
+    elif is_sto(base_url):
+        return _parse_sto_season(soup, base_url, season)
+    return []
+
+
+def _parse_aniworld_season(
+    soup: BeautifulSoup, base_url: str, season: int
+) -> List[Dict]:
+    """
+    Parst eine AniWorld-Staffelseite.
+    Die Sprach-Flags sind direkt in der Episoden-Tabelle sichtbar.
+    """
+    episodes = []
+
+    # Suche tbody mit id="seasonN" oder "seasonFilme"
+    if season == 0:
+        # Filme: verschiedene IDs möglich
+        tbody = None
+        for candidate_id in ["seasonFilme", "season0"]:
+            tbody = soup.find("tbody", id=candidate_id)
+            if tbody:
+                break
+        if not tbody:
+            # Fallback: erste tbody mit Episoden
+            tbody = soup.find("tbody")
+    else:
+        tbody = soup.find("tbody", id=f"season{season}")
+
+    if not tbody:
+        return []
+
+    for tr in tbody.find_all("tr", attrs={"data-episode-id": True}):
+        ep_data: Dict = {"languages": []}
+
+        # Episode-Nummer
+        meta = tr.find("meta", attrs={"itemprop": "episodeNumber"})
+        if meta:
+            data = meta.get("content", "0")
+            data = str(data)
+            ep_data["episode"] = data
+        else:
+            # Fallback: aus Link-Text
+            a = tr.find("a", attrs={"itemprop": "url"})
+            if a:
+                text = a.get_text(strip=True)
+                m = re.search(r"(\d+)", text)
+                ep_data["episode"] = int(m.group(1)) if m else 0
+            else:
+                continue
+
+        # Titel (deutsch + englisch)
+        title_td = tr.find("td", class_="seasonEpisodeTitle")
+        if title_td:
+            strong = title_td.find("strong")
+            ep_data["title_de"] = strong.get_text(strip=True) if strong else ""
+            span = title_td.find("span")
+            ep_data["title_en"] = span.get_text(strip=True) if span else ""
+        else:
+            ep_data["title_de"] = ""
+            ep_data["title_en"] = ""
+
+        # URL
+        a = tr.find("a", attrs={"itemprop": "url"})
+        if a and a.get("href"):
+            href = a["href"]
+            href = str(href)
+            if not href.startswith("http"):
+                href = f"https://aniworld.to{href}"
+            ep_data["url"] = href
+        else:
+            episode = int(ep_data["episode"])
+            ep_data["url"] = build_episode_url(base_url, season, episode)
+
+        # Sprachen aus Flag-Images
+        langs = _extract_aniworld_languages(tr)
+        ep_data["languages"] = langs
+
+        episodes.append(ep_data)
+
+    return episodes
+
+
+def _extract_aniworld_languages(element) -> List[str]:
+    """Extrahiert Sprachen aus AniWorld Flag-Images."""
+    langs = []
+    seen = set()
+
+    for img in element.find_all("img", class_="flag"):
+        src = img.get("src", "")
+        title = img.get("title", "").lower()
+
+        lang = None
+        if "german.svg" in src or "deutsch/german" in title:
+            lang = "German Dub"
+        elif "japanese-german.svg" in src or "deutschem untertitel" in title:
+            lang = "German Sub"
+        elif "japanese-english.svg" in src or "englisch" in title:
+            lang = "English Sub"
+        elif "english.svg" in src or "english" in title:
+            lang = "English Dub"
+
+        if lang and lang not in seen:
+            seen.add(lang)
+            langs.append(lang)
+
+    return langs
+
+
+def _parse_sto_season(
+    soup: BeautifulSoup, base_url: str, season: int
+) -> List[Dict]:
+    """
+    Parst eine S.to-Staffelseite.
+    Sprachen sind auf der Staffelseite NICHT pro Episode verfügbar.
+    → languages bleibt leer, Downloader nutzt Fallback-Kaskade.
+    """
+    episodes = []
+
+    rows = soup.find_all("tr", class_="episode-row")
+    if not rows:
+        # Fallback: Suche nach Episode-Links im HTML
+        pattern = re.compile(
+            r'href="(?:https?://(?:serienstream|s)\.to)?/serie/[^"]+/staffel-'
+            + str(season)
+            + r'/episode-(\d+)"'
+        )
+        seen = set()
+        for m in pattern.finditer(str(soup)):
+            ep_num = int(m.group(1))
+            if ep_num not in seen:
+                seen.add(ep_num)
+                episodes.append({
+                    "episode": ep_num,
+                    "title_de": "",
+                    "title_en": "",
+                    "url": build_episode_url(base_url, season, ep_num),
+                    "languages": [],  # unbekannt von der season page
+                })
+        return sorted(episodes, key=lambda x: x["episode"])
+
+    for row in rows:
+        row_class = row.get("class")
+        if isinstance(row_class, str):
+            row_class = row_class.split()
+            classes = " ".join(row_class)
+        if "upcoming" in classes:
+            continue
+
+        ep_data: Dict = {"languages": []}
+
+        # Episode-Nummer
+        th = row.select_one("th.episode-number-cell")
+        if th:
+            num_text = th.get_text(strip=True)
+            ep_data["episode"] = int(num_text) if num_text.isdigit() else 0
+        else:
+            continue
+
+        # Titel
+        title_cell = row.select_one("td.episode-title-cell, td:nth-of-type(2)")
+        if title_cell:
+            strong = title_cell.find("strong")
+            ep_data["title_de"] = strong.get_text(strip=True) if strong else ""
+            span = title_cell.find("span")
+            ep_data["title_en"] = span.get_text(strip=True) if span else ""
+        else:
+            ep_data["title_de"] = ""
+            ep_data["title_en"] = ""
+
+        # URL
+        ep_data["url"] = build_episode_url(base_url, season, ep_data["episode"])
+
+        # Sprachen (versuche aus der Zeile zu extrahieren)
+        langs = _extract_sto_languages(row)
+        ep_data["languages"] = langs
+
+        episodes.append(ep_data)
+
+    return episodes
+
+
+def _extract_sto_languages(element) -> List[str]:
+    """Extrahiert Sprachen aus S.to SVG-Icons oder Flag-Images."""
+    langs = []
+    seen = set()
+
+    # SVG-Icons (neuere S.to-Struktur)
+    for svg in element.find_all("svg", class_="watch-language"):
+        use = svg.find("use")
+        if not use:
+            continue
+        href = str(use.get("href", "") or use.get("xlink:href", ""))
+        lang = None
+        flag = href.replace("#icon-flag-", "")
+        if flag == "german":
+            lang = "German Dub"
+        elif flag == "english":
+            lang = "English Dub"
+        elif flag in ("english-german", "japanese-german"):
+            lang = "German Sub"
+        elif flag in ("japanese-english",):
+            lang = "English Sub"
+        if lang and lang not in seen:
+            seen.add(lang)
+            langs.append(lang)
+
+    # Flag-Images Fallback (ältere S.to-Struktur)
+    if not langs:
+        for img in element.find_all("img", class_="flag"):
+            src = img.get("src", "") or img.get("data-src", "")
+            lang = None
+            if "german.svg" in src:
+                lang = "German Dub"
+            elif "japanese-german.svg" in src or "english-german.svg" in src:
+                lang = "German Sub"
+            elif "japanese-english.svg" in src:
+                lang = "English Sub"
+            elif "english.svg" in src:
+                lang = "English Dub"
+            if lang and lang not in seen:
+                seen.add(lang)
+                langs.append(lang)
+
+    return langs
+
+
+# ──────────────────────── Episode-Sprachen (Fallback) ────────────────────────
+
+
+def get_episode_languages(episode_url: str) -> List[str]:
+    """
+    Holt die verfügbaren Sprachen direkt von der Episoden-Seite.
+    Wird als Fallback verwendet, wenn die Staffelseite keine Sprach-Info hat.
+    """
+    try:
+        html = _fetch(episode_url)
+        soup = BeautifulSoup(html, "lxml")
+
+        if is_aniworld(episode_url):
+            return _extract_aniworld_languages(soup)
+        elif is_sto(episode_url):
+            return _extract_sto_languages(soup)
+    except Exception as e:
+        log(f"[SCRAPER] Sprachen-Fehler für {episode_url}: {e}")
+
+    return []
+
+
+# ──────────────────────── Episode-Titel ────────────────────────
+
+
+def get_episode_title(episode_url: str) -> Optional[str]:
+    """Extrahiert den Episoden-Titel von der Episoden-Seite."""
+    try:
+        html = _fetch(episode_url)
+        soup = BeautifulSoup(html, "lxml")
+
+        if is_aniworld(episode_url):
+            span = soup.find("span", class_="episodeGermanTitle")
+            if span:
+                return span.get_text(strip=True)
+            # Fallback
+            h2 = soup.find("h2", class_="episodeTitle")
+            if h2:
+                return h2.get_text(strip=True)
+
+        elif is_sto(episode_url):
+            # S.to Episodentitel
+            h2 = soup.find("h2", class_="episodeTitle")
+            if h2:
+                return h2.get_text(strip=True)
+            title_span = soup.find("span", class_="episodeGermanTitle")
+            if title_span:
+                return title_span.get_text(strip=True)
+
+    except Exception as e:
+        log(f"[SCRAPER] Episodentitel-Fehler für {episode_url}: {e}")
+
+    return None
+
+
+# ──────────────────────── Suche ────────────────────────
+
+
+def search_anime(query: str, platform: str = "both") -> List[Dict]:
+    """
+    Sucht nach Serien/Animes.
+
+    Args:
+        query: Suchbegriff
+        platform: "aniworld" | "sto" | "both"
+
+    Returns:
+        Liste von Dicts: [{"title": "...", "url": "...", "description": "...", "platform": "..."}]
+    """
+    results = []
+
+    if platform in ("aniworld", "both"):
+        try:
+            resp = _get_session().post(
+                "https://aniworld.to/ajax/search",
+                data={"keyword": query},
+                timeout=10,
+            )
+            data = resp.json() if resp.status_code == 200 else []
+            for item in data:
+                link = item.get("link", "")
+                if "/anime/stream/" in link:
+                    full_url = f"https://aniworld.to{link}" if not link.startswith("http") else link
+                    results.append({
+                        "title": item.get("title", "").replace("<em>", "").replace("</em>", ""),
+                        "url": full_url,
+                        "description": item.get("description", ""),
+                        "platform": "AniWorld",
+                    })
+        except Exception as e:
+            log(f"[SUCHE] AniWorld-Fehler: {e}")
+
+    if platform in ("sto", "both"):
+        try:
+            resp = _get_session().post(
+                "https://s.to/ajax/search",
+                data={"keyword": query},
+                timeout=10,
+            )
+            data = resp.json() if resp.status_code == 200 else []
+            for item in data:
+                link = item.get("link", "")
+                if "/serie/stream/" in link:
+                    full_url = f"https://s.to{link}" if not link.startswith("http") else link
+                    results.append({
+                        "title": item.get("title", "").replace("<em>", "").replace("</em>", ""),
+                        "url": full_url,
+                        "description": item.get("description", ""),
+                        "platform": "S.to",
+                    })
+        except Exception as e:
+            log(f"[SUCHE] S.to-Fehler: {e}")
+
+    return results
+
+
+# ──────────────────────── Komplette Serien-Info ────────────────────────
+
+
+def get_series_info(url: str) -> Dict:
+    """
+    Sammelt alle Informationen zu einer Serie in einem Aufruf.
+    Minimale HTTP-Requests: 1 (Serien-Seite) + N (je eine pro Staffel).
+
+    Returns:
+        {
+            "title": "...",
+            "url": "...",
+            "has_movies": True/False,
+            "seasons": {
+                0: [{"episode": 1, ...}, ...],  # Filme
+                1: [{"episode": 1, ...}, ...],   # Staffel 1
+                ...
+            }
+        }
+    """
+    base_url = get_base_url(url)
+    title = get_series_title(url)
+    season_numbers = get_season_numbers(url)
+
+    info = {
+        "title": title,
+        "url": base_url,
+        "has_movies": 0 in season_numbers,
+        "seasons": {},
+    }
+
+    for s_num in season_numbers:
+        episodes = get_episodes_for_season(base_url, s_num)
+        info["seasons"][s_num] = episodes
+
+    return info
