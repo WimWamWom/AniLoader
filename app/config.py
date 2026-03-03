@@ -29,10 +29,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "storage": {
         "mode": "standard",  # standard | separate
         "download_path": str(DEFAULT_DOWNLOAD_DIR),
-        "anime_path": str(DEFAULT_DOWNLOAD_DIR / "Anime"),
-        "series_path": str(DEFAULT_DOWNLOAD_DIR / "Serien"),
-        "anime_movies_path": str(DEFAULT_DOWNLOAD_DIR / "Anime-Filme"),
-        "serien_movies_path": str(DEFAULT_DOWNLOAD_DIR / "Serien-Filme"),
+        "anime_path": str(BASE_DIR / "Anime"),
+        "series_path": str(BASE_DIR / "Serien"),
+        "anime_movies_path": str(BASE_DIR / "Anime-Filme"),
+        "serien_movies_path": str(BASE_DIR / "Serien-Filme"),
         "anime_separate_movies": False,
         "serien_separate_movies": False,
     },

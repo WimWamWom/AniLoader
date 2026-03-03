@@ -42,11 +42,11 @@ COPY app/ ./app/
 COPY web/ ./web/
 
 # Verzeichnisse für persistente Daten
-RUN mkdir -p /app/data /app/Downloads
+RUN mkdir -p /app/data /app/Downloads /app/Anime /app/Serien /app/Anime-Filme /app/Serien-Filme
 
 EXPOSE 5050
 
-VOLUME ["/app/data", "/app/Downloads"]
+VOLUME ["/app/data", "/app/Downloads", "/app/Anime", "/app/Serien", "/app/Anime-Filme", "/app/Serien-Filme"]
 
 ENV PYTHONUNBUFFERED=1
 

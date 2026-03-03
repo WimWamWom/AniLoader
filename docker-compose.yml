@@ -1,25 +1,44 @@
-version: '3.8'
-
 services:
   aniloader:
     build: .
+    image: AniLoader
     container_name: aniloader
+    hostname: aniloader
     ports:
       - "5050:5050"
     volumes:
-      # Persistente Daten (DB, Config, Logs)
+      # ── Persistente Daten (DB, Config, Logs) ──
+      # config.yaml: data.folder = /app/data
       - ./data:/app/data
-      # Download-Verzeichnis (Standard-Modus)
+
+      # ── Download-Verzeichnis (storage.mode: standard) ──
+      # config.yaml: storage.download_path = /app/Downloads
       - ./Downloads:/app/Downloads
-      # ── Separate Pfade (optional, bei storage.mode: separate) ──
-      # - /pfad/zu/animes:/animes
-      # - /pfad/zu/serien:/serien
+
+      # ── Separate Pfade (storage.mode: separate) ──
+      # config.yaml: storage.anime_path = /app/Anime
+      - ./Anime:/app/Anime
+      # config.yaml: storage.series_path = /app/Serien
+      - ./Serien:/app/Serien
+      # config.yaml: storage.anime_movies_path = /app/Anime-Filme
+      - ./Anime-Filme:/app/Anime-Filme
+      # config.yaml: storage.serien_movies_path = /app/Serien-Filme
+      - ./Serien-Filme:/app/Serien-Filme
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Europe/Berlin
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s
+      start_period: 10s
