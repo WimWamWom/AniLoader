@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="de" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes" />
+  <title>AniLoader</title>
+  <link rel="icon" type="image/png" href="/static/AniLoader.png">
+
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"/>
+
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<nav class="navbar navbar-expand-lg border-bottom sticky-toolbar">
+  <div class="container-fluid">
+    <span class="navbar-brand">AniLoader by WimWamWom</span>
+    <div class="ms-auto d-flex gap-2 align-items-center">
+      <span id="lastUpdated" class="text-secondary small"></span>
+      <button id="refreshBtn" class="btn btn-sm btn-outline-light">Jetzt aktualisieren</button>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-3">
+  <ul class="nav nav-tabs" id="tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="download-tab" data-bs-toggle="tab" data-bs-target="#download" type="button" role="tab">📥 Download</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="add-tab" data-bs-toggle="tab" data-bs-target="#add" type="button" role="tab">➕ Hinzufügen</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="database-tab" data-bs-toggle="tab" data-bs-target="#database" type="button" role="tab">📂 Datenbank</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab">📜 Live-Log</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="settings-tab" data-bs-toggle="tab" data-bs-target="#settings" type="button" role="tab">⚙️ Einstellungen</button>
+    </li>
+  </ul>
+
+  <div class="tab-content pt-3">
+    <!-- Download Tab -->
+    <div class="tab-pane fade show active" id="download" role="tabpanel" aria-labelledby="download-tab">
+      <div class="row mb-3">
+        <div class="col-12 mb-2">
+          <div class="d-flex flex-wrap gap-2">
+            <button id="start-default" class="btn btn-primary flex-fill">▶️ Standard</button>
+            <button id="start-german" class="btn btn-success flex-fill">🇩🇪 German</button>
+            <button id="start-new" class="btn btn-warning flex-fill">🆕 Neue Episoden</button>
+            <button id="start-missing" class="btn btn-info flex-fill">🔄️ Fehlende Episoden</button>
+            <button id="start-full-check" class="btn btn-secondary flex-fill">✅ Check</button>
+            <button id="stop-download" class="btn btn-danger flex-fill" style="display: none;">⏹️ Stop</button>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <span id="download-status" class="small text-secondary">Status: idle</span>
+            <span id="disk-free" class="small text-secondary">Freier Speicher: -</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="overviewContainer" class="row g-3">
+        <!-- Cards für alle Animes (kurze Übersicht) -->
+      </div>
+      <div class="mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <h6 class="mb-0">Warteschlange</h6>
+          <button id="queue-clear" class="btn btn-sm btn-outline-danger">Warteschlange leeren</button>
+        </div>
+        <div class="table-responsive">
+      <table class="table table-dark table-striped table-hover mt-1">
+            <thead>
+        <tr><th>#</th><th>ID</th><th>Title</th><th>Aktion</th></tr>
+            </thead>
+            <tbody id="queue-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Tab -->
+    <div class="tab-pane fade" id="add" role="tabpanel" aria-labelledby="add-tab">
+      <div class="row">
+        <div class="col-12">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title mb-4">➕ Anime/Serie hinzufügen</h5>
+              
+              <!-- Suche nach Anime/Serie -->
+              <div class="mb-4">
+                <h6 class="text-muted mb-3">🔍 Suche nach Anime/Serie</h6>
+                <p class="small text-muted">Durchsuche AniWorld.to und S.to gleichzeitig nach Anime und Serien.</p>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                  <input type="text" id="searchQuery" class="form-control flex-fill" placeholder="z.B. One Piece, Attack on Titan..." style="min-width: 200px;">
+                  <button id="searchBtn" class="btn btn-primary">🔍 Suchen</button>
+                </div>
+                <span id="searchStatus" class="small text-secondary d-block"></span>
+                <div id="searchResults" class="search-results-container" style="display: none;"></div>
+              </div>
+
+              <hr>
+
+              <!-- Link direkt hinzufügen -->
+              <div class="mb-4">
+                <h6 class="text-muted mb-3">🔗 Link direkt hinzufügen</h6>
+                <p class="small text-muted">Füge einen direkten Link zu einem Anime/Serie hinzu.</p>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                  <input type="text" id="directLinkInput" class="form-control flex-fill" placeholder="https://aniworld.to/anime/stream/..." style="min-width: 200px;">
+                  <button id="addLinkBtn" class="btn btn-primary">Hinzufügen</button>
+                </div>
+                <span id="linkAddStatus" class="small text-secondary d-block"></span>
+              </div>
+
+              <hr>
+
+              <!-- TXT-Datei hochladen -->
+              <div>
+                <h6 class="text-muted mb-3">📄 TXT-Datei hochladen</h6>
+                <p class="small text-muted">Lade eine TXT-Datei mit Anime-URLs hoch (eine URL pro Zeile). Die URLs werden automatisch in die Datenbank importiert.</p>
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                  <input type="file" id="txtFileUpload" class="form-control flex-fill" accept=".txt" style="min-width: 200px;">
+                  <button id="uploadTxtBtn" class="btn btn-primary">Hochladen</button>
+                </div>
+                <span id="uploadStatus" class="small text-secondary d-block"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Database Tab -->
+    <div class="tab-pane fade" id="database" role="tabpanel" aria-labelledby="database-tab">
+      <div class="row g-2 mb-2">
+        <div class="col-12 col-md-4">
+          <input id="db-search" class="form-control form-control-sm" placeholder="Suchen (Title / URL)" />
+        </div>
+        <div class="col-6 col-md-2">
+          <select id="db-complete" class="form-select form-select-sm">
+            <option value="">Status: Alle</option>
+            <option value="1">Komplett</option>
+            <option value="0">Nicht komplett</option>
+            <option value="deleted">Gelöscht</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <select id="db-deutsch" class="form-select form-select-sm">
+            <option value="">Deutsch: Alle</option>
+            <option value="1">Deutsch komplett</option>
+            <option value="0">Deutsch fehlt</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-3 d-flex gap-2">
+          <select id="db-sort" class="form-select form-select-sm">
+            <option value="id">ID</option>
+            <option value="title">Title</option>
+            <option value="last_film">Letzter Film</option>
+            <option value="last_episode">Letzte Ep.</option>
+            <option value="last_season">Letzte Staffel</option>
+          </select>
+          <select id="db-order" class="form-select form-select-sm">
+            <option value="asc">↑</option>
+            <option value="desc">↓</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-3 text-md-end">
+          <button id="db-refresh" class="btn btn-sm btn-outline-light w-100 w-md-auto">Aktualisieren</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-dark table-striped table-hover table-sm mt-1">
+          <thead>
+            <tr>
+              <th style="width:5ch">ID</th>
+              <th style="min-width:8rem">Title</th>
+              <th style="min-width:10rem">URL</th>
+              <th style="width:7ch">Status</th>
+              <th style="width:5ch">DE</th>
+              <th style="width:5ch">Del</th>
+              <th style="min-width:8rem">Fehlende DE</th>
+              <th style="width:8ch">S/E/F</th>
+              <th style="width:8ch">Aktion</th>
+            </tr>
+          </thead>
+          <tbody id="db-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Logs Tab -->
+    <div class="tab-pane fade" id="logs" role="tabpanel" aria-labelledby="logs-tab">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <input id="logFilter" class="form-control form-control-sm flex-fill" placeholder="Log filtern (Regex)" style="min-width: 150px; max-width: 320px;" />
+        <button id="clearFilter" class="btn btn-sm btn-outline-secondary">Filter löschen</button>
+        <button id="copyLogs" class="btn btn-sm btn-outline-secondary">Kopieren</button>
+        <div class="btn-group" role="group">
+          <input type="radio" class="btn-check" name="logSource" id="logSourceAll" value="all" checked>
+          <label class="btn btn-sm btn-outline-primary" for="logSourceAll">Alle Logs</label>
+          
+          <input type="radio" class="btn-check" name="logSource" id="logSourceLastRun" value="last_run">
+          <label class="btn btn-sm btn-outline-primary" for="logSourceLastRun">Letzter Run</label>
+        </div>
+        <div class="form-check mb-0 ms-auto">
+          <input class="form-check-input" type="checkbox" id="autoScroll" checked>
+          <label class="form-check-label" for="autoScroll">
+            Autoscroll
+          </label>
+        </div>
+        <div class="small text-secondary">Zeilen: <span id="log-count">0</span></div>
+      </div>
+      <div id="logBox" class="log-box mono">Noch keine Logs...</div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-pane fade" id="settings" role="tabpanel" aria-labelledby="settings-tab">
+      
+      <!-- Settings Navigation -->
+      <div class="row mb-3">
+        <div class="col-12">
+          <ul class="nav nav-pills settings-nav flex-column flex-md-row" id="settings-pills" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active w-100" id="storage-pill" data-bs-toggle="pill" data-bs-target="#storage-settings" type="button" role="tab">
+                📁 Speicherorte
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link w-100" id="download-pill" data-bs-toggle="pill" data-bs-target="#download-settings" type="button" role="tab">
+                ⚙️ Download
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link w-100" id="system-pill" data-bs-toggle="pill" data-bs-target="#system-settings" type="button" role="tab">
+                🖥️ System
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Settings Content -->
+      <div class="tab-content" id="settings-pills-content">
+        
+        <!-- Storage Settings -->
+        <div class="tab-pane fade show active" id="storage-settings" role="tabpanel">
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h5 class="mb-0">📁 Speicherorganisation</h5>
+                  <p class="text-muted small mb-0">Konfiguriere, wo deine Downloads gespeichert werden</p>
+                </div>
+                <div class="card-body">
+                  
+                  <!-- Storage Mode -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">Speichermodus</h6>
+                    <div class="row g-2">
+                      <div class="col-12 col-lg-6">
+                        <div class="form-check storage-mode-option">
+                          <input class="form-check-input" type="radio" name="storage-mode-radio" id="storage-mode-standard" value="standard">
+                          <label class="form-check-label" for="storage-mode-standard">
+                            <strong>Standard</strong>
+                            <span class="d-block text-muted small">Alle Downloads in einem gemeinsamen Ordner</span>
+                          </label>
+                        </div>
+                      </div>
+                      <div class="col-12 col-lg-6">
+                        <div class="form-check storage-mode-option">
+                          <input class="form-check-input" type="radio" name="storage-mode-radio" id="storage-mode-separate" value="separate">
+                          <label class="form-check-label" for="storage-mode-separate">
+                            <strong>Separat</strong>
+                            <span class="d-block text-muted small">Getrennte Ordner für Animes und Serien</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Standard Mode Settings -->
+                  <div id="standard-path-container" class="settings-section">
+                    <h6 class="settings-section-title">Download-Verzeichnis</h6>
+                    <div class="input-group input-group-lg">
+                      <span class="input-group-text">📂</span>
+                      <input id="download-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\Downloads" />
+                      <button id="choose-download-path" class="btn btn-outline-secondary" type="button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                          <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                        </svg>
+                        Durchsuchen
+                      </button>
+                    </div>
+                    <div class="form-text">Alle Animes und Serien werden in diesem Ordner gespeichert.</div>
+                  </div>
+
+                  <!-- Separate Mode Settings -->
+                  <div id="separate-paths-container" style="display: none;">
+                    
+                    <!-- Anime Path -->
+                    <div class="settings-section">
+                      <h6 class="settings-section-title">🎌 Anime-Speicherort</h6>
+                      <div class="input-group input-group-lg">
+                        <span class="input-group-text">📂</span>
+                        <input id="anime-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\Animes" />
+                        <button id="choose-anime-path" class="btn btn-outline-secondary" type="button">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                            <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                          </svg>
+                          Durchsuchen
+                        </button>
+                      </div>
+                      <div class="form-text">Basisordner für alle Animes von aniworld.to. Filme landen im Unterordner "Filme".</div>
+                      
+                      <!-- Anime Movies Checkbox -->
+                      <div class="mt-3">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" id="anime-separate-movies">
+                          <label class="form-check-label" for="anime-separate-movies">
+                            Anime-Filme in separatem Ordner speichern
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <!-- Anime Movies Path (conditional) -->
+                      <div id="anime-movies-path-container" class="mt-3" style="display: none;">
+                        <div class="input-group">
+                          <span class="input-group-text">🎬</span>
+                          <input id="anime-movies-path" type="text" class="form-control" placeholder="z.B. D:\Anime-Filme" />
+                          <button id="choose-anime-movies-path" class="btn btn-outline-secondary" type="button">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                              <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                            </svg>
+                            Durchsuchen
+                          </button>
+                        </div>
+                        <div class="form-text">Alle Anime-Filme werden in diesem zentralen Ordner gespeichert.</div>
+                      </div>
+                    </div>
+
+                    <hr class="settings-divider">
+
+                    <!-- Serien Path -->
+                    <div class="settings-section">
+                      <h6 class="settings-section-title">📺 Serien-Speicherort</h6>
+                      <div class="input-group input-group-lg">
+                        <span class="input-group-text">📂</span>
+                        <input id="serien-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\Serien" />
+                        <button id="choose-serien-path" class="btn btn-outline-secondary" type="button">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                            <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                          </svg>
+                          Durchsuchen
+                        </button>
+                      </div>
+                      <div class="form-text">Basisordner für alle Serien von s.to. Filme landen im Unterordner "Filme".</div>
+                      
+                      <!-- Serien Movies Checkbox -->
+                      <div class="mt-3">
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" id="serien-separate-movies">
+                          <label class="form-check-label" for="serien-separate-movies">
+                            Serien-Filme in separatem Ordner speichern
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <!-- Serien Movies Path (conditional) -->
+                      <div id="serien-movies-path-container" class="mt-3" style="display: none;">
+                        <div class="input-group">
+                          <span class="input-group-text">🎬</span>
+                          <input id="serien-movies-path" type="text" class="form-control" placeholder="z.B. E:\Serien-Filme" />
+                          <button id="choose-serien-movies-path" class="btn btn-outline-secondary" type="button">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                              <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                              <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                            </svg>
+                            Durchsuchen
+                          </button>
+                        </div>
+                        <div class="form-text">Alle Serien-Filme werden in diesem zentralen Ordner gespeichert.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download Settings -->
+        <div class="tab-pane fade" id="download-settings" role="tabpanel">
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h5 class="mb-0">⚙️ Download-Einstellungen</h5>
+                  <p class="text-muted small mb-0">Konfiguriere Sprachen und Download-Verhalten</p>
+                </div>
+                <div class="card-body">
+                  
+                  <!-- Language Priority -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🌐 Sprachreihenfolge</h6>
+                    <p class="text-muted small mb-3">Bestimme die Priorität der Sprachen für Downloads. Ziehe die Einträge per Drag & Drop.</p>
+                    <ul id="lang-list" class="list-group list-group-flush">
+                      <!-- languages inserted by JS -->
+                    </ul>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Autostart Mode -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🚀 Autostart-Modus</h6>
+                    <select id="autostart-mode" class="form-select form-select-lg">
+                      <option value="">Kein Autostart</option>
+                      <option value="default">Standard-Download</option>
+                      <option value="german">German-Download</option>
+                      <option value="new">Neue Episoden prüfen</option>
+                      <option value="check-missing">Fehlende Episoden prüfen</option>
+                    </select>
+                    <div class="form-text">Dieser Modus wird automatisch beim Serverstart ausgeführt.</div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Title Refresh -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🔄 Titelaktualisierung</h6>
+                    <div class="form-check form-switch form-switch-lg">
+                      <input class="form-check-input" type="checkbox" id="refresh-titles">
+                      <label class="form-check-label" for="refresh-titles">
+                        Anime-Titel beim Start automatisch aktualisieren
+                      </label>
+                    </div>
+                    <div class="form-text">Aktualisiert alle Titel in der Datenbank beim Serverstart.</div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Settings -->
+        <div class="tab-pane fade" id="system-settings" role="tabpanel">
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="card">
+                <div class="card-header">
+                  <h5 class="mb-0">🖥️ System-Einstellungen</h5>
+                  <p class="text-muted small mb-0">Allgemeine Systemkonfiguration</p>
+                </div>
+                <div class="card-body">
+                  
+                  <!-- Data Folder -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">💾 Daten-Ordner</h6>
+                    <div class="input-group input-group-lg">
+                      <span class="input-group-text">📂</span>
+                      <input id="data-folder-path" type="text" class="form-control" placeholder="z.B. C:\Aniloader\data" />
+                      <button id="choose-data-folder" class="btn btn-outline-secondary" type="button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                          <path d="M.5 3l.04.87a1.99 1.99 0 0 0-.342 1.311l.637 7A2 2 0 0 0 2.826 14H9v-1H2.826a1 1 0 0 1-.995-.91l-.637-7A1 1 0 0 1 2.19 4h11.62a1 1 0 0 1 .996 1.09L14.54 8h1.005l.256-2.819A2 2 0 0 0 13.81 3H9.828a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 6.172 1H2.5a2 2 0 0 0-2 2zm5.672-1a1 1 0 0 1 .707.293L7.586 3H2.19c-.24 0-.47.042-.683.12L1.5 2.98a1 1 0 0 1 1-.98h3.672z"/>
+                          <path d="M13.5 10a.5.5 0 0 1 .5.5V12h1.5a.5.5 0 1 1 0 1H14v1.5a.5.5 0 1 1-1 0V13h-1.5a.5.5 0 0 1 0-1H13v-1.5a.5.5 0 0 1 .5-.5z"/>
+                        </svg>
+                        Durchsuchen
+                      </button>
+                    </div>
+                    <div class="form-text">Speicherort für config.json, AniLoader.db und Log-Dateien.</div>
+                    <div class="alert alert-warning mt-2 mb-0" role="alert">
+                      <small>⚠️ Änderungen am Daten-Ordner erfordern einen Server-Neustart.</small>
+                    </div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Storage Threshold -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">💿 Speicher-Schwelle</h6>
+                    <div class="input-group input-group-lg">
+                      <span class="input-group-text">⚠️</span>
+                      <input id="min-free" type="number" step="0.1" class="form-control" />
+                      <span class="input-group-text">GB</span>
+                    </div>
+                    <div class="form-text">Downloads werden automatisch gestoppt, wenn weniger freier Speicher verfügbar ist.</div>
+                  </div>
+
+                  <hr class="settings-divider">
+
+                  <!-- Server Info -->
+                  <div class="settings-section">
+                    <h6 class="settings-section-title">🌐 Server-Konfiguration</h6>
+                    <div class="alert alert-info mb-0" role="alert">
+                      <small>
+                        <strong>ℹ️ Hinweis:</strong> Der Server-Port kann nur direkt in der <code>config.json</code> Datei geändert werden.
+                      </small>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Save/Reset Buttons -->
+      <div class="row mt-4">
+        <div class="col-12">
+          <div class="d-flex justify-content-end gap-2">
+            <button id="reset-config" class="btn btn-lg btn-outline-secondary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+              </svg>
+              Zurücksetzen
+            </button>
+            <button id="save-config" class="btn btn-lg btn-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z"/>
+              </svg>
+              Einstellungen speichern
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="/static/script.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
+</body>
+</html>
