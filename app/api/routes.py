@@ -29,6 +29,9 @@ router = APIRouter()
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "web" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
+# In-Memory-Cache für Poster-URLs (vermeidet wiederholte HTTP-Requests)
+_poster_cache: dict = {}
+
 
 # ──────────────────────── Hilfsfunktionen ────────────────────────
 
@@ -256,6 +259,17 @@ async def search(request: Request):
         results = results[:limit]
 
     return {"status": "ok", "results": results}
+
+
+@router.get("/poster")
+async def get_poster(url: str = Query(...)):
+    """Gibt die Poster/Cover-URL für eine Serie zurück (gecacht)."""
+    if url in _poster_cache:
+        return {"poster_url": _poster_cache[url]}
+
+    poster_url = scraper.get_poster_url(url)
+    _poster_cache[url] = poster_url or ""
+    return {"poster_url": poster_url or ""}
 
 
 # ──────────────────────── Konfiguration ────────────────────────

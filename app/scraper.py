@@ -161,6 +161,46 @@ def get_series_title(url: str) -> Optional[str]:
     return None
 
 
+# ──────────────────────── Poster / Cover-Bild ────────────────────────
+
+
+def get_poster_url(url: str) -> Optional[str]:
+    """Extrahiert die Cover-Bild-URL (Poster) von der Serien-Seite."""
+    base_url = get_base_url(url)
+    try:
+        html = _fetch(base_url)
+        soup = BeautifulSoup(html, "lxml")
+
+        # Beide Plattformen nutzen .seriesCoverBox mit lazy-load via data-src
+        cover_div = soup.find("div", class_="seriesCoverBox")
+        if cover_div:
+            img = cover_div.find("img")
+            if img:
+                src = img.get("data-src") or img.get("src", "")
+                if src and not src.startswith("data:"):
+                    if src.startswith("http"):
+                        return src
+                    # Relative URL → absolute
+                    domain = "https://aniworld.to" if is_aniworld(url) else "https://s.to"
+                    return f"{domain}{src}"
+
+        # Fallback: erstes <img> mit cover/poster im Pfad
+        for img in soup.find_all("img"):
+            src = img.get("data-src") or img.get("src", "")
+            if src and any(k in src for k in ("/cover/", "/poster/", "stream-cover")):
+                if src.startswith("data:"):
+                    continue
+                if src.startswith("http"):
+                    return src
+                domain = "https://aniworld.to" if is_aniworld(url) else "https://s.to"
+                return f"{domain}{src}"
+
+    except Exception as e:
+        log(f"[SCRAPER] Poster-Fehler für {url}: {e}")
+
+    return None
+
+
 # ──────────────────────── Staffel-Nummern ────────────────────────
 
 

@@ -376,7 +376,11 @@ function renderSearchResults(results) {
   }
 
   container.innerHTML = results.map((r, i) => `
-    <div class="search-result fade-in" style="animation-delay:${i * 40}ms">
+    <div class="search-result fade-in" style="animation-delay:${i * 40}ms" data-url="${esc(r.url)}">
+      <div class="search-poster-wrap">
+        <div class="search-poster-placeholder"></div>
+        <img class="search-poster" alt="${esc(r.title)}" style="display:none">
+      </div>
       <div class="info">
         <span class="title">${esc(r.title)}</span>
         <span class="platform">${esc(r.platform)}</span>
@@ -385,6 +389,28 @@ function renderSearchResults(results) {
       <button class="btn btn-primary btn-sm" onclick="addFromSearch('${esc(r.url)}')">+ Hinzufügen</button>
     </div>
   `).join('');
+
+  // Poster asynchron nachladen
+  results.forEach((r, i) => {
+    api(`/poster?url=${encodeURIComponent(r.url)}`)
+      .then(data => {
+        if (!data.poster_url) return;
+        const cards = $$('#search-results .search-result');
+        const card = cards[i];
+        if (!card) return;
+        const img = card.querySelector('.search-poster');
+        const placeholder = card.querySelector('.search-poster-placeholder');
+        if (img) {
+          img.src = data.poster_url;
+          img.onload = () => {
+            img.style.display = 'block';
+            if (placeholder) placeholder.style.display = 'none';
+          };
+          img.onerror = () => { /* bleibt Placeholder */ };
+        }
+      })
+      .catch(() => { /* Poster optional – Fehler ignorieren */ });
+  });
 }
 
 async function addFromSearch(url) {
