@@ -107,29 +107,49 @@
 
 ## Installation
 
-### Lokal (Windows / Linux)
+### Lokal – Windows
 
-```bash
+```powershell
 # 1. Repository klonen
 git clone https://github.com/WimWamWom/AniLoader.git
-cd AniLoader/claude-code
+cd AniLoader
 
-# 2. Virtuelle Umgebung erstellen (empfohlen)
+# 2. Virtuelle Umgebung erstellen
 python -m venv venv
-
-# Windows:
 venv\Scripts\activate
-
-# Linux/Mac:
-source venv/bin/activate
 
 # 3. Abhängigkeiten installieren
 pip install -r requirements.txt
 
-# 4. ffmpeg installieren (falls noch nicht vorhanden)
-# Windows: https://www.gyan.dev/ffmpeg/builds/ → PATH hinzufügen
-# Linux:   sudo apt install ffmpeg
-# Mac:     brew install ffmpeg
+# 4. ffmpeg installieren
+#    → https://www.gyan.dev/ffmpeg/builds/ herunterladen
+#    → Entpacken und den bin/ Ordner zum Windows PATH hinzufügen
+#    → PowerShell neu starten und testen:
+ffmpeg -version
+
+# 5. Starten
+python main.py
+```
+
+> **Tipp:** Falls `aniworld.to` / `s.to` vom Provider gesperrt ist, nutzt AniLoader automatisch DNS-over-HTTPS (Google). Windows-Firewalls müssen ausgehende HTTPS-Verbindungen erlauben.
+
+### Lokal – Linux
+
+```bash
+# 1. Repository klonen
+git clone https://github.com/WimWamWom/AniLoader.git
+cd AniLoader
+
+# 2. Abhängigkeiten
+sudo apt update
+sudo apt install python3 python3-venv python3-pip ffmpeg -y
+
+# 3. Virtuelle Umgebung
+python3 -m venv venv
+source venv/bin/activate
+
+# 4. Python-Pakete
+pip install -r requirements.txt
 
 # 5. Starten
 python main.py
@@ -137,52 +157,117 @@ python main.py
 
 Der Server startet auf `http://localhost:5050`.
 
-### Docker / Docker Compose
+### Docker – Windows
 
-```bash
+Voraussetzung: [Docker Desktop](https://www.docker.com/products/docker-desktop/) installiert und gestartet.
+
+```powershell
 # 1. Repository klonen
 git clone https://github.com/WimWamWom/AniLoader.git
-cd AniLoader/claude-code
+cd AniLoader
 
-# 2. Bauen und starten
+# 2. Ordner erstellen (Docker Desktop braucht diese vorab)
+mkdir data, Downloads, Anime, Serien, "Anime-Filme", "Serien-Filme"
+
+# 3. Bauen und starten
 docker compose up -d
+
+# Status prüfen
+docker compose ps
 
 # Logs anzeigen
 docker compose logs -f
 ```
 
-**docker-compose.yml** anpassen:
-```yaml
-services:
-  aniloader:
-    build: .
-    container_name: aniloader
-    ports:
-      - "5050:5050"          # Port nach Bedarf ändern
-    volumes:
-      - ./data:/app/data      # DB, Config, Logs
-      - ./Downloads:/app/Downloads  # Standard-Download-Ordner
-      # Separate Pfade (optional):
-      # - /mnt/media/anime:/animes
-      # - /mnt/media/serien:/serien
-    environment:
-      - PYTHONUNBUFFERED=1
-    restart: unless-stopped
+### Docker – Linux
+
+```bash
+# 1. Docker installieren (falls nicht vorhanden)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# Neu einloggen, damit die Gruppe wirkt
+
+# 2. Repository klonen
+git clone https://github.com/WimWamWom/AniLoader.git
+cd AniLoader
+
+# 3. Ordner anlegen + Rechte setzen
+mkdir -p data Downloads Anime Serien Anime-Filme Serien-Filme
+chmod 777 Downloads Anime Serien Anime-Filme Serien-Filme
+
+# 4. Bauen und starten
+docker compose up -d
+
+# Status & Logs
+docker compose ps
+docker compose logs -f
 ```
 
 ### Unraid
 
-1. **Docker Template** über Community Applications oder manuell erstellen
-2. **Repository**: `https://github.com/WimWamWom/AniLoader`
-3. **Ports**: Container-Port `5050` → Host-Port `5050`
-4. **Pfade**:
+**Docker Hub:** `wimwamwom/aniloader:latest`
+
+**Port:**
+
+| Container-Port | Host-Port |
+|---|---|
+| `5050` | `5050` |
+
+**Volumes:**
 
 | Container-Pfad | Host-Pfad | Beschreibung |
 |---|---|---|
 | `/app/data` | `/mnt/user/appdata/aniloader` | Datenbank, Config, Logs |
-| `/app/Downloads` | `/mnt/user/data/media/anime` | Download-Verzeichnis |
+| `/app/Downloads` | `/mnt/user/data/media/Downloads` | Standard-Download-Ordner |
+| `/app/Anime` | `/mnt/user/data/media/Anime` | Anime (separate Modus) |
+| `/app/Serien` | `/mnt/user/data/media/Serien` | Serien (separate Modus) |
+| `/app/Anime-Filme` | `/mnt/user/data/media/Anime-Filme` | Anime-Filme (optional) |
+| `/app/Serien-Filme` | `/mnt/user/data/media/Serien-Filme` | Serien-Filme (optional) |
 
-5. **Icon URL**: `https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png`
+**Environment-Variablen:**
+
+| Variable | Wert |
+|---|---|
+| `PYTHONUNBUFFERED` | `1` |
+| `TZ` | `Europe/Berlin` |
+
+**Icon URL:** `https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png`
+
+**WebUI:** `http://[IP]:[PORT:5050]`
+
+#### `docker-compose.yml` Referenz
+
+Die mitgelieferte `docker-compose.yml` enthält alle Volumes bereits fertig konfiguriert:
+
+```yaml
+services:
+  aniloader:
+    build: .
+    image: AniLoader
+    container_name: aniloader
+    hostname: aniloader
+    ports:
+      - "5050:5050"
+    volumes:
+      # Persistente Daten (DB, Config, Logs)
+      - ./data:/app/data
+      # Download-Verzeichnis (storage.mode: standard)
+      - ./Downloads:/app/Downloads
+      # Separate Pfade (storage.mode: separate)
+      - ./Anime:/app/Anime
+      - ./Serien:/app/Serien
+      - ./Anime-Filme:/app/Anime-Filme
+      - ./Serien-Filme:/app/Serien-Filme
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Europe/Berlin
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    restart: unless-stopped
+```
+
+> Die Host-Pfade (linke Seite der `:`) können beliebig angepasst werden. Die Container-Pfade (rechte Seite) müssen mit den Pfaden in der `config.yaml` übereinstimmen.
 
 ---
 
@@ -205,10 +290,10 @@ languages:
 storage:
   mode: standard                    # standard | separate
   download_path: /app/Downloads     # Haupt-Download-Pfad
-  anime_path: /app/Downloads/Anime
-  series_path: /app/Downloads/Serien
-  anime_movies_path: /app/Downloads/Anime-Filme
-  serien_movies_path: /app/Downloads/Serien-Filme
+  anime_path: /app/Anime            # Anime (separate Modus)
+  series_path: /app/Serien           # Serien (separate Modus)
+  anime_movies_path: /app/Anime-Filme   # Anime-Filme (optional)
+  serien_movies_path: /app/Serien-Filme # Serien-Filme (optional)
   anime_separate_movies: false
   serien_separate_movies: false
 
@@ -240,20 +325,26 @@ Downloads/
 #### Separate-Modus (`storage.mode: separate`)
 Anime und Serien werden in **verschiedene Ordner** sortiert. Optional können Filme nochmal separat gespeichert werden:
 ```
-Anime/
+Anime/                   ← storage.anime_path = /app/Anime
 ├── Naruto (2002) [imdbid-tt0409591]/
 │   ├── Season 00/   ← Filme
 │   ├── Season 01/
 │   └── ...
 
-Serien/
+Serien/                  ← storage.series_path = /app/Serien
 ├── Breaking Bad (2008) [imdbid-tt0903747]/
 │   └── ...
 
-Anime-Filme/      ← Optional (anime_separate_movies: true)
-├── Naruto (2002) [imdbid-tt0409591]/
+Anime-Filme/             ← storage.anime_movies_path = /app/Anime-Filme
+├── Naruto (2002) [imdbid-tt0409591]/  (anime_separate_movies: true)
+│   └── Season 00/
+
+Serien-Filme/            ← storage.serien_movies_path = /app/Serien-Filme
+├── Breaking Bad (2008) [...]/ (serien_separate_movies: true)
 │   └── Season 00/
 ```
+
+> **Docker-Hinweis:** Im Container sind alle Pfade bereits als Volume gemappt. Die `config.yaml`-Pfade (z.B. `/app/Anime`) müssen den Container-Pfaden in `docker-compose.yml` entsprechen.
 
 ### Sprachpriorität
 
@@ -425,13 +516,14 @@ curl -X POST http://localhost:5050/search \
 ## Projektstruktur
 
 ```
-claude-code/
+AniLoader/
 ├── main.py                      # Einstiegspunkt – startet Uvicorn
 ├── requirements.txt             # Python-Abhängigkeiten
 ├── Dockerfile                   # Multi-stage Docker Build
 ├── docker-compose.yml           # Docker Compose Konfiguration
 ├── Tampermonkey.user.js         # Browser-Erweiterung v2.0
 ├── README.md                    # Diese Datei
+├── README_DOCKER.md             # Docker-spezifische Dokumentation
 │
 ├── app/                         # Python-Backend
 │   ├── __init__.py

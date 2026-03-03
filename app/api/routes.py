@@ -291,6 +291,24 @@ async def update_config(request: Request):
     )
 
 
+# ──────────────────────── Titel-Refresh ────────────────────────
+
+
+@router.post("/refresh_titles")
+async def api_refresh_titles():
+    """Aktualisiert alle Titel in der Datenbank anhand der Webseiten."""
+    folder = _data_folder()
+    try:
+        result = db.refresh_titles(folder)
+        return {"status": "ok", **result}
+    except Exception as e:
+        log(f"[API-ERROR] Titel-Refresh: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)},
+        )
+
+
 # ──────────────────────── Disk ────────────────────────
 
 
@@ -301,6 +319,61 @@ async def disk_info():
     download_path = cfg.get("storage", {}).get("download_path", ".")
     free_gb = get_free_space_gb(download_path)
     return {"free_gb": round(free_gb, 2), "path": download_path}
+
+
+# ──────────────────────── Ordner-Browser ────────────────────────
+
+
+@router.post("/browse")
+async def browse_directories(request: Request):
+    """Listet Unterordner eines Pfades auf (für den Ordner-Picker)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    raw_path = body.get("path", "").strip()
+
+    # Startpunkt bestimmen
+    if not raw_path:
+        # Plattformabhängig: Windows -> Laufwerke, Linux -> /
+        import platform as _plat
+
+        if _plat.system() == "Windows":
+            import string
+
+            drives = []
+            for letter in string.ascii_uppercase:
+                dp = Path(f"{letter}:\\")
+                if dp.exists():
+                    drives.append(
+                        {"name": f"{letter}:\\", "path": f"{letter}:\\", "is_drive": True}
+                    )
+            return {"path": "", "parent": None, "dirs": drives}
+        else:
+            raw_path = "/"
+
+    target = Path(raw_path).resolve()
+
+    if not target.exists() or not target.is_dir():
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"Ordner existiert nicht: {raw_path}"},
+        )
+
+    # Elternverzeichnis
+    parent = str(target.parent) if target.parent != target else None
+
+    # Unterordner auflisten (nur Verzeichnisse, keine versteckten)
+    dirs = []
+    try:
+        for entry in sorted(target.iterdir(), key=lambda e: e.name.lower()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                dirs.append({"name": entry.name, "path": str(entry), "is_drive": False})
+    except PermissionError:
+        pass  # Kein Zugriff – leere Liste zurückgeben
+
+    return {"path": str(target), "parent": parent, "dirs": dirs}
 
 
 # ──────────────────────── Logs ────────────────────────

@@ -296,3 +296,45 @@ def import_txt(data_folder: str, content: str) -> int:
             if result:
                 added += 1
     return added
+
+
+def refresh_titles(data_folder: str) -> Dict[str, Any]:
+    """
+    Aktualisiert alle Titel in der Datenbank anhand der Webseiten.
+    Gibt Statistik zurück: {updated: int, failed: int, unchanged: int, details: list}.
+    """
+    from .scraper import get_series_title
+
+    all_entries = get_all_anime(data_folder, include_deleted=False)
+    updated = 0
+    failed = 0
+    unchanged = 0
+    details: List[str] = []
+
+    for entry in all_entries:
+        aid = entry["id"]
+        url = entry.get("url", "")
+        old_title = entry.get("title", "")
+
+        try:
+            new_title = get_series_title(url)
+            if not new_title:
+                failed += 1
+                details.append(f"ID {aid}: Kein Titel gefunden für {url}")
+                continue
+
+            if new_title != old_title:
+                update_anime(data_folder, aid, title=new_title)
+                log(f"[DB] Titel aktualisiert (ID {aid}): '{old_title}' -> '{new_title}'")
+                details.append(f"ID {aid}: '{old_title}' -> '{new_title}'")
+                updated += 1
+            else:
+                unchanged += 1
+        except Exception as e:
+            failed += 1
+            log(f"[DB-ERROR] Titel-Refresh ID {aid}: {e}")
+            details.append(f"ID {aid}: Fehler – {e}")
+
+    total = updated + failed + unchanged
+    log(f"[DB] Titel-Refresh abgeschlossen: {updated} aktualisiert, {unchanged} unverändert, {failed} fehlgeschlagen (von {total})")
+    return {"updated": updated, "failed": failed, "unchanged": unchanged, "details": details}

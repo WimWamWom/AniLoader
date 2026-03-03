@@ -1,4 +1,4 @@
-/* AniLoader – Minimales JavaScript */
+/* AniLoader – Professional Dynamic UI */
 
 const API = '';  // Relativer Pfad (same origin)
 
@@ -22,14 +22,27 @@ function initTabs() {
   $$('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       $$('.tab-btn').forEach(b => b.classList.remove('active'));
-      $$('.tab-content').forEach(c => c.classList.remove('active'));
-      btn.classList.add('active');
-      $(`#${btn.dataset.tab}`).classList.add('active');
-
-      // Tab-spezifisches Laden
-      if (btn.dataset.tab === 'tab-db') loadDatabase();
-      if (btn.dataset.tab === 'tab-settings') loadSettings();
-      if (btn.dataset.tab === 'tab-logs') refreshFullLog();
+      // Smooth tab transition
+      const activeTab = $('.tab-content.active');
+      if (activeTab) {
+        activeTab.style.opacity = '0';
+        activeTab.style.transform = 'translateY(4px)';
+        setTimeout(() => {
+          activeTab.classList.remove('active');
+          activeTab.style.opacity = '';
+          activeTab.style.transform = '';
+          btn.classList.add('active');
+          const newTab = $(`#${btn.dataset.tab}`);
+          newTab.classList.add('active');
+          // Tab-spezifisches Laden
+          if (btn.dataset.tab === 'tab-db') loadDatabase();
+          if (btn.dataset.tab === 'tab-settings') loadSettings();
+          if (btn.dataset.tab === 'tab-logs') refreshFullLog();
+        }, 120);
+      } else {
+        btn.classList.add('active');
+        $(`#${btn.dataset.tab}`).classList.add('active');
+      }
     });
   });
 }
@@ -42,20 +55,26 @@ async function refreshStatus() {
   try {
     const s = await api('/status');
     const badge = $('#status-badge');
-    badge.textContent = s.status;
-    badge.className = 'status-badge badge-' + s.status;
+    const newClass = 'status-badge badge-' + s.status;
+    if (badge.className !== newClass) {
+      badge.textContent = s.status;
+      badge.className = newClass;
+      badge.style.animation = 'none';
+      badge.offsetHeight;
+      badge.style.animation = 'fadeIn 0.3s ease-out';
+    }
 
-    $('#dl-mode').textContent = s.mode || '–';
-    $('#dl-title').textContent = s.current_title || '–';
-    $('#dl-season').textContent = s.current_season != null ? `S${String(s.current_season).padStart(2,'0')}` : '–';
-    $('#dl-episode').textContent = s.current_episode != null ? `E${String(s.current_episode).padStart(3,'0')}` : '–';
-    $('#dl-started').textContent = s.started_at || '–';
+    updateText('#dl-mode', s.mode || '–');
+    updateText('#dl-title', s.current_title || '–');
+    updateText('#dl-season', s.current_season != null ? `S${String(s.current_season).padStart(2,'0')}` : '–');
+    updateText('#dl-episode', s.current_episode != null ? `E${String(s.current_episode).padStart(3,'0')}` : '–');
+    updateText('#dl-started', s.started_at || '–');
 
     const p = s.progress || {};
-    $('#prog-series').textContent = `${p.current_series_index || 0}/${p.total_series || 0}`;
-    $('#prog-downloaded').textContent = p.downloaded_episodes || 0;
-    $('#prog-skipped').textContent = p.skipped_episodes || 0;
-    $('#prog-failed').textContent = p.failed_episodes || 0;
+    updateText('#prog-series', `${p.current_series_index || 0}/${p.total_series || 0}`);
+    updateText('#prog-downloaded', p.downloaded_episodes || 0);
+    updateText('#prog-skipped', p.skipped_episodes || 0);
+    updateText('#prog-failed', p.failed_episodes || 0);
 
     // Buttons
     const isRunning = s.status === 'running' || s.status === 'stopping';
@@ -64,6 +83,19 @@ async function refreshStatus() {
 
   } catch (e) {
     console.error('Status refresh error:', e);
+  }
+}
+
+// Smooth text update – only update DOM if value changed, with subtle flash
+function updateText(sel, value) {
+  const el = $(sel);
+  if (!el) return;
+  const str = String(value);
+  if (el.textContent !== str) {
+    el.textContent = str;
+    el.style.animation = 'none';
+    el.offsetHeight;
+    el.style.animation = 'fadeIn 0.25s ease-out';
   }
 }
 
@@ -339,12 +371,12 @@ function liveSearch() {
 function renderSearchResults(results) {
   const container = $('#search-results');
   if (!results.length) {
-    container.innerHTML = '<p>Keine Ergebnisse</p>';
+    container.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:16px 0;">Keine Ergebnisse</p>';
     return;
   }
 
-  container.innerHTML = results.map(r => `
-    <div class="search-result">
+  container.innerHTML = results.map((r, i) => `
+    <div class="search-result fade-in" style="animation-delay:${i * 40}ms">
       <div class="info">
         <span class="title">${esc(r.title)}</span>
         <span class="platform">${esc(r.platform)}</span>
@@ -441,6 +473,18 @@ async function restoreAnime(id) {
 
 let currentConfig = {};
 
+function initSettingsPills() {
+  $$('.settings-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      $$('.settings-pill').forEach(p => p.classList.remove('active'));
+      $$('.settings-panel').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      const panel = $(`#${pill.dataset.settings}`);
+      if (panel) panel.classList.add('active');
+    });
+  });
+}
+
 async function loadSettings() {
   try {
     currentConfig = await api('/config');
@@ -468,6 +512,7 @@ function renderSettings(cfg) {
   $('#cfg-min-free').value = cfg.download?.min_free_gb || 2.0;
   $('#cfg-timeout').value = cfg.download?.timeout_seconds || 900;
   $('#cfg-autostart').value = cfg.download?.autostart_mode || '';
+  $('#cfg-refresh-titles').checked = cfg.download?.refresh_titles || false;
 
   // Storage mode visibility
   toggleStoragePaths();
@@ -536,6 +581,7 @@ async function saveSettings() {
       min_free_gb: parseFloat($('#cfg-min-free').value) || 2.0,
       timeout_seconds: parseInt($('#cfg-timeout').value) || 900,
       autostart_mode: $('#cfg-autostart').value || null,
+      refresh_titles: $('#cfg-refresh-titles').checked,
     },
     data: currentConfig.data || {},
   };
@@ -568,9 +614,17 @@ function showMsg(sel, text, type) {
   const el = $(sel);
   if (!el) return;
   el.textContent = text;
-  el.style.color = type === 'success' ? 'var(--success)' : 'var(--danger)';
-  el.style.display = 'block';
-  setTimeout(() => { el.style.display = 'none'; }, 4000);
+  el.className = `toast-msg toast-${type}`;
+  el.style.display = 'inline-block';
+  el.style.animation = 'none';
+  el.offsetHeight; // trigger reflow
+  el.style.animation = 'fadeIn 0.2s ease-out';
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s';
+    setTimeout(() => { el.style.display = 'none'; el.style.opacity = ''; el.style.transition = ''; }, 300);
+  }, 3500);
 }
 
 // ──────────────────────── Upload Drag & Drop ────────────────────────
@@ -591,11 +645,138 @@ function initUpload() {
   });
 }
 
+// ──────────────────────── Ordner-Picker ────────────────────────
+
+let _folderPickerTarget = null;  // ID des Input-Feldes
+let _folderPickerPath = '';       // Aktueller Pfad im Browser
+
+function openFolderPicker(inputId) {
+  _folderPickerTarget = inputId;
+  const currentValue = $(`#${inputId}`)?.value || '';
+  const overlay = $('#folder-picker-overlay');
+  overlay.style.display = 'flex';
+
+  // ESC zum Schließen
+  document.addEventListener('keydown', _folderPickerEsc);
+
+  // Starte beim aktuellen Wert oder Root
+  browseTo(currentValue || '');
+}
+
+function closeFolderPicker() {
+  const overlay = $('#folder-picker-overlay');
+  overlay.style.display = 'none';
+  _folderPickerTarget = null;
+  document.removeEventListener('keydown', _folderPickerEsc);
+}
+
+function _folderPickerEsc(e) {
+  if (e.key === 'Escape') closeFolderPicker();
+}
+
+function selectFolder() {
+  if (_folderPickerTarget && _folderPickerPath) {
+    $(`#${_folderPickerTarget}`).value = _folderPickerPath;
+    // Flash-Feedback auf dem Input
+    const input = $(`#${_folderPickerTarget}`);
+    input.style.borderColor = 'var(--success)';
+    input.style.boxShadow = '0 0 0 3px rgba(52,208,88,0.15)';
+    setTimeout(() => { input.style.borderColor = ''; input.style.boxShadow = ''; }, 1200);
+  }
+  closeFolderPicker();
+}
+
+async function browseTo(path) {
+  const listEl = $('#folder-list');
+  listEl.innerHTML = '<li class="folder-empty">Lade...</li>';
+
+  try {
+    const data = await api('/browse', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    });
+
+    _folderPickerPath = data.path || '';
+    $('#folder-current-path').textContent = _folderPickerPath || '(Root)';
+
+    // Breadcrumb rendern
+    renderBreadcrumb(data.path, data.parent);
+
+    // Ordnerliste rendern
+    if (!data.dirs || !data.dirs.length) {
+      listEl.innerHTML = '<li class="folder-empty">Keine Unterordner</li>';
+      return;
+    }
+
+    let html = '';
+
+    // Elternordner (zurück)
+    if (data.parent !== null && data.parent !== undefined) {
+      html += `<li class="folder-item" ondblclick="browseTo('${escAttr(data.parent)}')" onclick="this.classList.toggle('selected')">
+        <span class="folder-icon">⬆️</span>
+        <span class="folder-name">..</span>
+      </li>`;
+    }
+
+    for (const dir of data.dirs) {
+      const icon = dir.is_drive ? '💾' : '📁';
+      html += `<li class="folder-item" ondblclick="browseTo('${escAttr(dir.path)}')" onclick="previewFolder('${escAttr(dir.path)}')">
+        <span class="folder-icon">${icon}</span>
+        <span class="folder-name">${esc(dir.name)}</span>
+      </li>`;
+    }
+
+    listEl.innerHTML = html;
+
+  } catch (e) {
+    listEl.innerHTML = `<li class="folder-empty" style="color:var(--danger)">Fehler: ${esc(e.message || 'Unbekannt')}</li>`;
+  }
+}
+
+function previewFolder(path) {
+  _folderPickerPath = path;
+  $('#folder-current-path').textContent = path;
+}
+
+function renderBreadcrumb(fullPath, parent) {
+  const bc = $('#folder-breadcrumb');
+  if (!fullPath) {
+    bc.innerHTML = '<span onclick="browseTo(\'\')">🖥️ Computer</span>';
+    return;
+  }
+
+  // Pfad in Teile zerlegen
+  const isWindows = fullPath.includes('\\');
+  const sep = isWindows ? '\\' : '/';
+  const parts = fullPath.split(/[/\\]/).filter(Boolean);
+
+  let html = `<span onclick="browseTo('')">🖥️</span><span class="sep">/</span>`;
+  let accumulated = '';
+
+  for (let i = 0; i < parts.length; i++) {
+    if (isWindows) {
+      accumulated = i === 0 ? parts[0] + '\\' : accumulated + parts[i] + (i < parts.length - 1 ? '\\' : '');
+    } else {
+      accumulated += '/' + parts[i];
+    }
+    const isLast = i === parts.length - 1;
+    html += `<span onclick="browseTo('${escAttr(accumulated)}')" style="${isLast ? 'color:var(--text);font-weight:600;' : ''}">${esc(parts[i])}</span>`;
+    if (!isLast) html += '<span class="sep">/</span>';
+  }
+
+  bc.innerHTML = html;
+}
+
+function escAttr(str) {
+  return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 // ──────────────────────── Init ────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
   initUpload();
+  initSettingsPills();
 
   // Status-Polling
   refreshStatus();
@@ -608,11 +789,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Log-Auto-Refresh (Logs-Tab)
   logAutoRefreshInterval = setInterval(refreshFullLog, 8000);
 
-  // Disk Info
+  // Disk Info – mit farbiger Anzeige
   api('/disk').then(d => {
     const el = $('#disk-info');
     if (el && d.free_gb !== undefined) {
-      el.textContent = `${d.free_gb} GB frei`;
+      const gb = parseFloat(d.free_gb);
+      el.textContent = `💾 ${d.free_gb} GB frei`;
+      if (gb < 5) el.style.color = 'var(--danger)';
+      else if (gb < 20) el.style.color = 'var(--warning)';
     }
   });
 

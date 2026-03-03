@@ -40,6 +40,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "min_free_gb": 2.0,
         "autostart_mode": None,  # null | default | german | new | check
         "timeout_seconds": 900,
+        "refresh_titles": False,
     },
     "data": {
         "folder": str(DEFAULT_DATA_DIR),

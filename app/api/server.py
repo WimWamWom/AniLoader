@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ..config import get_data_folder, load_config
-from ..database import init_db
+from ..database import init_db, refresh_titles
 from ..logger import cleanup_old_logs, init_logger, log
 
 # Pfade für Web-UI
@@ -32,6 +32,15 @@ async def lifespan(app: FastAPI):
     init_db(data_folder)
     cleanup_old_logs(days=7)
     log("[SERVER] AniLoader gestartet")
+
+    # Titel bei Start aktualisieren
+    if cfg.get("download", {}).get("refresh_titles", False):
+        log("[SERVER] Titel-Refresh aktiviert – aktualisiere Datenbank-Titel...")
+        try:
+            result = refresh_titles(data_folder)
+            log(f"[SERVER] Titel-Refresh fertig: {result['updated']} aktualisiert, {result['unchanged']} unverändert, {result['failed']} fehlgeschlagen")
+        except Exception as e:
+            log(f"[SERVER-ERROR] Titel-Refresh fehlgeschlagen: {e}")
 
     # Autostart prüfen
     autostart = cfg.get("download", {}).get("autostart_mode")

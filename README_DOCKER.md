@@ -27,6 +27,13 @@ docker run -d \
   -p 5050:5050 \
   -v /pfad/zu/data:/app/data \
   -v /pfad/zu/downloads:/app/Downloads \
+  -v /pfad/zu/anime:/app/Anime \
+  -v /pfad/zu/serien:/app/Serien \
+  -v /pfad/zu/anime-filme:/app/Anime-Filme \
+  -v /pfad/zu/serien-filme:/app/Serien-Filme \
+  -e PYTHONUNBUFFERED=1 \
+  -e TZ=Europe/Berlin \
+  --dns 8.8.8.8 --dns 1.1.1.1 \
   --restart unless-stopped \
   wimwamwom/aniloader:latest
 ```
@@ -38,43 +45,71 @@ Web-Interface: `http://<server-ip>:5050`
 ## Docker Compose
 
 ```yaml
-version: '3.8'
-
 services:
   aniloader:
     image: wimwamwom/aniloader:latest
     container_name: aniloader
+    hostname: aniloader
     ports:
       - "5050:5050"
     volumes:
-      # Persistente Daten (Datenbank, Config, Logs)
+      # Persistente Daten (DB, Config, Logs)
+      # config.yaml: data.folder = /app/data
       - ./data:/app/data
-      # Download-Verzeichnis (Standard-Modus)
+      # Download-Verzeichnis (storage.mode: standard)
+      # config.yaml: storage.download_path = /app/Downloads
       - ./Downloads:/app/Downloads
-      # ── Separate Pfade (optional, bei storage.mode: separate) ──
-      # - /pfad/zu/animes:/animes
-      # - /pfad/zu/serien:/serien
+      # Separate Pfade (storage.mode: separate)
+      # config.yaml: storage.anime_path = /app/Anime
+      - ./Anime:/app/Anime
+      # config.yaml: storage.series_path = /app/Serien
+      - ./Serien:/app/Serien
+      # config.yaml: storage.anime_movies_path = /app/Anime-Filme
+      - ./Anime-Filme:/app/Anime-Filme
+      # config.yaml: storage.serien_movies_path = /app/Serien-Filme
+      - ./Serien-Filme:/app/Serien-Filme
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Europe/Berlin
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 ```
 
 ```bash
 docker compose up -d
 ```
 
+> **Selbst bauen:** Statt `image:` kann `build: .` verwendet werden, um aus dem Repository-Quellcode zu bauen.
+
 ---
 
 ## Volumes
 
-| Container-Pfad | Beschreibung | Pflicht |
-|---|---|---|
-| `/app/data` | SQLite-Datenbank, `config.yaml`, Logs | ✅ Ja |
-| `/app/Downloads` | Standard-Download-Verzeichnis | ✅ Ja |
-| `/animes` | Anime-Pfad (bei `storage.mode: separate`) | Optional |
-| `/serien` | Serien-Pfad (bei `storage.mode: separate`) | Optional |
+| Container-Pfad | config.yaml-Key | Beschreibung | Pflicht |
+|---|---|---|---|
+| `/app/data` | `data.folder` | SQLite-Datenbank, `config.yaml`, Logs | ✅ Ja |
+| `/app/Downloads` | `storage.download_path` | Standard-Download-Verzeichnis | ✅ Ja |
+| `/app/Anime` | `storage.anime_path` | Anime (bei `storage.mode: separate`) | ✅ Ja |
+| `/app/Serien` | `storage.series_path` | Serien (bei `storage.mode: separate`) | ✅ Ja |
+| `/app/Anime-Filme` | `storage.anime_movies_path` | Anime-Filme (bei `anime_separate_movies: true`) | ✅ Ja |
+| `/app/Serien-Filme` | `storage.serien_movies_path` | Serien-Filme (bei `serien_separate_movies: true`) | ✅ Ja |
 
 > **Wichtig:** Ohne gemountete Volumes gehen Datenbank und Downloads bei Container-Neustart verloren!
+>
+> Die Pfade in der `config.yaml` müssen den **Container-Pfaden** (rechte Seite der `:`) entsprechen.
 
 ---
 
@@ -107,10 +142,10 @@ languages:
 storage:
   mode: standard                    # standard | separate
   download_path: /app/Downloads     # Haupt-Download-Pfad
-  anime_path: /app/Downloads/Anime
-  series_path: /app/Downloads/Serien
-  anime_movies_path: /app/Downloads/Anime-Filme
-  serien_movies_path: /app/Downloads/Serien-Filme
+  anime_path: /app/Anime            # Anime (separate Modus)
+  series_path: /app/Serien           # Serien (separate Modus)
+  anime_movies_path: /app/Anime-Filme   # Anime-Filme (optional)
+  serien_movies_path: /app/Serien-Filme # Serien-Filme (optional)
   anime_separate_movies: false
   serien_separate_movies: false
 
@@ -127,21 +162,17 @@ data:
 
 **Standard** (`storage.mode: standard`): Alle Downloads landen in einem Ordner.
 
-**Separate** (`storage.mode: separate`): Anime und Serien werden in verschiedene Ordner sortiert. Dafür zusätzliche Volumes mounten:
+**Separate** (`storage.mode: separate`): Anime und Serien werden in verschiedene Ordner sortiert. Alle Pfade sind bereits als Volumes gemappt:
 
-```yaml
-volumes:
-  - ./data:/app/data
-  - /mnt/media/anime:/animes
-  - /mnt/media/serien:/serien
-```
-
-Und in der Config die Pfade entsprechend setzen:
 ```yaml
 storage:
   mode: separate
-  anime_path: /animes
-  series_path: /serien
+  anime_path: /app/Anime              # → Volume ./Anime:/app/Anime
+  series_path: /app/Serien             # → Volume ./Serien:/app/Serien
+  anime_movies_path: /app/Anime-Filme  # → Volume ./Anime-Filme:/app/Anime-Filme
+  serien_movies_path: /app/Serien-Filme # → Volume ./Serien-Filme:/app/Serien-Filme
+  anime_separate_movies: true
+  serien_separate_movies: true
 ```
 
 ### Autostart
@@ -207,16 +238,35 @@ GET http://localhost:5050/health → {"status": "ok"}
 
 ## Unraid
 
-1. **Docker Template** über Community Applications oder manuell erstellen
-2. **Repository:** `wimwamwom/aniloader:latest`
-3. **Icon URL:** `https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png`
-4. **Port:** Container `5050` → Host `5050`
-5. **Pfade:**
+**Docker Hub:** `wimwamwom/aniloader:latest`
+
+**Port:**
+
+| Container-Port | Host-Port |
+|---|---|
+| `5050` | `5050` |
+
+**Volumes:**
 
 | Container-Pfad | Host-Pfad | Beschreibung |
 |---|---|---|
 | `/app/data` | `/mnt/user/appdata/aniloader` | Datenbank, Config, Logs |
-| `/app/Downloads` | `/mnt/user/data/media/anime` | Download-Verzeichnis |
+| `/app/Downloads` | `/mnt/user/data/media/Downloads` | Standard-Download-Ordner |
+| `/app/Anime` | `/mnt/user/data/media/Anime` | Anime (separate Modus) |
+| `/app/Serien` | `/mnt/user/data/media/Serien` | Serien (separate Modus) |
+| `/app/Anime-Filme` | `/mnt/user/data/media/Anime-Filme` | Anime-Filme (optional) |
+| `/app/Serien-Filme` | `/mnt/user/data/media/Serien-Filme` | Serien-Filme (optional) |
+
+**Environment-Variablen:**
+
+| Variable | Wert |
+|---|---|
+| `PYTHONUNBUFFERED` | `1` |
+| `TZ` | `Europe/Berlin` |
+
+**Icon URL:** `https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png`
+
+**WebUI:** `http://[IP]:[PORT:5050]`
 
 ---
 
@@ -261,6 +311,11 @@ chmod 777 Downloads
 ```bash
 git clone https://github.com/WimWamWom/AniLoader.git
 cd AniLoader
+
+# Ordner anlegen + Rechte setzen
+mkdir -p data Downloads Anime Serien Anime-Filme Serien-Filme
+chmod 777 Downloads Anime Serien Anime-Filme Serien-Filme
+
 docker compose up -d --build
 ```
 
