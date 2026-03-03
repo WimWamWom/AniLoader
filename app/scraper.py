@@ -551,50 +551,74 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
     Returns:
         Liste von Dicts: [{"title": "...", "url": "...", "description": "...", "platform": "..."}]
     """
-    results = []
+    log(f"[SUCHE] Starte Suche: '{query}' (Plattform: {platform})")
+
+    aniworld_results: List[Dict] = []
+    sto_results: List[Dict] = []
 
     if platform in ("aniworld", "both"):
+        log("[SUCHE] Frage AniWorld ab …")
         try:
             resp = _post(
                 "https://aniworld.to/ajax/search",
                 data={"keyword": query},
                 timeout=10,
             )
+            log(f"[SUCHE] AniWorld HTTP {resp.status_code}")
             data = resp.json() if resp.status_code == 200 else []
+            log(f"[SUCHE] AniWorld API lieferte {len(data)} Roheinträge")
             for item in data:
                 link = item.get("link", "")
                 if "/anime/stream/" in link:
                     full_url = f"https://aniworld.to{link}" if not link.startswith("http") else link
-                    results.append({
+                    aniworld_results.append({
                         "title": item.get("title", "").replace("<em>", "").replace("</em>", ""),
                         "url": full_url,
                         "description": item.get("description", ""),
                         "platform": "AniWorld",
                     })
+            log(f"[SUCHE] AniWorld: {len(aniworld_results)} Anime-Treffer")
         except Exception as e:
             log(f"[SUCHE] AniWorld-Fehler: {e}")
 
     if platform in ("sto", "both"):
+        log("[SUCHE] Frage S.to ab …")
         try:
             resp = _post(
                 "https://s.to/ajax/search",
                 data={"keyword": query},
                 timeout=10,
             )
+            log(f"[SUCHE] S.to HTTP {resp.status_code}")
             data = resp.json() if resp.status_code == 200 else []
+            log(f"[SUCHE] S.to API lieferte {len(data)} Roheinträge")
             for item in data:
                 link = item.get("link", "")
                 if "/serie/stream/" in link:
                     full_url = f"https://s.to{link}" if not link.startswith("http") else link
-                    results.append({
+                    sto_results.append({
                         "title": item.get("title", "").replace("<em>", "").replace("</em>", ""),
                         "url": full_url,
                         "description": item.get("description", ""),
                         "platform": "S.to",
                     })
+            log(f"[SUCHE] S.to: {len(sto_results)} Serien-Treffer")
         except Exception as e:
             log(f"[SUCHE] S.to-Fehler: {e}")
 
+    # Ergebnisse abwechselnd mischen (AniWorld, S.to, AniWorld, S.to, …)
+    results: List[Dict] = []
+    i_aw, i_st = 0, 0
+    while i_aw < len(aniworld_results) or i_st < len(sto_results):
+        if i_aw < len(aniworld_results):
+            results.append(aniworld_results[i_aw])
+            i_aw += 1
+        if i_st < len(sto_results):
+            results.append(sto_results[i_st])
+            i_st += 1
+
+    log(f"[SUCHE] Fertig – {len(results)} Ergebnisse gesamt "
+        f"(AniWorld: {len(aniworld_results)}, S.to: {len(sto_results)})")
     return results
 
 
