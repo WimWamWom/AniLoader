@@ -203,9 +203,9 @@ header .status-badge {
 .toggle-switch {
   position: relative;
   display: inline-block;
-  width: 44px;
-  height: 24px;
-  min-width: 44px;
+  width: 28px;
+  height: 16px;
+  min-width: 28px;
   cursor: pointer;
 }
 
@@ -219,17 +219,17 @@ header .status-badge {
   position: absolute;
   inset: 0;
   background: var(--secondary);
-  border-radius: 24px;
+  border-radius: 16px;
   transition: all var(--transition);
 }
 
 .toggle-slider::before {
   content: '';
   position: absolute;
-  height: 18px;
-  width: 18px;
-  left: 3px;
-  bottom: 3px;
+  height: 12px;
+  width: 12px;
+  left: 2px;
+  bottom: 2px;
   background: #fff;
   border-radius: 50%;
   transition: all var(--transition);
@@ -237,11 +237,11 @@ header .status-badge {
 
 .toggle-switch input:checked + .toggle-slider {
   background: var(--primary);
-  box-shadow: 0 0 8px rgba(108, 138, 255, 0.4);
+  box-shadow: 0 0 4px rgba(108, 138, 255, 0.4);
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(20px);
+  transform: translateX(12px);
 }
 
 /* ─── Setting Divider ─── */
@@ -536,7 +536,7 @@ input::placeholder { color: var(--text-muted); }
   margin-bottom: 12px;
 }
 
-.setting-row label {
+.setting-row label:not(.toggle-switch) {
   min-width: 200px;
   font-weight: 600;
   font-size: 0.85em;
@@ -544,6 +544,11 @@ input::placeholder { color: var(--text-muted); }
 }
 
 .setting-row input, .setting-row select { flex: 1; }
+
+.setting-row .toggle-switch { 
+  flex: none; 
+  min-width: auto;
+}
 
 .setting-hint {
   display: block;
