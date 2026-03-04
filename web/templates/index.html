@@ -146,48 +146,50 @@
   <div class="card">
     <h3>Datenbank</h3>
 
-    <!-- Filter-Leiste -->
-    <div class="db-filter-bar">
-      <input type="text" id="db-search" placeholder="Suche (Titel / URL)" oninput="loadDatabase()">
+    <!-- Suchleiste -->
+    <input type="text" id="db-search" class="db-search-input" placeholder="&#128269; Suche nach Titel oder URL..." oninput="loadDatabase()">
+
+    <!-- Filterleiste -->
+    <div class="db-filters">
       <select id="db-complete" onchange="loadDatabase()">
         <option value="">Status: Alle</option>
-        <option value="1">Komplett</option>
-        <option value="0">Nicht komplett</option>
-        <option value="deleted">Gelöscht</option>
+        <option value="1">✅ Komplett</option>
+        <option value="0">❌ Nicht komplett</option>
+        <option value="deleted">🚫 Gelöscht</option>
       </select>
       <select id="db-deutsch" onchange="loadDatabase()">
         <option value="">Deutsch: Alle</option>
-        <option value="1">Deutsch komplett</option>
-        <option value="0">Deutsch fehlt</option>
+        <option value="1">✅ DE komplett</option>
+        <option value="0">❌ DE fehlt</option>
       </select>
       <select id="db-sort" onchange="loadDatabase()">
-        <option value="id">Sortierung: ID</option>
+        <option value="id">Sortierung: Nr.</option>
         <option value="title">Sortierung: Titel</option>
-        <option value="last_episode">Sortierung: Letzte Ep.</option>
-        <option value="last_season">Sortierung: Letzte Staffel</option>
-        <option value="last_film">Sortierung: Letzter Film</option>
+        <option value="last_season">Sortierung: Staffel</option>
+        <option value="last_episode">Sortierung: Episode</option>
+        <option value="last_film">Sortierung: Film</option>
       </select>
-      <button class="btn btn-secondary btn-sm" id="db-order-btn" onclick="toggleDbOrder()">&#8593; Aufsteigend</button>
-      <button class="btn btn-secondary btn-sm" onclick="loadDatabase()">⟳ Aktualisieren</button>
+      <button class="db-order-btn" id="db-order-btn" onclick="toggleDbOrder()">↑ Aufsteigend</button>
+      <button class="db-reload-btn" onclick="loadDatabase()">⟳ Laden</button>
     </div>
 
-    <div style="overflow-x:auto;">
-      <table class="data-table">
+    <!-- Tabelle -->
+    <div class="db-table-wrap">
+      <table class="db-table">
         <thead>
           <tr>
-            <th onclick="sortDb('id')" style="width:44px">ID</th>
-            <th onclick="sortDb('title')">Titel</th>
-            <th>URL</th>
-            <th onclick="sortDb('complete')" style="width:72px">Status</th>
-            <th style="width:44px">DE</th>
-            <th style="width:44px">Del</th>
-            <th>Fehlende DE</th>
-            <th style="width:76px">S/E/F</th>
-            <th style="width:180px">Aktion</th>
+            <th class="db-col-nr" onclick="sortDb('id')">#</th>
+            <th class="db-col-title" onclick="sortDb('title')">Titel</th>
+            <th class="db-col-url">Link</th>
+            <th class="db-col-bool" onclick="sortDb('complete')">Komplett</th>
+            <th class="db-col-bool">DE</th>
+            <th class="db-col-se" onclick="sortDb('last_season')">S/E</th>
+            <th class="db-col-film" onclick="sortDb('last_film')">Film</th>
+            <th class="db-col-action">Aktion</th>
           </tr>
         </thead>
         <tbody id="db-tbody">
-          <tr><td colspan="9" style="text-align:center">Lade...</td></tr>
+          <tr><td colspan="8" class="db-empty">Lade...</td></tr>
         </tbody>
       </table>
     </div>

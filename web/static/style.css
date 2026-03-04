@@ -397,93 +397,148 @@ input:focus, select:focus, textarea:focus {
 
 input::placeholder { color: var(--text-muted); }
 
-/* ─── DB Filter Bar ─── */
-.db-filter-bar {
+/* ════════════════════ DATENBANK ════════════════════ */
+
+.db-search-input {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.db-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   align-items: center;
 }
 
-.db-filter-bar input[type="text"] {
-  flex: 1;
-  min-width: 180px;
-  width: auto;
-}
-
-.db-filter-bar select {
+.db-filters select {
   width: auto !important;
   flex-shrink: 0;
+  min-width: 0;
 }
 
-#db-order-btn {
+.db-order-btn,
+.db-reload-btn {
   flex-shrink: 0;
   white-space: nowrap;
-  min-width: 120px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.83em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
 }
 
-/* ─── DB Row States ─── */
-.row-deleted td {
-  opacity: 0.55;
+.db-order-btn:hover,
+.db-reload-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
-.text-muted-cell {
-  color: var(--text-muted);
+/* ─── Tabelle ─── */
+.db-table-wrap {
+  overflow-x: auto;
 }
 
-/* ─── DB Action Buttons ─── */
-.db-action-btns {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.db-action-btns .btn {
-  font-size: 0.75em;
-  padding: 3px 8px;
+.db-table {
   width: 100%;
-  justify-content: center;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.855em;
 }
 
-/* ─── Cell Scroll (fehlende DE) ─── */
-.break-anywhere {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+.db-table thead th {
+  padding: 9px 12px;
+  text-align: left;
+  background: rgba(255,255,255,0.025);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
 }
 
-.cell-scroll {
-  display: block;
-  max-height: 3.2rem;
-  overflow-y: auto;
-  overflow-x: hidden;
-  white-space: normal;
-  padding-right: 0.25rem;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148,163,184,0.3) transparent;
+.db-table thead th[onclick] {
+  cursor: pointer;
 }
 
-.cell-scroll::-webkit-scrollbar { width: 5px; }
-.cell-scroll::-webkit-scrollbar-thumb {
-  background: rgba(148,163,184,0.3);
-  border-radius: 3px;
+.db-table thead th[onclick]:hover {
+  color: var(--text);
 }
 
-.cell-scroll a {
-  color: var(--primary);
-  font-size: 0.8em;
+.db-table tbody td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  vertical-align: middle;
 }
 
-/* ─── btn-outline-primary (DB) ─── */
-.btn-outline-primary {
-  background: transparent;
-  color: var(--primary);
-  border: 1px solid var(--primary);
+.db-table tbody tr:hover td {
+  background: rgba(108,138,255,0.04);
 }
 
-.btn-outline-primary:hover {
-  background: var(--primary-soft);
-  color: var(--primary);
+.db-table tbody tr.db-row-deleted td {
+  opacity: 0.45;
+}
+
+/* Spaltenbreiten */
+.db-col-nr     { width: 44px; }
+.db-col-title  { min-width: 140px; }
+.db-col-url    { min-width: 120px; max-width: 220px; }
+.db-col-bool   { width: 72px; text-align: center !important; }
+.db-col-se     { width: 80px; white-space: nowrap; }
+.db-col-film   { width: 56px; text-align: center !important; }
+.db-col-action { width: 160px; }
+
+.db-nr    { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.db-url-link { color: var(--primary); font-size: 0.8em; word-break: break-all; }
+.db-url-link:hover { color: var(--primary-hover); }
+.db-se    { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+
+.db-bool-yes { color: #34d058; font-size: 1em; }
+.db-bool-no  { color: #f85149; font-size: 1em; }
+
+.db-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.db-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 0.75em;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.db-btn-del {
+  background: rgba(248,81,73,0.12);
+  border-color: rgba(248,81,73,0.3);
+  color: #f85149;
+}
+.db-btn-del:hover { background: rgba(248,81,73,0.22); }
+
+.db-btn-restore {
+  background: rgba(52,208,88,0.12);
+  border-color: rgba(52,208,88,0.3);
+  color: #34d058;
+}
+.db-btn-restore:hover { background: rgba(52,208,88,0.22); }
+
+.db-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px;
 }
 
 /* ─── Data Table ─── */

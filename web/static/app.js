@@ -433,15 +433,15 @@ let dbSortDir = 'ASC';
 function toggleDbOrder() {
   dbSortDir = dbSortDir === 'ASC' ? 'DESC' : 'ASC';
   const btn = $('#db-order-btn');
-  if (btn) btn.innerHTML = dbSortDir === 'ASC' ? '&#8593; Aufsteigend' : '&#8595; Absteigend';
+  if (btn) btn.textContent = dbSortDir === 'ASC' ? '↑ Aufsteigend' : '↓ Absteigend';
   loadDatabase();
 }
 
 async function loadDatabase() {
-  const search   = $('#db-search')?.value || '';
+  const search   = $('#db-search')?.value.trim() || '';
   const complete = $('#db-complete')?.value || '';
-  const deutsch  = $('#db-deutsch')?.value || '';
-  const sort_by  = $('#db-sort')?.value || dbSortCol;
+  const deutsch  = $('#db-deutsch')?.value  || '';
+  const sort_by  = $('#db-sort')?.value     || dbSortCol;
 
   try {
     let url = `/database?q=${encodeURIComponent(search)}&sort=${sort_by}&dir=${dbSortDir}`;
@@ -457,39 +457,38 @@ async function loadDatabase() {
 function renderDatabase(entries) {
   const tbody = $('#db-tbody');
   if (!entries || !entries.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Keine Einträge</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="db-empty">Keine Einträge gefunden</td></tr>';
     return;
   }
 
   tbody.innerHTML = entries.map(e => {
     const isDeleted = !!e.deleted;
-    const statusIcon = e.complete ? '✅' : '❌';
-    const deIcon = e.deutsch_komplett ? '✅' : '❌';
-    const delIcon = isDeleted ? '✅' : '❌';
-    let fehlArr = [];
-    try { fehlArr = JSON.parse(e.fehlende_deutsch_folgen || '[]'); } catch (_) {}
-    const fehl = fehlArr.map(u => `<a href="${u}" target="_blank" rel="noreferrer">${u}</a>`).join('<br>');
-    const sef = `${e.last_season || 0}/${e.last_episode || 0}/${e.last_film || 0}`;
-    const rowClass = isDeleted ? 'row-deleted' : '';
+    const ok  = '<span class="db-bool-yes">✔</span>';
+    const no  = '<span class="db-bool-no">✘</span>';
+    const komplett = isDeleted ? '<span style="color:var(--text-muted)">del</span>' : (e.complete ? ok : no);
+    const deKomp   = e.deutsch_komplett ? ok : no;
+    const season   = e.last_season  || 0;
+    const episode  = e.last_episode || 0;
+    const film     = e.last_film    || 0;
+    const se       = `S${String(season).padStart(2,'0')}E${String(episode).padStart(3,'0')}`;
 
-    const actionBtns = [
-      `<button class="btn btn-sm btn-outline-primary" title="Als nächstes herunterladen" onclick="queueAdd(${e.id})">Als nächstes</button>`,
-      isDeleted
-        ? `<button class="btn btn-sm btn-warning" title="Wieder herunterladen" onclick="restoreAnime(${e.id})">↩ Wiederholen</button>`
-        : '',
-      `<button class="btn btn-sm btn-danger" title="Aus Datenbank löschen" onclick="deleteAnime(${e.id})">✕ Löschen</button>`,
-    ].filter(Boolean).join('');
+    // Kurz-URL für Anzeige
+    const displayUrl = e.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 
-    return `<tr class="${rowClass}">
-      <td class="text-muted-cell">${e.id}</td>
-      <td class="break-anywhere">${esc(e.title || '–')}</td>
-      <td class="break-anywhere"><a href="${e.url}" target="_blank" rel="noreferrer">${e.url}</a></td>
-      <td style="text-align:center">${statusIcon}</td>
-      <td style="text-align:center">${deIcon}</td>
-      <td style="text-align:center">${delIcon}</td>
-      <td class="mono small"><div class="cell-scroll">${fehl}</div></td>
-      <td class="mono" style="white-space:nowrap">${sef}</td>
-      <td><div class="db-action-btns">${actionBtns}</div></td>
+    const actionBtns = isDeleted
+      ? `<button class="db-btn db-btn-restore" onclick="restoreAnime(${e.id})">&#8635; Erneut laden</button>
+         <button class="db-btn db-btn-del" onclick="deleteAnime(${e.id})">&#10005; Löschen</button>`
+      : `<button class="db-btn db-btn-del" onclick="deleteAnime(${e.id})">&#10005; Löschen</button>`;
+
+    return `<tr class="${isDeleted ? 'db-row-deleted' : ''}">
+      <td class="db-nr">${e.id}</td>
+      <td>${esc(e.title || '–')}</td>
+      <td><a class="db-url-link" href="${e.url}" target="_blank" rel="noreferrer" title="${e.url}">${esc(displayUrl)}</a></td>
+      <td style="text-align:center">${komplett}</td>
+      <td style="text-align:center">${deKomp}</td>
+      <td class="db-se">${se}</td>
+      <td style="text-align:center">${film || '–'}</td>
+      <td><div class="db-actions">${actionBtns}</div></td>
     </tr>`;
   }).join('');
 }
@@ -501,27 +500,25 @@ function sortDb(col) {
     dbSortCol = col;
     dbSortDir = 'ASC';
   }
-  if ($('#db-sort')) $('#db-sort').value = col;
+  if ($('#db-sort'))     $('#db-sort').value = col;
   const btn = $('#db-order-btn');
-  if (btn) btn.innerHTML = dbSortDir === 'ASC' ? '&#8593; Aufsteigend' : '&#8595; Absteigend';
+  if (btn) btn.textContent = dbSortDir === 'ASC' ? '↑ Aufsteigend' : '↓ Absteigend';
   loadDatabase();
 }
 
 function queueAdd(id) {
-  // Fügt die Serie an erste Stelle der Warteschlange – API-Endpunkt falls vorhanden
   api(`/anime/${id}/queue`, { method: 'POST' }).catch(() => {});
 }
 
 async function deleteAnime(id) {
   if (!confirm('Eintrag wirklich löschen?')) return;
-  if (!confirm('Sicher? Der Datenbank-Eintrag wird dauerhaft entfernt.')) return;
+  if (!confirm('Sicher? Dieser Schritt kann nicht rückgängig gemacht werden.')) return;
   await api(`/anime/${id}`, { method: 'DELETE' });
   loadDatabase();
 }
 
 async function restoreAnime(id) {
-  const ok = confirm('Diesen als gelöscht markierten Eintrag erneut herunterladen?\nDer Status wird zurückgesetzt.');
-  if (!ok) return;
+  if (!confirm('Diesen Eintrag erneut herunterladen? Der Status wird zurückgesetzt.')) return;
   await api(`/anime/${id}/restore`, { method: 'POST' });
   loadDatabase();
 }
