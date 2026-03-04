@@ -430,15 +430,21 @@ async function addFromSearch(url) {
 let dbSortCol = 'id';
 let dbSortDir = 'ASC';
 
+function toggleDbOrder() {
+  dbSortDir = dbSortDir === 'ASC' ? 'DESC' : 'ASC';
+  const btn = $('#db-order-btn');
+  if (btn) btn.innerHTML = dbSortDir === 'ASC' ? '&#8593; Aufsteigend' : '&#8595; Absteigend';
+  loadDatabase();
+}
+
 async function loadDatabase() {
   const search   = $('#db-search')?.value || '';
   const complete = $('#db-complete')?.value || '';
   const deutsch  = $('#db-deutsch')?.value || '';
   const sort_by  = $('#db-sort')?.value || dbSortCol;
-  const order    = $('#db-order')?.value || 'asc';
 
   try {
-    let url = `/database?q=${encodeURIComponent(search)}&sort=${sort_by}&dir=${order.toUpperCase()}`;
+    let url = `/database?q=${encodeURIComponent(search)}&sort=${sort_by}&dir=${dbSortDir}`;
     if (complete !== '') url += `&complete=${complete}`;
     if (deutsch  !== '') url += `&deutsch=${deutsch}`;
     const data = await api(url);
@@ -496,7 +502,8 @@ function sortDb(col) {
     dbSortDir = 'ASC';
   }
   if ($('#db-sort')) $('#db-sort').value = col;
-  if ($('#db-order')) $('#db-order').value = dbSortDir.toLowerCase();
+  const btn = $('#db-order-btn');
+  if (btn) btn.innerHTML = dbSortDir === 'ASC' ? '&#8593; Aufsteigend' : '&#8595; Absteigend';
   loadDatabase();
 }
 

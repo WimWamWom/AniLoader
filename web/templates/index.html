@@ -167,10 +167,7 @@
         <option value="last_season">Sortierung: Letzte Staffel</option>
         <option value="last_film">Sortierung: Letzter Film</option>
       </select>
-      <select id="db-order" onchange="loadDatabase()">
-        <option value="asc">↑ Aufsteigend</option>
-        <option value="desc">↓ Absteigend</option>
-      </select>
+      <button class="btn btn-secondary btn-sm" id="db-order-btn" onclick="toggleDbOrder()">&#8593; Aufsteigend</button>
       <button class="btn btn-secondary btn-sm" onclick="loadDatabase()">⟳ Aktualisieren</button>
     </div>
 

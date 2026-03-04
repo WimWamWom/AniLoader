@@ -408,12 +408,19 @@ input::placeholder { color: var(--text-muted); }
 
 .db-filter-bar input[type="text"] {
   flex: 1;
-  min-width: 160px;
+  min-width: 180px;
+  width: auto;
 }
 
 .db-filter-bar select {
-  min-width: 140px;
+  width: auto !important;
   flex-shrink: 0;
+}
+
+#db-order-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-width: 120px;
 }
 
 /* ─── DB Row States ─── */
