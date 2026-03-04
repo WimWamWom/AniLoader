@@ -113,8 +113,12 @@ async def stop_download():
 async def get_database(
     q: Optional[str] = None,
     sort: str = "id",
+    sort_by: Optional[str] = None,  # Alias für sort
     dir: str = "ASC",
+    order: Optional[str] = None,    # Alias für dir
     include_deleted: bool = False,
+    complete: Optional[str] = None,  # "1" | "0" | "deleted"
+    deutsch: Optional[str] = None,   # "1" | "0"
 ):
     """Gibt die Datenbank zurück (gefiltert, sortiert)."""
     data_folder = _data_folder()
@@ -122,8 +126,10 @@ async def get_database(
         data_folder,
         include_deleted=include_deleted,
         search=q,
-        sort_by=sort,
-        sort_dir=dir,
+        sort_by=sort_by or sort,
+        sort_dir=(order or dir).upper(),
+        complete=complete,
+        deutsch=deutsch,
     )
     return entries
 

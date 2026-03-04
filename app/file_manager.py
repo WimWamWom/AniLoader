@@ -140,6 +140,70 @@ def detect_folder_name(download_path: str, season: int, episode: int) -> Optiona
     return None
 
 
+def sanitize_filename(name: str) -> str:
+    """Entfernt für Dateinamen ungültige Zeichen."""
+    name = re.sub(r'[<>:"/\\|?*]', '', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    return name[:100]
+
+
+def rename_episode_file(
+    found_path: Path,
+    season: int,
+    episode: int,
+    title: str,
+    language: str,
+) -> Optional[Path]:
+    """
+    Benennt eine heruntergeladene Episode in das Zielformat um.
+
+    Zielformat: S{ss}E{eee} - {episode_title} {lang_suffix}{ext}
+    Beispiel:   S01E001 - Pilotfolge [Sub].mkv
+
+    Returns:
+        Neuen Dateipfad bei Erfolg, None bei Fehler
+    """
+    lang_suffix = {
+        "German Dub": "",
+        "German Sub": "[Sub]",
+        "English Dub": "[English Dub]",
+        "English Sub": "[English Sub]",
+    }.get(language, "")
+
+    if season == 0:
+        ep_code = f"S00E{episode:03d}"
+    else:
+        ep_code = f"S{season:02d}E{episode:03d}"
+
+    ext = found_path.suffix   # z.B. ".mkv"
+    parent = found_path.parent
+    stem = found_path.stem
+
+    safe_title = sanitize_filename(title) if title else ""
+
+    # Ziel-Dateiname aufbauen
+    new_name = ep_code
+    if safe_title:
+        new_name += f" - {safe_title}"
+    if lang_suffix:
+        new_name += f" {lang_suffix}"
+    new_name += ext
+
+    new_path = parent / new_name
+
+    # Bereits im Zielformat?
+    if found_path.name == new_name:
+        return found_path
+
+    try:
+        shutil.move(str(found_path), str(new_path))
+        log(f"[RENAME] {found_path.name} → {new_name}")
+        return new_path
+    except Exception as e:
+        log(f"[WARN] Umbenennen fehlgeschlagen: {e}")
+        return None
+
+
 def check_file_integrity(filepath: Path, min_size_mb: float = 1.0) -> bool:
     """
     Prüft die Integrität einer heruntergeladenen Datei.

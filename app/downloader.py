@@ -28,6 +28,7 @@ from .file_manager import (
     episode_already_downloaded,
     find_downloaded_file,
     get_free_space_gb,
+    rename_episode_file,
 )
 from .logger import log, start_new_run
 
@@ -244,6 +245,7 @@ def _download_episode(
     # Download: Sprachen-Kaskade
     downloaded = False
     used_language = None
+    found = None
 
     if language:
         # Bekannte Sprache – direkt downloaden
@@ -278,6 +280,11 @@ def _download_episode(
             db.update_anime(data_folder, anime["id"], folder_name=folder)
             anime["folder_name"] = folder
             log(f"[DB] Ordnername gespeichert: {folder}")
+
+    # Episode umbenennen (Titel + Sprach-Suffix einbauen)
+    if found:
+        ep_title = episode_info.get("title_de") or episode_info.get("title_en") or ""
+        rename_episode_file(found, season, episode_num, ep_title, used_language or "")
 
     log(f"[OK] S{season:02d}E{episode_num:03d} [{used_language}]")
 

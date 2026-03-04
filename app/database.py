@@ -118,12 +118,14 @@ def get_all_anime(
     search: Optional[str] = None,
     sort_by: str = "id",
     sort_dir: str = "ASC",
+    complete: Optional[str] = None,  # "1" | "0" | "deleted" | None
+    deutsch: Optional[str] = None,   # "1" | "0" | None
 ) -> List[Dict[str, Any]]:
     """Gibt alle Anime/Serien zurück, optional gefiltert und sortiert."""
     conn = _connect(data_folder)
     try:
         # Whitelist für sort columns
-        allowed_sort = {"id", "title", "url", "complete", "deleted", "last_season"}
+        allowed_sort = {"id", "title", "url", "complete", "deleted", "last_season", "last_episode", "last_film"}
         if sort_by not in allowed_sort:
             sort_by = "id"
         if sort_dir.upper() not in ("ASC", "DESC"):
@@ -133,8 +135,20 @@ def get_all_anime(
         params: list = []
         conditions = []
 
-        if not include_deleted:
+        # Komplett/Gelöscht-Filter
+        if complete == "deleted":
+            conditions.append("deleted = 1")
+        elif complete == "1":
+            conditions.append("deleted = 0 AND complete = 1")
+        elif complete == "0":
+            conditions.append("deleted = 0 AND complete = 0")
+        elif not include_deleted:
             conditions.append("deleted = 0")
+
+        if deutsch == "1":
+            conditions.append("deutsch_komplett = 1")
+        elif deutsch == "0":
+            conditions.append("deutsch_komplett = 0")
 
         if search:
             conditions.append("(title LIKE ? OR url LIKE ?)")

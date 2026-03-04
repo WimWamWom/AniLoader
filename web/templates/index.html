@@ -145,28 +145,52 @@
 <div id="tab-db" class="tab-content">
   <div class="card">
     <h3>Datenbank</h3>
-    <div style="display:flex; gap:8px; margin-bottom:12px;">
-      <input type="text" id="db-search" placeholder="Suche..." oninput="loadDatabase()">
-      <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
-        <input type="checkbox" id="db-show-deleted" onchange="loadDatabase()"> Gelöschte anzeigen
-      </label>
+
+    <!-- Filter-Leiste -->
+    <div class="db-filter-bar">
+      <input type="text" id="db-search" placeholder="Suche (Titel / URL)" oninput="loadDatabase()">
+      <select id="db-complete" onchange="loadDatabase()">
+        <option value="">Status: Alle</option>
+        <option value="1">Komplett</option>
+        <option value="0">Nicht komplett</option>
+        <option value="deleted">Gelöscht</option>
+      </select>
+      <select id="db-deutsch" onchange="loadDatabase()">
+        <option value="">Deutsch: Alle</option>
+        <option value="1">Deutsch komplett</option>
+        <option value="0">Deutsch fehlt</option>
+      </select>
+      <select id="db-sort" onchange="loadDatabase()">
+        <option value="id">Sortierung: ID</option>
+        <option value="title">Sortierung: Titel</option>
+        <option value="last_episode">Sortierung: Letzte Ep.</option>
+        <option value="last_season">Sortierung: Letzte Staffel</option>
+        <option value="last_film">Sortierung: Letzter Film</option>
+      </select>
+      <select id="db-order" onchange="loadDatabase()">
+        <option value="asc">↑ Aufsteigend</option>
+        <option value="desc">↓ Absteigend</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="loadDatabase()">⟳ Aktualisieren</button>
     </div>
+
     <div style="overflow-x:auto;">
       <table class="data-table">
         <thead>
           <tr>
-            <th onclick="sortDb('id')" style="width:50px">ID</th>
-            <th onclick="sortDb('complete')" style="width:100px">Status</th>
+            <th onclick="sortDb('id')" style="width:44px">ID</th>
             <th onclick="sortDb('title')">Titel</th>
-            <th style="width:50px">Typ</th>
-            <th style="width:50px">DE</th>
-            <th style="width:100px">Fortschritt</th>
-            <th style="width:80px">Filme</th>
-            <th style="width:60px">Aktion</th>
+            <th>URL</th>
+            <th onclick="sortDb('complete')" style="width:72px">Status</th>
+            <th style="width:44px">DE</th>
+            <th style="width:44px">Del</th>
+            <th>Fehlende DE</th>
+            <th style="width:76px">S/E/F</th>
+            <th style="width:180px">Aktion</th>
           </tr>
         </thead>
         <tbody id="db-tbody">
-          <tr><td colspan="8" style="text-align:center">Lade...</td></tr>
+          <tr><td colspan="9" style="text-align:center">Lade...</td></tr>
         </tbody>
       </table>
     </div>
