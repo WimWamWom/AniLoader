@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, File, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from .. import database as db
@@ -270,6 +270,28 @@ async def get_poster(url: str = Query(...)):
     poster_url = scraper.get_poster_url(url)
     _poster_cache[url] = poster_url or ""
     return {"poster_url": poster_url or ""}
+
+
+@router.get("/proxy_poster")
+async def proxy_poster(url: str = Query(...)):
+    """Proxied Poster-Bild – verhindert Hotlink-Blocking durch AniWorld/S.to."""
+    try:
+        session = scraper._get_session()
+        resp = session.get(url, timeout=10)
+        if resp.status_code != 200:
+            return Response(status_code=404)
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        # Nur Bild-Typen durchlassen
+        if not content_type.startswith("image/"):
+            return Response(status_code=403)
+        return Response(
+            content=resp.content,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except Exception as e:
+        log(f"[PROXY] Poster-Proxy-Fehler für {url}: {e}")
+        return Response(status_code=502)
 
 
 # ──────────────────────── Konfiguration ────────────────────────

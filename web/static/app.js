@@ -401,7 +401,7 @@ function renderSearchResults(results) {
         const img = card.querySelector('.search-poster');
         const placeholder = card.querySelector('.search-poster-placeholder');
         if (img) {
-          img.src = data.poster_url;
+          img.src = `/proxy_poster?url=${encodeURIComponent(data.poster_url)}`;
           img.onload = () => {
             img.style.display = 'block';
             if (placeholder) placeholder.style.display = 'none';

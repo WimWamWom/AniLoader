@@ -437,10 +437,10 @@ def _parse_sto_season(
         return sorted(episodes, key=lambda x: x["episode"])
 
     for row in rows:
-        row_class = row.get("class")
+        row_class = row.get("class") or []
         if isinstance(row_class, str):
             row_class = row_class.split()
-            classes = " ".join(row_class)
+        classes = " ".join(row_class)
         if "upcoming" in classes:
             continue
 
@@ -624,24 +624,34 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
     if platform in ("sto", "both"):
         log("[SUCHE] Frage S.to ab …")
         try:
-            resp = _post(
-                "https://s.to/ajax/search",
-                data={"keyword": query},
+            resp = _get_session().get(
+                "https://s.to/api/search/suggest",
+                params={"term": query},
                 timeout=10,
             )
             log(f"[SUCHE] S.to HTTP {resp.status_code}")
-            data = resp.json() if resp.status_code == 200 else []
-            log(f"[SUCHE] S.to API lieferte {len(data)} Roheinträge")
-            for item in data:
-                link = item.get("link", "")
-                if "/serie/stream/" in link:
-                    full_url = f"https://s.to{link}" if not link.startswith("http") else link
-                    sto_results.append({
-                        "title": item.get("title", "").replace("<em>", "").replace("</em>", ""),
-                        "url": full_url,
-                        "description": item.get("description", ""),
-                        "platform": "S.to",
-                    })
+            data_raw = resp.json() if resp.status_code == 200 else {}
+            shows = data_raw.get("shows", []) or []
+            log(f"[SUCHE] S.to API lieferte {len(shows)} Roheinträge")
+            for show in shows:
+                raw_url = show.get("url", "") or ""
+                # Normalize: /serie/<slug> oder /serie/stream/<slug> → /serie/stream/<slug>
+                if raw_url.startswith("/serie/stream/"):
+                    slug = raw_url[len("/serie/stream/"):].strip("/").split("/")[0]
+                elif raw_url.startswith("/serie/"):
+                    slug = raw_url[len("/serie/"):].strip("/").split("/")[0]
+                else:
+                    continue
+                if not slug:
+                    continue
+                full_url = f"https://s.to/serie/stream/{slug}"
+                title = (show.get("name", "") or "").replace("<em>", "").replace("</em>", "")
+                sto_results.append({
+                    "title": title,
+                    "url": full_url,
+                    "description": "",
+                    "platform": "S.to",
+                })
             log(f"[SUCHE] S.to: {len(sto_results)} Serien-Treffer")
         except Exception as e:
             log(f"[SUCHE] S.to-Fehler: {e}")
