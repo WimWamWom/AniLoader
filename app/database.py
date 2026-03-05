@@ -14,6 +14,11 @@ from typing import Any, Dict, List, Optional
 
 from .logger import log
 
+# Verzögerter Import um zirkuläre Abhängigkeiten zu vermeiden
+def _get_scraper():
+    from . import scraper
+    return scraper
+
 
 # Base directory für AniLoader.txt Dateien
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -408,14 +413,25 @@ def import_aniloader_txt(data_folder: str) -> Dict[str, int]:
                 duplicates += 1
                 continue
             
-            # Füge zur Datenbank hinzu (ohne Backup-Update, da wir am Ende das komplette Backup regenerieren)
+            # Füge zur Datenbank hinzu (mit echtem Titel von der Webseite)
+            # Versuche echten Titel von der Webseite zu bekommen
+            scraper = _get_scraper()
+            try:
+                title = scraper.get_series_title(url)
+                if not title:
+                    title = url  # Fallback zur URL wenn kein Titel gefunden
+            except Exception as title_error:
+                log(f"[IMPORT-WARN] Zeile {line_num}: Titel konnte nicht abgerufen werden ({title_error}) - nutze URL als Titel")
+                title = url
+            
+            # In Datenbank einfügen
             conn = _connect(data_folder)
             try:
                 c = conn.cursor()
-                c.execute("INSERT INTO anime (url, title) VALUES (?, ?)", (url, url))
+                c.execute("INSERT INTO anime (url, title) VALUES (?, ?)", (url, title))
                 conn.commit()
                 if c.rowcount > 0:
-                    log(f"[IMPORT] Zeile {line_num}: Importiert - {url}")
+                    log(f"[IMPORT] Zeile {line_num}: Importiert - {title} ({url})")
                     imported += 1
                 else:
                     log(f"[IMPORT-ERROR] Zeile {line_num}: Unbekannter Fehler bei - {url}")
