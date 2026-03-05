@@ -258,7 +258,11 @@ def _download_episode(
     for lang in cascading_languages:
         log(f"[DL] S{season:02d}E{episode_num:03d} [{lang}]")
         if _run_aniworld_download(episode_url, lang, output_path, timeout):
-            found = find_downloaded_file(output_path, season, episode_num)
+            found = find_downloaded_file(
+                output_path, season, episode_num,
+                folder_name=anime.get("folder_name"),
+                title_hint=anime.get("title"),
+            )
             if found:
                 downloaded = True
                 used_language = lang
@@ -270,7 +274,7 @@ def _download_episode(
 
     # Folder-Name erkennen und speichern
     if not anime.get("folder_name"):
-        folder = detect_folder_name(output_path, season, episode_num)
+        folder = detect_folder_name(output_path, season, episode_num, title_hint=anime.get("title"))
         if folder:
             db.update_anime(data_folder, anime["id"], folder_name=folder)
             anime["folder_name"] = folder

@@ -271,6 +271,15 @@ def get_season_numbers(url: str) -> List[int]:
                 num_str = str(a.get("data-season-pill", "")).strip()
                 if num_str.isdigit():
                     seasons.append(int(num_str))
+            
+            # S.to: Filme sind unter /staffel-0 oder separate Filme-Section
+            # Prüfe auf Filme-Link oder Staffel-0
+            for a in scope.find_all("a"):
+                href = a.get("href", "")
+                href = str(href)
+                if "/staffel-0" in href and 0 not in seasons:
+                    seasons.insert(0, 0)
+                    break
 
         return sorted(set(seasons))
 
@@ -440,7 +449,6 @@ def _extract_aniworld_languages(element) -> List[str]:
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
-            log(f"[SCRAPER] Flag erkannt: {src} → {lang}")
 
     return langs
 

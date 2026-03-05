@@ -125,14 +125,20 @@ def find_downloaded_file(
     download_path: str,
     season: int,
     episode: int,
-    timeout_seconds: int = 30,
+    folder_name: Optional[str] = None,
+    title_hint: Optional[str] = None,
 ) -> Optional[Path]:
     """
     Sucht die heruntergeladene Datei nach einem aniworld CLI Download.
 
     Die aniworld CLI erstellt:
-        {download_path}/{Title} ({Year}) [imdbid-{id}]/Season {ss}/{Title} S{ss}E{eee}.mkv        Für Filme: {Title} S00E{eee}.mkv (wird später zu Film{ff} umbenannt)
-    Sucht rekursiv nach dem Dateinamen-Pattern.
+        {download_path}/{Title} ({Year}) [imdbid-{id}]/Season {ss}/{Title} S{ss}E{eee}.mkv
+        Für Filme: {Title} S00E{eee}.mkv (wird später zu Film{ff} umbenannt)
+
+    Suchstrategie:
+        1. folder_name bekannt → suche nur in diesem Unterordner
+        2. title_hint bekannt  → suche in Unterordnern die den Titel enthalten
+        3. Fallback            → rglob über alle Unterordner (unsicher bei mehreren Serien)
     """
     base = Path(download_path)
     if not base.exists():
@@ -143,17 +149,38 @@ def find_downloaded_file(
     else:
         pattern = f"*S{season:02d}E{episode:03d}*"
 
-    for ext in (".mkv", ".mp4"):
-        for f in base.rglob(pattern + ext):
-            if f.is_file() and not f.name.endswith(".part"):
-                # Prüfe Dateigröße (mind. 1MB)
-                if f.stat().st_size > 1_000_000:
-                    return f
+    # Suchbereich einschränken
+    if folder_name:
+        # Exakter Ordner bekannt (aus DB) → nur dort suchen
+        search_roots = [base / folder_name]
+    elif title_hint:
+        # Titel bekannt → Unterordner filtern die den Titel-Anfang enthalten
+        title_lower = title_hint.lower()[:15]
+        search_roots = [
+            d for d in base.iterdir()
+            if d.is_dir() and title_lower in d.name.lower()
+        ]
+        if not search_roots:
+            search_roots = [base]  # Fallback
+    else:
+        search_roots = [base]
+
+    for search_root in search_roots:
+        for ext in (".mkv", ".mp4"):
+            for f in search_root.rglob(pattern + ext):
+                if f.is_file() and not f.name.endswith(".part"):
+                    if f.stat().st_size > 1_000_000:
+                        return f
 
     return None
 
 
-def detect_folder_name(download_path: str, season: int, episode: int) -> Optional[str]:
+def detect_folder_name(
+    download_path: str,
+    season: int,
+    episode: int,
+    title_hint: Optional[str] = None,
+) -> Optional[str]:
     """
     Erkennt den von aniworld CLI erstellten Ordnernamen.
 
@@ -163,7 +190,7 @@ def detect_folder_name(download_path: str, season: int, episode: int) -> Optiona
     Returns:
         z.B. "Title (2020) [imdbid-tt1234567]" oder None
     """
-    found = find_downloaded_file(download_path, season, episode)
+    found = find_downloaded_file(download_path, season, episode, title_hint=title_hint)
     if found:
         try:
             rel = found.relative_to(download_path)
