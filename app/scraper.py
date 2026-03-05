@@ -106,13 +106,18 @@ def build_season_url(base_url: str, season: int) -> str:
 
 def build_film_url(base_url: str) -> str:
     """Baut die URL für die Filme-Seite."""
+    if is_sto(base_url):
+        return f"{base_url}/staffel-0"
     return f"{base_url}/filme"
 
 
 def build_episode_url(base_url: str, season: int, episode: int) -> str:
     """Baut die URL für eine einzelne Episode."""
     if season == 0:
-        return f"{base_url}/filme/film-{episode}"
+        if is_sto(base_url):
+            return f"{base_url}/staffel-0/episode-{episode}"
+        else:  # ANiworld
+            return f"{base_url}/filme/film-{episode}"
     return f"{base_url}/staffel-{season}/episode-{episode}"
 
 
