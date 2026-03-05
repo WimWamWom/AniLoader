@@ -344,6 +344,8 @@ def _run_default(cfg: dict, data_folder: str) -> None:
 
             episodes = scraper.get_episodes_for_season(base_url, season)
             if not episodes:
+                label = "Filme" if season == 0 else f"Staffel {season}"
+                log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
                 continue
 
             for ep in episodes:
@@ -480,6 +482,8 @@ def _run_new(cfg: dict, data_folder: str) -> None:
 
             episodes = scraper.get_episodes_for_season(base_url, season)
             if not episodes:
+                label = "Filme" if season == 0 else f"Staffel {season}"
+                log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
                 continue
 
             for ep in episodes:
@@ -552,6 +556,8 @@ def _run_check(cfg: dict, data_folder: str) -> None:
 
             episodes = scraper.get_episodes_for_season(base_url, season)
             if not episodes:
+                label = "Filme" if season == 0 else f"Staffel {season}"
+                log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
                 continue
 
             for ep in episodes:

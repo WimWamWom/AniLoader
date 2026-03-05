@@ -372,7 +372,14 @@ def _parse_aniworld_season(
         log(f"[SCRAPER] Kein tbody gefunden auf Staffel-{season}-Seite")
         return []
 
-    for tr in tbody.find_all("tr", attrs={"data-episode-id": True}):
+    rows = tbody.find_all("tr", attrs={"data-episode-id": True})
+    if not rows:
+        # Fallback: Film-Seiten haben manchmal keine data-episode-id
+        rows = [tr for tr in tbody.find_all("tr") if tr.find("a", attrs={"itemprop": "url"})]
+        if rows:
+            log(f"[SCRAPER] Fallback: {len(rows)} Rows ohne data-episode-id gefunden")
+
+    for tr in rows:
         ep_data: Dict = {"languages": []}
 
         # Episode-Nummer
