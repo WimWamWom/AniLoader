@@ -4,7 +4,6 @@ AniLoader – Logging-System.
 Schreibt Logs in:
   - data/last_run.txt       (aktueller Lauf)
   - data/logs/              (archivierte Läufe mit Timestamp)
-  - data/all_logs.txt       (Gesamt-History, automatische Bereinigung)
   - stdout                  (Konsole)
 """
 
@@ -80,14 +79,6 @@ def log(msg: str) -> None:
     except Exception:
         pass
 
-    try:
-        # all_logs.txt (gesamte History)
-        all_logs = Path(_data_folder) / "all_logs.txt"
-        with open(all_logs, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except Exception:
-        pass
-
 
 def get_last_run_log() -> str:
     """Gibt den Log des letzten/aktuellen Laufs zurück."""
@@ -100,21 +91,14 @@ def get_last_run_log() -> str:
 
 
 def get_all_logs() -> str:
-    """Gibt alle Log-Einträge zurück."""
-    if not _data_folder:
-        return "\n".join(_run_log_lines)
-    all_logs = Path(_data_folder) / "all_logs.txt"
-    if all_logs.exists():
-        return all_logs.read_text(encoding="utf-8")
-    return "Keine Logs vorhanden."
+    """Gibt alle Log-Einträge zurück (aus last_run.txt)."""
+    return get_last_run_log()
 
 
 def cleanup_old_logs(days: int = 7) -> int:
     """
-    Entfernt Log-Einträge und -Dateien älter als `days` Tage:
-    - Zeilen aus all_logs.txt
-    - Archivierte Log-Dateien aus data/logs/
-    Gibt die Anzahl entfernter Zeilen + Dateien zurück.
+    Entfernt archivierte Log-Dateien älter als `days` Tage aus data/logs/.
+    Gibt die Anzahl entfernter Dateien zurück.
     """
     if not _data_folder:
         return 0
@@ -122,33 +106,7 @@ def cleanup_old_logs(days: int = 7) -> int:
     removed_count = 0
     cutoff = time.time() - (days * 86400)
     
-    # 1. Bereinige all_logs.txt (Zeilen älter als X Tage)
-    all_logs = Path(_data_folder) / "all_logs.txt"
-    if all_logs.exists():
-        try:
-            lines = all_logs.read_text(encoding="utf-8").splitlines()
-            kept = []
-            
-            for line in lines:
-                # Format: [2025-03-02 14:30:00] message
-                if line.startswith("[") and "]" in line:
-                    try:
-                        ts_str = line[1 : line.index("]")]
-                        ts = time.mktime(time.strptime(ts_str, "%Y-%m-%d %H:%M:%S"))
-                        if ts < cutoff:
-                            removed_count += 1
-                            continue
-                    except (ValueError, OverflowError):
-                        pass
-                kept.append(line)
-            
-            if removed_count > 0:
-                with open(all_logs, "w", encoding="utf-8") as f:
-                    f.write("\n".join(kept) + "\n" if kept else "")
-        except Exception as e:
-            print(f"[LOG-ERROR] cleanup all_logs.txt: {e}")
-    
-    # 2. Bereinige archivierte Log-Dateien aus data/logs/
+    # Bereinige archivierte Log-Dateien aus data/logs/
     logs_folder = Path(_data_folder) / "logs"
     if logs_folder.exists():
         try:
