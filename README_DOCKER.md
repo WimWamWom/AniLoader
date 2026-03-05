@@ -1,14 +1,9 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png" alt="AniLoader Logo" width="200">
-</p>
+<h1 align="center"><sub><img src="web/static/AniLoader.png" width="35"></sub>AniLoader </h1>
 
-<h1 align="center">AniLoader – Docker</h1>
 
-<p align="center">
-  <strong>Anime &amp; Serien Download-Manager mit Web-Interface</strong><br>
+  
+  Anime & Serien Download-Manager mit Web-Interface
   Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur
-</p>
-
 ---
 
 ## TL;DR
