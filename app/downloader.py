@@ -229,12 +229,13 @@ def _download_episode(
 
     # Sprachen IMMER von der Episoden-Seite holen (vor dem Download)
     ep_langs = episode_info.get("languages", [])
+    log(f"[LANG] S{season:02d}E{episode_num:03d} – Sprachen aus Staffel-Seite: {ep_langs}")
+    
     if not ep_langs:
         # Von Staffelseite nicht vorhanden → von Episoden-Seite scrapen
-        log(f"[DL] Scrape Sprachen von Episode-Seite …")
+        log(f"[LANG] Scrape Sprachen von Episode-Seite …")
         ep_langs = scraper.get_episode_languages(episode_url)
-        if ep_langs:
-            log(f"[DL] Verfügbare Sprachen: {', '.join(ep_langs)}")
+        log(f"[LANG] Von Episode-Seite gescraped: {ep_langs}")
 
     # Sprachen zur Kaskade vorbereiten
     cascading_languages = []
@@ -243,9 +244,11 @@ def _download_episode(
         for lang in languages_config:
             if lang in ep_langs:
                 cascading_languages.append(lang)
+        log(f"[LANG] Finale Kaskade: {cascading_languages}")
     else:
         # Sprachen unbekannt → komplette Kaskade
         cascading_languages = languages_config[:]
+        log(f"[LANG] Sprachen unbekannt – verwende komplette Kaskade: {cascading_languages}")
 
     # Download: Sprachen-Kaskade (nur mit verfügbaren Sprachen)
     downloaded = False

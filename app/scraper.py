@@ -418,18 +418,29 @@ def _extract_aniworld_languages(element) -> List[str]:
         title = img.get("title", "").lower()
 
         lang = None
-        if "german.svg" in src or "deutsch/german" in title:
-            lang = "German Dub"
-        elif "japanese-german.svg" in src or "deutschem untertitel" in title:
+        # WICHTIG: Genauere Checks zuerst (specifische Dateien)
+        if src.endswith("japanese-german.svg"):
             lang = "German Sub"
-        elif "japanese-english.svg" in src or "englisch" in title:
+        elif src.endswith("japanese-english.svg"):
             lang = "English Sub"
-        elif "english.svg" in src or "english" in title:
+        elif src.endswith("german.svg"):
+            lang = "German Dub"
+        elif src.endswith("english.svg"):
+            lang = "English Dub"
+        # Fallback: Title-Attribute
+        elif "deutschem untertitel" in title:
+            lang = "German Sub"
+        elif "englische untertitel" in title or "englischen untertitel" in title:
+            lang = "English Sub"
+        elif "deutsch/german" in title or "deutsch" in title:
+            lang = "German Dub"
+        elif "english" in title:
             lang = "English Dub"
 
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
+            log(f"[SCRAPER] Flag erkannt: {src} → {lang}")
 
     return langs
 
@@ -439,14 +450,15 @@ def _parse_sto_season(
 ) -> List[Dict]:
     """
     Parst eine S.to-Staffelseite.
-    Sprachen sind auf der Staffelseite NICHT pro Episode verfügbar.
-    → languages bleibt leer, Downloader nutzt Fallback-Kaskade.
+    Sprachen sind in SVG-Icons in jeder Episode verfügbar (watch-language Icons).
     """
     episodes = []
 
-    rows = soup.find_all("tr", class_="episode-row")
-    if not rows:
+    # Moderne S.to Struktur: <table class="episode-table">
+    episode_table = soup.find("table", class_="episode-table")
+    if not episode_table:
         # Fallback: Suche nach Episode-Links im HTML
+        log(f"[SCRAPER] episode-table nicht gefunden, nutze Regex-Fallback")
         pattern = re.compile(
             r'href="(?:https?://(?:serienstream|s)\.to)?/serie/[^"]+/staffel-'
             + str(season)
@@ -462,45 +474,57 @@ def _parse_sto_season(
                     "title_de": "",
                     "title_en": "",
                     "url": build_episode_url(base_url, season, ep_num),
-                    "languages": [],  # unbekannt von der season page
+                    "languages": [],
                 })
         return sorted(episodes, key=lambda x: x["episode"])
 
-    for row in rows:
-        row_class = row.get("class") or []
-        if isinstance(row_class, str):
-            row_class = row_class.split()
-        classes = " ".join(row_class)
-        if "upcoming" in classes:
-            continue
+    # Alle Reihen in der Tabelle
+    tbody = episode_table.find("tbody")
+    rows = tbody.find_all("tr") if tbody else episode_table.find_all("tr")[1:]  # Skip header
 
+    for row in rows:
         ep_data: Dict = {"languages": []}
 
-        # Episode-Nummer
-        th = row.select_one("th.episode-number-cell")
+        # Episode-Nummer: first <th> in row (z.B. <th class="text-center">1</th>)
+        th = row.find("th")
         if th:
             num_text = th.get_text(strip=True)
-            ep_data["episode"] = int(num_text) if num_text.isdigit() else 0
+            try:
+                ep_data["episode"] = int(num_text)
+            except (ValueError, TypeError):
+                continue
         else:
             continue
 
-        # Titel
-        title_cell = row.select_one("td.episode-title-cell, td:nth-of-type(2)")
-        if title_cell:
-            strong = title_cell.find("strong")
-            ep_data["title_de"] = strong.get_text(strip=True) if strong else ""
-            span = title_cell.find("span")
-            ep_data["title_en"] = span.get_text(strip=True) if span else ""
+        # Titel: Kombiniere Deutsche + Englische Titel
+        # S.to: zweite <td> (nach Episode-Nr)
+        tds = row.find_all("td")
+        if len(tds) >= 1:
+            title_td = tds[0]
+            # Titel kann mehrere Spans enthalten (deutsch + englisch)
+            texts = []
+            for el in title_td.find_all(["strong", "span"]):
+                text = el.get_text(strip=True)
+                if text:
+                    texts.append(text)
+            # Erste ist meist deutsch
+            ep_data["title_de"] = texts[0] if texts else ""
+            ep_data["title_en"] = texts[1] if len(texts) > 1 else ""
         else:
             ep_data["title_de"] = ""
             ep_data["title_en"] = ""
 
-        # URL
-        ep_data["url"] = build_episode_url(base_url, season, ep_data["episode"])
+        # URL konstruieren
+        episode = ep_data["episode"]
+        ep_data["url"] = build_episode_url(base_url, season, episode)
 
-        # Sprachen (versuche aus der Zeile zu extrahieren)
-        langs = _extract_sto_languages(row)
-        ep_data["languages"] = langs
+        # Sprachen aus der Sprach-Cell (letzte <td> mit class="episode-language-cell")
+        lang_cell = row.find("td", class_="episode-language-cell")
+        if lang_cell:
+            langs = _extract_sto_languages(lang_cell)
+            ep_data["languages"] = langs
+        else:
+            ep_data["languages"] = []
 
         episodes.append(ep_data)
 
@@ -512,39 +536,46 @@ def _extract_sto_languages(element) -> List[str]:
     langs = []
     seen = set()
 
-    # SVG-Icons (neuere S.to-Struktur)
+    # Methode 1: SVG-Icons mit watch-language Klasse (moderne S.to-Struktur)
     for svg in element.find_all("svg", class_="watch-language"):
         use = svg.find("use")
         if not use:
             continue
-        href = str(use.get("href", "") or use.get("xlink:href", ""))
+        href = str(use.get("href") or use.get("xlink:href") or "")
+        
         lang = None
-        flag = href.replace("#icon-flag-", "")
-        if flag == "german":
+        # icon-flag-german, icon-flag-english, etc.
+        if "german" in href:
             lang = "German Dub"
-        elif flag == "english":
+        elif "english" in href:
             lang = "English Dub"
-        elif flag in ("english-german", "japanese-german"):
-            lang = "German Sub"
-        elif flag in ("japanese-english",):
-            lang = "English Sub"
+        # Falls später Sub-Icons hinzukommen
+        elif "sub" in href.lower():
+            if "german" in href:
+                lang = "German Sub"
+            elif "english" in href:
+                lang = "English Sub"
+        
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
+            log(f"[SCRAPER] S.to SVG erkannt: {href} → {lang}")
 
-    # Flag-Images Fallback (ältere S.to-Struktur)
+    # Methode 2: Fallback für Flag-Images (ältere S.to-Struktur)
     if not langs:
         for img in element.find_all("img", class_="flag"):
             src = img.get("src", "") or img.get("data-src", "")
+            
             lang = None
-            if "german.svg" in src:
+            if src.endswith("german.svg"):
                 lang = "German Dub"
-            elif "japanese-german.svg" in src or "english-german.svg" in src:
-                lang = "German Sub"
-            elif "japanese-english.svg" in src:
-                lang = "English Sub"
-            elif "english.svg" in src:
+            elif src.endswith("english.svg"):
                 lang = "English Dub"
+            elif src.endswith("german-sub.svg") or src.endswith("deutsch-sub.svg"):
+                lang = "German Sub"
+            elif src.endswith("english-sub.svg"):
+                lang = "English Sub"
+            
             if lang and lang not in seen:
                 seen.add(lang)
                 langs.append(lang)
