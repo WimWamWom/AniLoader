@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     init_db(data_folder)
     
     # AniLoader.txt erstellen falls nicht vorhanden
-    ensure_aniloader_txt()
+    ensure_aniloader_txt(data_folder)
     
     # AniLoader.txt importieren (wie im alten AniLoader)
     try:

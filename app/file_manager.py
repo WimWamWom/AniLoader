@@ -20,14 +20,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ──────────────────────── Initialisierungsfunktionen ────────────────────────
 
 
-def ensure_aniloader_txt() -> None:
+def ensure_aniloader_txt(data_folder: str) -> None:
     """
-    Erstellt AniLoader.txt im Hauptverzeichnis, falls sie nicht existiert.
+    Erstellt AniLoader.txt im data/ Ordner, falls sie nicht existiert.
     
     Diese Datei wird vom Tampermonkey-Script verwendet, um Links hinzuzufügen,
     die dann beim Start der Anwendung importiert werden.
     """
-    aniloader_txt = BASE_DIR / "AniLoader.txt"
+    aniloader_txt = Path(data_folder) / "AniLoader.txt"
     
     if not aniloader_txt.exists():
         try:

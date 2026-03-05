@@ -374,7 +374,7 @@ def import_aniloader_txt(data_folder: str) -> Dict[str, int]:
     Liest alle Links aus AniLoader.txt, fügt sie in die DB ein und leert die Datei.
     Gibt Statistiken über den Import zurück.
     """
-    aniloader_txt = BASE_DIR / "AniLoader.txt"
+    aniloader_txt = Path(data_folder) / "AniLoader.txt"
     
     if not aniloader_txt.exists():
         log("[IMPORT] AniLoader.txt nicht gefunden - überspringe Import")
@@ -467,7 +467,7 @@ def import_aniloader_txt(data_folder: str) -> Dict[str, int]:
 
 def _update_aniloader_backup(data_folder: str, url: str) -> None:
     """Fügt eine einzelne URL zur AniLoader.txt.bak hinzu."""
-    backup_file = BASE_DIR / "AniLoader.txt.bak"
+    backup_file = Path(data_folder) / "AniLoader.txt.bak"
     
     try:
         # Prüfe ob URL bereits in Backup vorhanden
@@ -487,7 +487,7 @@ def _update_aniloader_backup(data_folder: str, url: str) -> None:
 
 def regenerate_aniloader_backup(data_folder: str) -> None:
     """Regeneriert die komplette AniLoader.txt.bak aus der Datenbank."""
-    backup_file = BASE_DIR / "AniLoader.txt.bak"
+    backup_file = Path(data_folder) / "AniLoader.txt.bak"
     
     try:
         # Alle URLs aus der Datenbank abrufen
