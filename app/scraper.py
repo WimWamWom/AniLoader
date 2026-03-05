@@ -374,10 +374,29 @@ def _parse_aniworld_season(
 
     rows = tbody.find_all("tr", attrs={"data-episode-id": True})
     if not rows:
-        # Fallback: Film-Seiten haben manchmal keine data-episode-id
+        # Fallback 1: Film-Seiten haben manchmal keine data-episode-id, aber itemprop="url"
         rows = [tr for tr in tbody.find_all("tr") if tr.find("a", attrs={"itemprop": "url"})]
         if rows:
-            log(f"[SCRAPER] Fallback: {len(rows)} Rows ohne data-episode-id gefunden")
+            log(f"[SCRAPER] Fallback-1: {len(rows)} Rows mit itemprop=url gefunden")
+    if not rows and season == 0:
+        # Fallback 2: Jede <tr> mit einem Link die /filme/film- enthält
+        rows = [
+            tr for tr in tbody.find_all("tr")
+            if tr.find("a", href=lambda h: h and "/filme/film-" in h)
+        ]
+        if rows:
+            log(f"[SCRAPER] Fallback-2: {len(rows)} Film-Rows via /filme/film- gefunden")
+    if not rows and season == 0:
+        # Fallback 3: Jede <tr> mit irgendeinem <a href> — debug alle Rows
+        all_rows = tbody.find_all("tr")
+        log(f"[SCRAPER] DEBUG: {len(all_rows)} Rows in tbody gefunden")
+        for i, tr in enumerate(all_rows[:5]):
+            log(f"[SCRAPER] DEBUG Row {i}: {str(tr)[:300]}")
+        rows = [tr for tr in all_rows if tr.find("a", href=True)]
+        if rows:
+            log(f"[SCRAPER] Fallback-3: {len(rows)} Rows mit beliebigem <a href>")
+    if not rows:
+        log(f"[SCRAPER] Keine Rows in tbody gefunden (season={season})")
 
     for tr in rows:
         ep_data: Dict = {"languages": []}
@@ -391,11 +410,14 @@ def _parse_aniworld_season(
             except (ValueError, TypeError):
                 ep_data["episode"] = 0
         else:
-            # Fallback: aus Link-Text
-            a = tr.find("a", attrs={"itemprop": "url"})
+            # Fallback: aus Link-Text oder href
+            a = tr.find("a", attrs={"itemprop": "url"}) or tr.find("a", href=True)
             if a:
                 text = a.get_text(strip=True)
                 m = re.search(r"(\d+)", text)
+                if not m:
+                    href = a.get("href", "")
+                    m = re.search(r"film-(\d+)", href)
                 ep_data["episode"] = int(m.group(1)) if m else 0
             else:
                 continue
@@ -412,10 +434,9 @@ def _parse_aniworld_season(
             ep_data["title_en"] = ""
 
         # URL
-        a = tr.find("a", attrs={"itemprop": "url"})
+        a = tr.find("a", attrs={"itemprop": "url"}) or tr.find("a", href=True)
         if a and a.get("href"):
-            href = a["href"]
-            href = str(href)
+            href = str(a["href"])
             if not href.startswith("http"):
                 href = f"https://aniworld.to{href}"
             ep_data["url"] = href

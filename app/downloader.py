@@ -135,17 +135,12 @@ def _run_aniworld_download(
             log(f"[ERROR] Subprocess-Fehler: {e}")
             return False
     else:
-        cmd_list = [
-            "aniworld",
-            "--language", language,
-            "-a", "Download",
-            "-o", output_path,
-            episode_url,
-        ]
-        log(f"[CMD] {' '.join(cmd_list)}")
+        cmd = f"aniworld --language '{language}' -a Download -o '{output_path}' {episode_url}"
+        log(f"[CMD] {cmd}")
         try:
             result = subprocess.run(
-                cmd_list,
+                cmd,
+                shell=True,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
