@@ -37,7 +37,11 @@ function initTabs() {
           // Tab-spezifisches Laden
           if (btn.dataset.tab === 'tab-db') loadDatabase();
           if (btn.dataset.tab === 'tab-settings') loadSettings();
-          if (btn.dataset.tab === 'tab-logs') refreshFullLog();
+          if (btn.dataset.tab === 'tab-logs') {
+            refreshFullLog();
+            loadArchivedLogs();
+            loadLogSettings();
+          }
         }, 120);
       } else {
         btn.classList.add('active');
@@ -297,6 +301,113 @@ function toggleLogAutoRefresh() {
   } else if (!enabled && logAutoRefreshInterval) {
     clearInterval(logAutoRefreshInterval);
     logAutoRefreshInterval = null;
+  }
+}
+
+// ──────────────────────── Archivierte Logs ────────────────────────
+
+async function loadArchivedLogs() {
+  try {
+    const data = await api('/archived_logs');
+    const selector = $('#log-selector');
+    if (!selector) return;
+
+    // Aktuelle Option beibehalten
+    const currentValue = selector.value;
+    
+    // Dropdown leeren und neu befüllen
+    selector.innerHTML = '<option value="current">Aktueller Lauf (last_run.txt)</option>';
+    
+    if (data.archived_logs && data.archived_logs.length > 0) {
+      data.archived_logs.forEach(log => {
+        const option = document.createElement('option');
+        option.value = log.filename;
+        const date = new Date(log.timestamp * 1000).toLocaleString('de-DE');
+        const sizeMB = (log.size / 1024 / 1024).toFixed(1);
+        option.textContent = `${log.filename} (${date} - ${sizeMB} MB)`;
+        selector.appendChild(option);
+      });
+    }
+    
+    // Vorherige Auswahl wiederherstellen (falls noch vorhanden)
+    if (currentValue && Array.from(selector.options).some(opt => opt.value === currentValue)) {
+      selector.value = currentValue;
+    }
+  } catch (e) {
+    console.error('Fehler beim Laden der archivierten Logs:', e);
+  }
+}
+
+async function loadSelectedLog() {
+  const selector = $('#log-selector');
+  if (!selector) return;
+  
+  const selectedLog = selector.value;
+  
+  try {
+    if (selectedLog === 'current') {
+      // Aktueller Log
+      await refreshFullLog();
+    } else {
+      // Archivierter Log
+      const data = await api(`/archived_logs/${encodeURIComponent(selectedLog)}`);
+      rawLogText = data.content || '';
+      renderFormattedLog();
+      
+      // Auto-Refresh deaktivieren für archivierte Logs
+      const autoRefresh = $('#log-auto-refresh');
+      if (autoRefresh && autoRefresh.checked) {
+        autoRefresh.checked = false;
+        toggleLogAutoRefresh();
+      }
+    }
+  } catch (e) {
+    const container = $('#log-output-full');
+    if (container) {
+      container.innerHTML = '<span style="color:var(--danger)">Log konnte nicht geladen werden: ' + e.message + '</span>';
+    }
+  }
+}
+
+async function loadLogSettings() {
+  try {
+    const cfg = await api('/config');
+    $('#cfg-log-retention-days').value = cfg.logging?.log_retention_days || 7;
+  } catch (e) {
+    console.error('Fehler beim Laden der Log-Einstellungen:', e);
+  }
+}
+
+async function saveLogSettings() {
+  try {
+    // Aktuelle Konfiguration laden
+    const cfg = await api('/config');
+    
+    // Nur den Logging-Teil aktualisieren
+    cfg.logging = cfg.logging || {};
+    cfg.logging.log_retention_days = parseInt($('#cfg-log-retention-days').value) || 7;
+    
+    // Speichern
+    const res = await api('/config', {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    });
+    
+    if (res.status === 'ok') {
+      // Temporäre Erfolgsmeldung neben dem Speichern-Button anzeigen
+      const btn = document.querySelector('button[onclick="saveLogSettings()"]');
+      const originalText = btn.textContent;
+      btn.textContent = '✓ Gespeichert';
+      btn.style.background = 'var(--success)';
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.background = '';
+      }, 2000);
+    } else {
+      alert('Fehler beim Speichern: ' + (res.errors || []).join(', '));
+    }
+  } catch (e) {
+    alert('Speichern fehlgeschlagen: ' + e.message);
   }
 }
 

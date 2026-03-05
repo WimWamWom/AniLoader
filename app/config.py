@@ -45,6 +45,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "data": {
         "folder": str(DEFAULT_DATA_DIR),
     },
+    "logging": {
+        "log_retention_days": 7,
+    },
 }
 
 VALID_LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]

@@ -2,8 +2,9 @@
 AniLoader – Logging-System.
 
 Schreibt Logs in:
-  - data/last_run.txt       (aktueller Lauf, wird bei neuem Start als .bak kopiert)
-  - data/all_logs.txt       (Gesamt-History, 7-Tage-Cleanup)
+  - data/last_run.txt       (aktueller Lauf)
+  - data/logs/              (archivierte Läufe mit Timestamp)
+  - data/all_logs.txt       (Gesamt-History, automatische Bereinigung)
   - stdout                  (Konsole)
 """
 
@@ -11,6 +12,7 @@ import os
 import shutil
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 _log_lock = threading.Lock()
@@ -19,17 +21,38 @@ _run_log_lines: list = []
 
 
 def init_logger(data_folder: str) -> None:
-    """Initialisiert das Logging-System und erstellt ein Backup des letzten Laufs."""
+    """Initialisiert das Logging-System und archiviert den letzten Lauf mit Timestamp."""
     global _data_folder
     _data_folder = data_folder
     os.makedirs(data_folder, exist_ok=True)
 
+    logs_folder = Path(data_folder) / "logs"
+    logs_folder.mkdir(exist_ok=True)
+
     last_run = Path(data_folder) / "last_run.txt"
     last_run_bak = Path(data_folder) / "last_run.bak.txt"
 
-    # Backup des letzten Laufs erstellen
-    if last_run.exists():
-        shutil.copy2(last_run, last_run_bak)
+    # Bereinigung: Entferne alte .bak Datei (Migration zum neuen System)
+    if last_run_bak.exists():
+        try:
+            last_run_bak.unlink()
+        except Exception as e:
+            print(f"[LOG-WARNING] Konnte alte .bak Datei nicht löschen: {e}")
+
+    # Archiviere den letzten Lauf mit Timestamp (falls vorhanden)
+    if last_run.exists() and last_run.stat().st_size > 0:
+        # Timestamp aus der letzten Änderung der Datei erstellen
+        mod_time = last_run.stat().st_mtime
+        timestamp = datetime.fromtimestamp(mod_time).strftime("%Y%m%d_%H%M%S")
+        archived_log = logs_folder / f"run_{timestamp}.txt"
+        
+        # Archivieren mit einem eindeutigen Namen, falls bereits existiert
+        counter = 1
+        while archived_log.exists():
+            archived_log = logs_folder / f"run_{timestamp}_{counter}.txt"
+            counter += 1
+        
+        shutil.move(str(last_run), str(archived_log))
 
     # Neuen Lauf starten
     with open(last_run, "w", encoding="utf-8") as f:
@@ -88,56 +111,89 @@ def get_all_logs() -> str:
 
 def cleanup_old_logs(days: int = 7) -> int:
     """
-    Entfernt Log-Einträge älter als `days` Tage aus all_logs.txt.
-    Gibt die Anzahl entfernter Zeilen zurück.
+    Entfernt Log-Einträge und -Dateien älter als `days` Tage:
+    - Zeilen aus all_logs.txt
+    - Archivierte Log-Dateien aus data/logs/
+    Gibt die Anzahl entfernter Zeilen + Dateien zurück.
     """
     if not _data_folder:
         return 0
 
+    removed_count = 0
+    cutoff = time.time() - (days * 86400)
+    
+    # 1. Bereinige all_logs.txt (Zeilen älter als X Tage)
     all_logs = Path(_data_folder) / "all_logs.txt"
-    if not all_logs.exists():
-        return 0
-
-    try:
-        cutoff = time.time() - (days * 86400)
-        lines = all_logs.read_text(encoding="utf-8").splitlines()
-        kept = []
-        removed = 0
-
-        for line in lines:
-            # Format: [2025-03-02 14:30:00] message
-            if line.startswith("[") and "]" in line:
-                try:
-                    ts_str = line[1 : line.index("]")]
-                    ts = time.mktime(time.strptime(ts_str, "%Y-%m-%d %H:%M:%S"))
-                    if ts < cutoff:
-                        removed += 1
-                        continue
-                except (ValueError, OverflowError):
-                    pass
-            kept.append(line)
-
-        if removed > 0:
-            with open(all_logs, "w", encoding="utf-8") as f:
-                f.write("\n".join(kept) + "\n" if kept else "")
-
-        return removed
-    except Exception as e:
-        print(f"[LOG-ERROR] cleanup_old_logs: {e}")
-        return 0
+    if all_logs.exists():
+        try:
+            lines = all_logs.read_text(encoding="utf-8").splitlines()
+            kept = []
+            
+            for line in lines:
+                # Format: [2025-03-02 14:30:00] message
+                if line.startswith("[") and "]" in line:
+                    try:
+                        ts_str = line[1 : line.index("]")]
+                        ts = time.mktime(time.strptime(ts_str, "%Y-%m-%d %H:%M:%S"))
+                        if ts < cutoff:
+                            removed_count += 1
+                            continue
+                    except (ValueError, OverflowError):
+                        pass
+                kept.append(line)
+            
+            if removed_count > 0:
+                with open(all_logs, "w", encoding="utf-8") as f:
+                    f.write("\n".join(kept) + "\n" if kept else "")
+        except Exception as e:
+            print(f"[LOG-ERROR] cleanup all_logs.txt: {e}")
+    
+    # 2. Bereinige archivierte Log-Dateien aus data/logs/
+    logs_folder = Path(_data_folder) / "logs"
+    if logs_folder.exists():
+        try:
+            for log_file in logs_folder.glob("run_*.txt"):
+                # Prüfe ob die Datei älter als X Tage ist
+                if log_file.stat().st_mtime < cutoff:
+                    try:
+                        log_file.unlink()
+                        removed_count += 1
+                    except Exception as e:
+                        print(f"[LOG-ERROR] Konnte {log_file.name} nicht löschen: {e}")
+        except Exception as e:
+            print(f"[LOG-ERROR] cleanup logs folder: {e}")
+    
+    return removed_count
 
 
 def start_new_run() -> None:
-    """Startet einen neuen Log-Lauf (Backup + Reset)."""
+    """Startet einen neuen Log-Lauf (Archivierung + Reset)."""
     global _run_log_lines
     with _log_lock:
         _run_log_lines = []
 
     if _data_folder:
+        logs_folder = Path(_data_folder) / "logs"
+        logs_folder.mkdir(exist_ok=True)
+        
         last_run = Path(_data_folder) / "last_run.txt"
-        last_run_bak = Path(_data_folder) / "last_run.bak.txt"
-        if last_run.exists():
-            shutil.copy2(last_run, last_run_bak)
+        
+        # Archiviere den aktuellen Log mit Timestamp (falls vorhanden)
+        if last_run.exists() and last_run.stat().st_size > 0:
+            # Timestamp aus der letzten Änderung der Datei erstellen
+            mod_time = last_run.stat().st_mtime
+            timestamp = datetime.fromtimestamp(mod_time).strftime("%Y%m%d_%H%M%S")
+            archived_log = logs_folder / f"run_{timestamp}.txt"
+            
+            # Archivieren mit einem eindeutigen Namen, falls bereits existiert
+            counter = 1
+            while archived_log.exists():
+                archived_log = logs_folder / f"run_{timestamp}_{counter}.txt"
+                counter += 1
+            
+            shutil.move(str(last_run), str(archived_log))
+        
+        # Neuen Lauf starten
         with open(last_run, "w", encoding="utf-8") as f:
             ts = time.strftime("[%Y-%m-%d %H:%M:%S]")
             f.write(f"{ts} === Neuer Lauf gestartet ===\n")

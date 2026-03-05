@@ -7,7 +7,7 @@ Alle REST-Endpunkte für die Web-UI und das Tampermonkey-Skript.
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Query, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -497,6 +497,54 @@ async def get_logs():
 async def last_run():
     """Log des aktuellen/letzten Laufs."""
     return {"log": get_last_run_log()}
+
+
+@router.get("/archived_logs")
+async def get_archived_logs():
+    """Liste aller archivierten Log-Dateien."""
+    from ..config import get_data_folder, load_config
+    from pathlib import Path
+    
+    cfg = load_config()
+    data_folder = get_data_folder(cfg)
+    logs_folder = Path(data_folder) / "logs"
+    
+    if not logs_folder.exists():
+        return {"archived_logs": []}
+    
+    logs = []
+    for log_file in sorted(logs_folder.glob("run_*.txt"), key=lambda x: x.stat().st_mtime, reverse=True):
+        logs.append({
+            "filename": log_file.name,
+            "timestamp": log_file.stat().st_mtime,
+            "size": log_file.stat().st_size
+        })
+    
+    return {"archived_logs": logs}
+
+
+@router.get("/archived_logs/{filename}")
+async def get_archived_log_content(filename: str):
+    """Inhalt einer spezifischen archivierten Log-Datei."""
+    from ..config import get_data_folder, load_config
+    from pathlib import Path
+    
+    # Sicherheitscheck: Nur run_*.txt Dateien erlauben
+    if not filename.startswith("run_") or not filename.endswith(".txt"):
+        raise HTTPException(status_code=400, detail="Ungültiger Dateiname")
+    
+    cfg = load_config()
+    data_folder = get_data_folder(cfg)
+    log_file = Path(data_folder) / "logs" / filename
+    
+    if not log_file.exists():
+        raise HTTPException(status_code=404, detail="Log-Datei nicht gefunden")
+    
+    try:
+        content = log_file.read_text(encoding="utf-8")
+        return {"filename": filename, "content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler beim Lesen der Datei: {e}")
 
 
 # ──────────────────────── Episoden-Counts ────────────────────────

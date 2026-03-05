@@ -782,6 +782,31 @@ input::placeholder { color: var(--text-muted); }
 
 .lang-item .grip { color: var(--text-muted); font-size: 0.9em; }
 
+/* ─── Log Selector ─── */
+.log-selector {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-subtle) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  border-radius: var(--radius);
+  font-size: 0.9em;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+.log-selector:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: var(--card-bg) !important;
+}
+
+.log-selector option {
+  background: var(--card-bg) !important;
+  color: var(--text) !important;
+  padding: 4px 8px;
+  border: none;
+}
+
 /* ─── Log Output ─── */
 .log-output {
   background: #05080d;

@@ -30,7 +30,12 @@ async def lifespan(app: FastAPI):
 
     init_logger(data_folder)
     init_db(data_folder)
-    cleanup_old_logs(days=7)
+    
+    # Log-Bereinigung mit konfiguriertem Wert
+    log_retention_days = cfg.get("logging", {}).get("log_retention_days", 7)
+    cleanup_old_logs(days=log_retention_days)
+    log(f"[SERVER] Log-Bereinigung durchgeführt (>{log_retention_days} Tage alte Einträge entfernt)")
+    
     log("[SERVER] AniLoader gestartet")
 
     # Titel bei Start aktualisieren

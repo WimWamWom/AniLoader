@@ -222,6 +222,24 @@
         <button class="log-level-btn" data-level="dl" onclick="setLogLevel('dl')">Downloads</button>
       </div>
     </div>
+    
+    <!-- Log-Auswahl und Einstellungen -->
+    <div style="display:flex; gap:16px; margin-bottom:12px; flex-wrap:wrap; align-items:end;">
+      <div style="flex:1; min-width:250px;">
+        <label for="log-selector" style="font-size:0.85em; color:var(--text-muted); display:block; margin-bottom:4px;">Log-Datei:</label>
+        <select id="log-selector" onchange="loadSelectedLog()" class="log-selector">
+          <option value="current">Aktueller Lauf (last_run.txt)</option>
+        </select>
+      </div>
+      <div style="min-width:180px;">
+        <label for="cfg-log-retention-days" style="font-size:0.85em; color:var(--text-muted); display:block; margin-bottom:4px;">📜 Bereinigung nach (Tagen):</label>
+        <input type="number" id="cfg-log-retention-days" min="1" max="365" value="7" style="width:100%; padding:4px 8px; background:var(--card-bg); border:1px solid var(--border); color:var(--text); border-radius:4px;">
+      </div>
+      <div>
+        <button class="btn btn-secondary btn-sm" onclick="saveLogSettings()" title="Log-Einstellungen speichern">💾 Speichern</button>
+      </div>
+    </div>
+    
     <div id="log-stats" class="log-stats"></div>
     <div id="log-output-full" class="log-output log-formatted">Warte auf Logs...</div>
   </div>
