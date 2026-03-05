@@ -80,44 +80,54 @@ def episode_already_downloaded(
     folder_name: Optional[str],
     season: int,
     episode: int,
+    title_hint: Optional[str] = None,
 ) -> Optional[Path]:
     """
     Prüft ob eine Episode bereits heruntergeladen wurde.
 
-    Sucht nach Dateien mit dem Muster S{ss}E{eee} im erwarteten Verzeichnis.
-    Gibt den Dateipfad zurück, falls gefunden, sonst None.
+    Suchstrategie:
+        1. folder_name aus DB bekannt → suche in exaktem Unterordner
+        2. folder_name unbekannt, title_hint vorhanden → suche in Unterordnern
+           die den Serientitel enthalten (z.B. "The Rookie (2018)...")
+        3. Fallback → suche direkt im Basis-Pfad
+
+    Muster: S01E001 / Film01 / S00E001 (CLI-Original)
+    Gibt den Dateipfad zurück falls gefunden, sonst None.
     """
     is_film = season == 0
-    storage_dir = get_storage_path(cfg, url, folder_name, season, is_film)
+    base_path = Path(get_download_path(cfg, url, is_film))
 
-    if not storage_dir.exists():
-        return None
-
-    # Suchmuster: *S01E001* oder für Filme *S00E001* (CLI-Format) oder *Film01* (umbenannt)
     if is_film:
-        # Beide Formate unterstützen: CLI-Original und umbenannte Dateien
-        pattern_new = f"*Film{episode:02d}*"  # Neues Format
-        pattern_old = f"*S00E{episode:03d}*"  # CLI-Original 
-        
-        for ext in (".mkv", ".mp4"):
-            # Zuerst neues Format probieren
-            for f in storage_dir.glob(pattern_new + ext):
-                if f.is_file() and f.stat().st_size > 1_000_000:
-                    return f
-            # Dann altes Format probieren
-            for f in storage_dir.glob(pattern_old + ext):
-                if f.is_file() and f.stat().st_size > 1_000_000:
-                    return f
-        return None
-    # Suchmuster für Serien: S01E001 Format
+        patterns = [f"*Film{episode:02d}*", f"*S00E{episode:03d}*"]
+        subdir = "Filme"
     else:
-        pattern = f"*S{season:02d}E{episode:03d}*"
-        
-        for ext in (".mkv", ".mp4"):
-            for f in storage_dir.glob(pattern + ext):
-                if f.is_file() and f.stat().st_size > 1_000_000:  # > 1MB
-                    return f
-    
+        patterns = [f"*S{season:02d}E{episode:03d}*"]
+        subdir = f"Season {season:02d}"
+
+    # Mögliche Suchpfade bestimmen
+    if folder_name:
+        search_dirs = [base_path / folder_name / subdir]
+    elif title_hint:
+        title_lower = title_hint.lower()[:15]
+        search_dirs = [
+            d / subdir
+            for d in base_path.iterdir()
+            if d.is_dir() and title_lower in d.name.lower()
+        ]
+        if not search_dirs:
+            search_dirs = [base_path / subdir]
+    else:
+        search_dirs = [base_path / subdir]
+
+    for search_dir in search_dirs:
+        if not search_dir.exists():
+            continue
+        for pattern in patterns:
+            for ext in (".mkv", ".mp4"):
+                for f in search_dir.glob(pattern + ext):
+                    if f.is_file() and f.stat().st_size > 1_000_000:
+                        return f
+
     return None
 
 

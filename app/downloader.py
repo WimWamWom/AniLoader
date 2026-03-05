@@ -221,7 +221,8 @@ def _download_episode(
 
     # Bereits heruntergeladen?
     existing = episode_already_downloaded(
-        cfg, anime["url"], anime.get("folder_name"), season, episode_num
+        cfg, anime["url"], anime.get("folder_name"), season, episode_num,
+        title_hint=anime.get("title"),
     )
     if existing:
         log(f"[SKIP] Bereits vorhanden: S{season:02d}E{episode_num:03d}")
@@ -330,7 +331,10 @@ def _run_default(cfg: dict, data_folder: str) -> None:
         new_missing_german: List[str] = []
         any_downloaded = False
 
-        for season in seasons:
+        # Filme (season=0) als erstes laden
+        seasons_ordered = ([0] if 0 in seasons else []) + [s for s in seasons if s != 0]
+
+        for season in seasons_ordered:
             if _check_stop():
                 return
 

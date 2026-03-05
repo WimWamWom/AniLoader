@@ -253,15 +253,12 @@ def get_season_numbers(url: str) -> List[int]:
                         num = a.get_text(strip=True)
                         if num.isdigit():
                             seasons.append(int(num))
-            # Filme prüfen
-            if soup.find("a", href=re.compile(r"/filme\s*$")):
-                seasons.insert(0, 0)
-            # Fallback: Suche nach "Filme" Link im Text
+            # Filme prüfen: href endet mit /filme (mit oder ohne Slash)
             for a in soup.find_all("a"):
-                href = a.get("href", "")
-                href = str(href)
+                href = str(a.get("href", "")).rstrip("/")
                 if href.endswith("/filme") and 0 not in seasons:
                     seasons.insert(0, 0)
+                    log(f"[SCRAPER] Filme-Link gefunden: {href}")
                     break
 
         elif is_sto(base_url):
@@ -281,6 +278,7 @@ def get_season_numbers(url: str) -> List[int]:
                     seasons.insert(0, 0)
                     break
 
+        log(f"[SCRAPER] Staffeln gefunden für {base_url}: {sorted(set(seasons))}")
         return sorted(set(seasons))
 
     except Exception as e:
@@ -323,6 +321,7 @@ def get_episodes_for_season(
     else:
         season_url = build_season_url(base_url, season)
 
+    log(f"[SCRAPER] Lade {'Filme' if season == 0 else f'Staffel {season}'}: {season_url}")
     try:
         html = _fetch(season_url)
     except Exception as e:
@@ -347,21 +346,30 @@ def _parse_aniworld_season(
     """
     episodes = []
 
-    # Suche tbody mit id="seasonN" oder "seasonFilme"
+    # Suche tbody mit id="seasonN" oder "seasonFilme" etc.
     if season == 0:
         # Filme: verschiedene IDs möglich
         tbody = None
-        for candidate_id in ["seasonFilme", "season0"]:
+        for candidate_id in ["seasonFilme", "season0", "seasonFilms"]:
             tbody = soup.find("tbody", id=candidate_id)
             if tbody:
+                log(f"[SCRAPER] Filme-tbody gefunden: id={candidate_id}")
                 break
         if not tbody:
-            # Fallback: erste tbody mit Episoden
-            tbody = soup.find("tbody")
+            # Fallback: erste tbody die Episoden-Rows enthält
+            for tb in soup.find_all("tbody"):
+                if tb.find("tr", attrs={"data-episode-id": True}):
+                    tbody = tb
+                    log(f"[SCRAPER] Filme-tbody via Fallback gefunden (id={tb.get('id', 'kein-id')})")
+                    break
     else:
         tbody = soup.find("tbody", id=f"season{season}")
+        if not tbody:
+            log(f"[SCRAPER] Kein tbody id=season{season} gefunden – versuche Fallback")
+            tbody = soup.find("tbody")
 
     if not tbody:
+        log(f"[SCRAPER] Kein tbody gefunden auf Staffel-{season}-Seite")
         return []
 
     for tr in tbody.find_all("tr", attrs={"data-episode-id": True}):
