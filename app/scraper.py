@@ -548,7 +548,7 @@ def _extract_sto_languages(element) -> List[str]:
         if "german" in href:
             lang = "German Dub"
         elif "english" in href:
-            lang = "English Dub"
+            lang = "English Sub"
         # Falls später Sub-Icons hinzukommen
         elif "sub" in href.lower():
             if "german" in href:
@@ -570,7 +570,7 @@ def _extract_sto_languages(element) -> List[str]:
             if src.endswith("german.svg"):
                 lang = "German Dub"
             elif src.endswith("english.svg"):
-                lang = "English Dub"
+                lang = "English Sub"
             elif src.endswith("german-sub.svg") or src.endswith("deutsch-sub.svg"):
                 lang = "German Sub"
             elif src.endswith("english-sub.svg"):
