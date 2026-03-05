@@ -30,7 +30,7 @@ def get_storage_path(
 
     Jellyfin-Struktur:
         {base_path}/{folder_name}/Season {ss}/
-        Filme: {base_path}/{folder_name}/Season 00/
+        Filme: {base_path}/{folder_name}/Filme/
 
     Args:
         cfg: Geladene Konfiguration
@@ -47,7 +47,7 @@ def get_storage_path(
         series_dir = Path(base_path)
 
     if is_film or season == 0:
-        return series_dir / "Season 00"
+        return series_dir / "Filme"
     else:
         return series_dir / f"Season {season:02d}"
 
@@ -71,17 +71,31 @@ def episode_already_downloaded(
     if not storage_dir.exists():
         return None
 
-    # Suchmuster: *S01E001* oder für Filme im Season 00 Ordner
+    # Suchmuster: *S01E001* oder für Filme *S00E001* (CLI-Format) oder *Film01* (umbenannt)
     if is_film:
-        pattern = f"*S00E{episode:03d}*"
+        # Beide Formate unterstützen: CLI-Original und umbenannte Dateien
+        pattern_new = f"*Film{episode:02d}*"  # Neues Format
+        pattern_old = f"*S00E{episode:03d}*"  # CLI-Original 
+        
+        for ext in (".mkv", ".mp4"):
+            # Zuerst neues Format probieren
+            for f in storage_dir.glob(pattern_new + ext):
+                if f.is_file() and f.stat().st_size > 1_000_000:
+                    return f
+            # Dann altes Format probieren
+            for f in storage_dir.glob(pattern_old + ext):
+                if f.is_file() and f.stat().st_size > 1_000_000:
+                    return f
+        return None
+    # Suchmuster für Serien: S01E001 Format
     else:
         pattern = f"*S{season:02d}E{episode:03d}*"
-
-    for ext in (".mkv", ".mp4"):
-        for f in storage_dir.glob(pattern + ext):
-            if f.is_file() and f.stat().st_size > 1_000_000:  # > 1MB
-                return f
-
+        
+        for ext in (".mkv", ".mp4"):
+            for f in storage_dir.glob(pattern + ext):
+                if f.is_file() and f.stat().st_size > 1_000_000:  # > 1MB
+                    return f
+    
     return None
 
 
@@ -95,8 +109,7 @@ def find_downloaded_file(
     Sucht die heruntergeladene Datei nach einem aniworld CLI Download.
 
     Die aniworld CLI erstellt:
-        {download_path}/{Title} ({Year}) [imdbid-{id}]/Season {ss}/{Title} S{ss}E{eee}.mkv
-
+        {download_path}/{Title} ({Year}) [imdbid-{id}]/Season {ss}/{Title} S{ss}E{eee}.mkv        Für Filme: {Title} S00E{eee}.mkv (wird später zu Film{ff} umbenannt)
     Sucht rekursiv nach dem Dateinamen-Pattern.
     """
     base = Path(download_path)
@@ -104,7 +117,7 @@ def find_downloaded_file(
         return None
 
     if season == 0:
-        pattern = f"*S00E{episode:03d}*"
+        pattern = f"*S00E{episode:03d}*"  # CLI erstellt S00E001 für Filme
     else:
         pattern = f"*S{season:02d}E{episode:03d}*"
 
@@ -158,7 +171,9 @@ def rename_episode_file(
     Benennt eine heruntergeladene Episode in das Zielformat um.
 
     Zielformat: S{ss}E{eee} - {episode_title} {lang_suffix}{ext}
+    Filme:      Film{ff} - {film_title} {lang_suffix}{ext}
     Beispiel:   S01E001 - Pilotfolge [Sub].mkv
+    Film:       Film01 - Your Name [Sub].mkv
 
     Returns:
         Neuen Dateipfad bei Erfolg, None bei Fehler
@@ -171,7 +186,7 @@ def rename_episode_file(
     }.get(language, "")
 
     if season == 0:
-        ep_code = f"S00E{episode:03d}"
+        ep_code = f"Film{episode:02d}"
     else:
         ep_code = f"S{season:02d}E{episode:03d}"
 
@@ -181,6 +196,16 @@ def rename_episode_file(
 
     safe_title = sanitize_filename(title) if title else ""
 
+    # Für Filme: Prüfen ob wir im falschen Ordner sind (Season 00 statt Filme)
+    if season == 0 and parent.name == "Season 00":
+        # Wechsel zum Filme-Ordner
+        series_dir = parent.parent
+        target_parent = series_dir / "Filme"
+        target_parent.mkdir(exist_ok=True)
+        log(f"[MOVE] Verschiebe Film von Season 00 → Filme Ordner")
+    else:
+        target_parent = parent
+
     # Ziel-Dateiname aufbauen
     new_name = ep_code
     if safe_title:
@@ -189,15 +214,25 @@ def rename_episode_file(
         new_name += f" {lang_suffix}"
     new_name += ext
 
-    new_path = parent / new_name
+    new_path = target_parent / new_name
 
-    # Bereits im Zielformat?
-    if found_path.name == new_name:
+    # Bereits im Zielformat und richtigen Ordner?
+    if found_path == new_path:
         return found_path
 
     try:
         shutil.move(str(found_path), str(new_path))
         log(f"[RENAME] {found_path.name} → {new_name}")
+        
+        # Bei Filmen: Leeren Season 00 Ordner entfernen
+        if season == 0 and parent.name == "Season 00":
+            try:
+                if parent.exists() and not any(parent.iterdir()):  # Ordner leer?
+                    parent.rmdir()
+                    log(f"[CLEANUP] Leerer Season 00 Ordner entfernt")
+            except Exception as e:
+                log(f"[WARN] Season 00 Ordner konnte nicht entfernt werden: {e}")
+        
         return new_path
     except Exception as e:
         log(f"[WARN] Umbenennen fehlgeschlagen: {e}")
@@ -275,6 +310,11 @@ def count_episodes_on_disk(
             else:
                 seasons.add(s_num)
                 episodes += 1
+        else:
+            # Filme im neuen Format: Film01, Film02, etc.
+            m = re.search(r"Film(\d{2})", f.name)
+            if m:
+                films += 1
 
     return {
         "seasons": len(seasons),
