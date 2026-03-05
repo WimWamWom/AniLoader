@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ..config import get_data_folder, load_config
-from ..database import init_db, refresh_titles
+from ..database import init_db, import_aniloader_txt, refresh_titles
 from ..logger import cleanup_old_logs, init_logger, log
 
 # Pfade für Web-UI
@@ -30,6 +30,14 @@ async def lifespan(app: FastAPI):
 
     init_logger(data_folder)
     init_db(data_folder)
+    
+    # AniLoader.txt importieren (wie im alten AniLoader)
+    try:
+        import_result = import_aniloader_txt(data_folder)
+        if import_result["total_lines"] > 0:
+            log(f"[SERVER] AniLoader.txt Import: {import_result['imported']} importiert, {import_result['duplicates']} Duplikate, {import_result['errors']} Fehler")
+    except Exception as e:
+        log(f"[SERVER-ERROR] AniLoader.txt Import fehlgeschlagen: {e}")
     
     # Log-Bereinigung mit konfiguriertem Wert
     log_retention_days = cfg.get("logging", {}).get("log_retention_days", 7)

@@ -3,6 +3,7 @@ AniLoader – SQLite-Datenbankschicht.
 
 Flat-Schema mit einer `anime`-Tabelle für Serien und Animes.
 Thread-safe über separate Connections pro Aufruf.
+AniLoader.txt Import- und Backup-Funktionalität.
 """
 
 import json
@@ -12,6 +13,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .logger import log
+
+
+# Base directory für AniLoader.txt Dateien
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _get_db_path(data_folder: str) -> str:
@@ -79,6 +84,8 @@ def add_anime(data_folder: str, url: str, title: Optional[str] = None) -> Option
         conn.commit()
         if c.rowcount > 0:
             log(f"[DB] Hinzugefügt: {title or url}")
+            # Backup-Datei aktualisieren
+            _update_aniloader_backup(data_folder, url)
             return c.lastrowid
         else:
             # Already exists – return existing ID
@@ -352,3 +359,136 @@ def refresh_titles(data_folder: str) -> Dict[str, Any]:
     total = updated + failed + unchanged
     log(f"[DB] Titel-Refresh abgeschlossen: {updated} aktualisiert, {unchanged} unverändert, {failed} fehlgeschlagen (von {total})")
     return {"updated": updated, "failed": failed, "unchanged": unchanged, "details": details}
+
+
+# ────────────────────────── AniLoader.txt Import & Backup ──────────────────────────
+
+
+def import_aniloader_txt(data_folder: str) -> Dict[str, int]:
+    """
+    Liest alle Links aus AniLoader.txt, fügt sie in die DB ein und leert die Datei.
+    Gibt Statistiken über den Import zurück.
+    """
+    aniloader_txt = BASE_DIR / "AniLoader.txt"
+    
+    if not aniloader_txt.exists():
+        log("[IMPORT] AniLoader.txt nicht gefunden - überspringe Import")
+        return {"imported": 0, "duplicates": 0, "errors": 0, "total_lines": 0}
+    
+    # Datei auslesen
+    try:
+        with open(aniloader_txt, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        log(f"[IMPORT-ERROR] Konnte AniLoader.txt nicht lesen: {e}")
+        return {"imported": 0, "duplicates": 0, "errors": 1, "total_lines": 0}
+    
+    if not lines:
+        log("[IMPORT] AniLoader.txt ist leer")
+        return {"imported": 0, "duplicates": 0, "errors": 0, "total_lines": 0}
+    
+    log(f"[IMPORT] Starte Import von {len(lines)} Links aus AniLoader.txt")
+    
+    imported = 0
+    duplicates = 0
+    errors = 0
+    
+    for line_num, url in enumerate(lines, 1):
+        try:
+            # Prüfe ob gültige URL (einfache Validierung)
+            if not (url.startswith('http://') or url.startswith('https://')):
+                log(f"[IMPORT-WARN] Zeile {line_num}: Ungültige URL - {url}")
+                errors += 1
+                continue
+            
+            # Prüfe ob bereits vorhanden
+            existing = get_anime_by_url(data_folder, url)
+            if existing:
+                log(f"[IMPORT-SKIP] Zeile {line_num}: URL bereits vorhanden - {url}")
+                duplicates += 1
+                continue
+            
+            # Füge zur Datenbank hinzu (ohne Backup-Update, da wir am Ende das komplette Backup regenerieren)
+            conn = _connect(data_folder)
+            try:
+                c = conn.cursor()
+                c.execute("INSERT INTO anime (url, title) VALUES (?, ?)", (url, url))
+                conn.commit()
+                if c.rowcount > 0:
+                    log(f"[IMPORT] Zeile {line_num}: Importiert - {url}")
+                    imported += 1
+                else:
+                    log(f"[IMPORT-ERROR] Zeile {line_num}: Unbekannter Fehler bei - {url}")
+                    errors += 1
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            log(f"[IMPORT-ERROR] Zeile {line_num}: {e} - {url}")
+            errors += 1
+    
+    # AniLoader.txt leeren
+    try:
+        with open(aniloader_txt, "w", encoding="utf-8") as f:
+            f.truncate(0)
+        log(f"[IMPORT] AniLoader.txt geleert nach erfolgreichem Import")
+    except Exception as e:
+        log(f"[IMPORT-ERROR] Konnte AniLoader.txt nicht leeren: {e}")
+        errors += 1
+    
+    # Komplettes Backup regenerieren
+    regenerate_aniloader_backup(data_folder)
+    
+    log(f"[IMPORT] Import abgeschlossen: {imported} importiert, {duplicates} Duplikate, {errors} Fehler (von {len(lines)} Zeilen)")
+    
+    return {
+        "imported": imported,
+        "duplicates": duplicates,
+        "errors": errors,
+        "total_lines": len(lines)
+    }
+
+
+def _update_aniloader_backup(data_folder: str, url: str) -> None:
+    """Fügt eine einzelne URL zur AniLoader.txt.bak hinzu."""
+    backup_file = BASE_DIR / "AniLoader.txt.bak"
+    
+    try:
+        # Prüfe ob URL bereits in Backup vorhanden
+        if backup_file.exists():
+            with open(backup_file, "r", encoding="utf-8") as f:
+                existing_urls = {line.strip() for line in f if line.strip()}
+            if url in existing_urls:
+                return  # URL bereits im Backup
+        
+        # URL zur Backup-Datei hinzufügen
+        with open(backup_file, "a", encoding="utf-8") as f:
+            f.write(f"{url}\n")
+            
+    except Exception as e:
+        log(f"[BACKUP-ERROR] Konnte AniLoader.txt.bak nicht aktualisieren: {e}")
+
+
+def regenerate_aniloader_backup(data_folder: str) -> None:
+    """Regeneriert die komplette AniLoader.txt.bak aus der Datenbank."""
+    backup_file = BASE_DIR / "AniLoader.txt.bak"
+    
+    try:
+        # Alle URLs aus der Datenbank abrufen
+        conn = _connect(data_folder)
+        try:
+            c = conn.cursor()
+            c.execute("SELECT url FROM anime WHERE deleted = 0 ORDER BY id")
+            urls = [row["url"] for row in c.fetchall()]
+        finally:
+            conn.close()
+        
+        # Backup-Datei komplett überschreiben
+        with open(backup_file, "w", encoding="utf-8") as f:
+            for url in urls:
+                f.write(f"{url}\n")
+        
+        log(f"[BACKUP] AniLoader.txt.bak regeneriert mit {len(urls)} URLs")
+        
+    except Exception as e:
+        log(f"[BACKUP-ERROR] Konnte AniLoader.txt.bak nicht regenerieren: {e}")

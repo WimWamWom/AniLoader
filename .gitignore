@@ -1,5 +1,9 @@
 /data/*
 /Downloads/*
 
+# AniLoader.txt Dateien (enthalten persönliche Links)
+AniLoader.txt
+AniLoader.txt.bak
+
 __pycache__
 /.idea
