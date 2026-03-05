@@ -11,8 +11,8 @@
 // @match        https://s.to/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM.xmlHttpRequest
-// @connect      https://aniloader.example.com/
-// @connect      http://localhost:5050/
+// @connect      aniloader.example.com
+// @connect      localhost:5050
 // ==/UserScript==
 
 (function () {

@@ -304,7 +304,7 @@ function toggleLogAutoRefresh() {
   }
 }
 
-function copyLogToClipboard() {
+function copyLogToClipboard(btn) {
   if (!rawLogText.trim()) {
     alert('Kein Log zum Kopieren verfügbar.');
     return;
@@ -312,7 +312,6 @@ function copyLogToClipboard() {
   
   navigator.clipboard.writeText(rawLogText).then(() => {
     // Feedback geben
-    const btn = event.target;
     const originalText = btn.textContent;
     btn.textContent = '✓ Kopiert!';
     btn.style.backgroundColor = 'var(--success)';

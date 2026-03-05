@@ -558,20 +558,132 @@ def _extract_sto_languages(element) -> List[str]:
 def get_episode_languages(episode_url: str) -> List[str]:
     """
     Holt die verfügbaren Sprachen direkt von der Episoden-Seite.
-    Wird als Fallback verwendet, wenn die Staffelseite keine Sprach-Info hat.
+    Dies wird verwendet, wenn die Staffelseite keine Sprach-Info pro Episode hat (z.B. S.to).
     """
     try:
         html = _fetch(episode_url)
         soup = BeautifulSoup(html, "lxml")
 
         if is_aniworld(episode_url):
-            return _extract_aniworld_languages(soup)
+            # ANiworld: Sprachen aus Player-Bereich
+            return _extract_aniworld_episode_languages(soup)
         elif is_sto(episode_url):
-            return _extract_sto_languages(soup)
+            # S.to: Sprachen aus Hosters/Provider-Bereich
+            return _extract_sto_episode_languages(soup)
     except Exception as e:
         log(f"[SCRAPER] Sprachen-Fehler für {episode_url}: {e}")
 
     return []
+
+
+def _extract_aniworld_episode_languages(soup: BeautifulSoup) -> List[str]:
+    """Extrahiert verfügbare Sprachen von einer AniWorld-Episodenseite."""
+    langs = []
+    seen = set()
+
+    # Methode 1: Hoster-Liste mit Flag-Images
+    for div in soup.find_all("div", class_="hosterSiteDirectNav"):
+        for img in div.find_all("img", class_="flag"):
+            src = img.get("src", "")
+            title = img.get("title", "").lower()
+            
+            lang = None
+            if "german.svg" in src or "deutsch" in title:
+                lang = "German Dub"
+            elif "deutschem untertitel" in title or "german-sub" in src:
+                lang = "German Sub"
+            elif "english-sub" in src or "englische untertitel" in title:
+                lang = "English Sub"
+            elif "english.svg" in src:
+                lang = "English Dub"
+            
+            if lang and lang not in seen:
+                seen.add(lang)
+                langs.append(lang)
+    
+    # Methode 2: Voice-Buttons im Player-Bereich
+    if not langs:
+        for btn in soup.find_all("button", class_=re.compile(r"voice|language")):
+            text = btn.get_text(strip=True).lower()
+            lang = None
+            if "german dub" in text or "deutsch dub" in text:
+                lang = "German Dub"
+            elif "german sub" in text or "deutsch sub" in text:
+                lang = "German Sub"
+            elif "english sub" in text:
+                lang = "English Sub"
+            
+            if lang and lang not in seen:
+                seen.add(lang)
+                langs.append(lang)
+
+    return langs
+
+
+def _extract_sto_episode_languages(soup: BeautifulSoup) -> List[str]:
+    """Extrahiert verfügbare Sprachen von einer S.to-Episodenseite."""
+    langs = []
+    seen = set()
+
+    # Methode 1: Hosters-Bereich .hoster-item mit SVG-Icons
+    for hoster_div in soup.find_all("div", class_="hoster-item"):
+        # S.to hat .language-badge mit Icons
+        for lang_badge in hoster_div.find_all(class_="language-badge"):
+            svg = lang_badge.find("svg")
+            if not svg:
+                lang_text = lang_badge.get_text(strip=True).lower()
+            else:
+                # SVG-Icon parsen
+                use = svg.find("use")
+                if not use:
+                    continue
+                icon_href = str(use.get("href") or use.get("xlink:href") or "")
+                if "german" in icon_href:
+                    lang_text = "german"
+                elif "english" in icon_href:
+                    lang_text = "english"
+                else:
+                    continue
+                
+            # Bestimme Sprache und Typ (Dub/Sub)
+            lang = None
+            if "german" in lang_text:
+                # German Dub vs German Sub unterscheiden
+                parent_text = hoster_div.get_text(strip=True).lower()
+                if "untertitel" in parent_text or "sub" in parent_text:
+                    lang = "German Sub"
+                else:
+                    lang = "German Dub"
+            elif "english" in lang_text:
+                parent_text = hoster_div.get_text(strip=True).lower()
+                if "untertitel" in parent_text or "sub" in parent_text:
+                    lang = "English Sub"
+                else:
+                    lang = "English Dub"
+            
+            if lang and lang not in seen:
+                seen.add(lang)
+                langs.append(lang)
+    
+    # Methode 2: Fallback über Flag-Images (ältere S.to-Struktur)
+    if not langs:
+        for img in soup.find_all("img", class_="flag"):
+            src = img.get("src", "") or img.get("data-src", "")
+            lang = None
+            if "german" in src:
+                lang = "German Dub"
+            elif "german-sub" in src or "deutsch-sub" in src:
+                lang = "German Sub"
+            elif "english-sub" in src:
+                lang = "English Sub"
+            elif "english" in src:
+                lang = "English Dub"
+            
+            if lang and lang not in seen:
+                seen.add(lang)
+                langs.append(lang)
+
+    return langs
 
 
 # ──────────────────────── Episode-Titel ────────────────────────

@@ -227,47 +227,39 @@ def _download_episode(
         log(f"[SKIP] Bereits vorhanden: S{season:02d}E{episode_num:03d}")
         return "skipped"
 
-    # Sprache bestimmen
+    # Sprachen IMMER von der Episoden-Seite holen (vor dem Download)
     ep_langs = episode_info.get("languages", [])
     if not ep_langs:
-        # Fallback: Sprachen von der Episode-Seite holen
+        # Von Staffelseite nicht vorhanden → von Episoden-Seite scrapen
+        log(f"[DL] Scrape Sprachen von Episode-Seite …")
         ep_langs = scraper.get_episode_languages(episode_url)
+        if ep_langs:
+            log(f"[DL] Verfügbare Sprachen: {', '.join(ep_langs)}")
 
+    # Sprachen zur Kaskade vorbereiten
+    cascading_languages = []
     if ep_langs:
-        language = _select_language(ep_langs, languages_config)
-        if not language:
-            log(f"[WARN] Keine passende Sprache für S{season:02d}E{episode_num:03d}")
-            language = languages_config[0]  # Versuch mit bevorzugter
+        # Nur verfügbare Sprachen verwenden
+        for lang in languages_config:
+            if lang in ep_langs:
+                cascading_languages.append(lang)
     else:
-        # Sprach-Info nicht verfügbar: Kaskade durchlaufen
-        language = None
+        # Sprachen unbekannt → komplette Kaskade
+        cascading_languages = languages_config[:]
 
-    # Download: Sprachen-Kaskade
+    # Download: Sprachen-Kaskade (nur mit verfügbaren Sprachen)
     downloaded = False
     used_language = None
     found = None
 
-    if language:
-        # Bekannte Sprache – direkt downloaden
-        log(f"[DL] S{season:02d}E{episode_num:03d} [{language}]")
-        if _run_aniworld_download(episode_url, language, output_path, timeout):
+    for lang in cascading_languages:
+        log(f"[DL] S{season:02d}E{episode_num:03d} [{lang}]")
+        if _run_aniworld_download(episode_url, lang, output_path, timeout):
             found = find_downloaded_file(output_path, season, episode_num)
             if found:
                 downloaded = True
-                used_language = language
-
-    if not downloaded:
-        # Kaskade: alle Sprachen durchprobieren
-        for lang in languages_config:
-            if lang == language:
-                continue  # Schon versucht
-            log(f"[DL] S{season:02d}E{episode_num:03d} Versuche [{lang}]")
-            if _run_aniworld_download(episode_url, lang, output_path, timeout):
-                found = find_downloaded_file(output_path, season, episode_num)
-                if found:
-                    downloaded = True
-                    used_language = lang
-                    break
+                used_language = lang
+                break
 
     if not downloaded:
         log(f"[FAIL] S{season:02d}E{episode_num:03d} – kein Download möglich")
