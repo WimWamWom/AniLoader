@@ -6,98 +6,155 @@
 
 <p align="center">
   <strong>Anime &amp; Serien Download-Manager mit Web-Interface</strong><br>
-  Automatisches Herunterladen von Anime und Serien von aniworld.to und s.to<br>
-  mit Jellyfin-kompatibler Ordnerstruktur.
+  Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur
 </p>
+
+---
+
+## TooLazyToRead
+
+```bash
+# Docker (empfohlen)
+docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wimwamwom/aniloader:latest
+
+# Web-Interface: http://localhost:5050
+# 1. Serie suchen/hinzufügen → 2. Download-Modus starten → 3. Fertig
+```
+
+---
+
+## Funktionen
+
+- **🌐 Web-Interface:** Dark-Theme mit Live-Status und Poster-Vorschau
+- **📥 4 Download-Modi:** Standard, German, New, Check
+- **🔍 Suche:** aniworld.to + s.to mit Poster-Anzeige  
+- **🇩🇪 Sprachpriorität:** German Dub → Sub → English (konfigurierbar)
+- **📁 Jellyfin-kompatibel:** `Title (Year)/Season 01/` + `Filme/Film01.mkv`
+- **💾 SQLite-DB:** Fortschritt, Status, fehlende deutsche Episoden
+- **🔒 Anti-Sperre:** DNS-over-HTTPS umgeht ISP-Blocks automatisch
+
+---
+
+## Installation
+
+### Windows
+```powershell
+git clone https://github.com/WimWamWom/AniLoader.git && cd AniLoader
+python -m venv venv && venv\Scripts\activate
+pip install -r requirements.txt && python main.py
+```
+Benötigt: **Python 3.11+**, **ffmpeg** im PATH
+
+### Linux  
+```bash
+git clone https://github.com/WimWamWom/AniLoader.git && cd AniLoader
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt && python main.py
+```
+
+### Docker/Unraid
+```yaml
+services:
+  aniloader:
+    image: wimwamwom/aniloader:latest
+    ports: ["5050:5050"]
+    volumes: 
+      - ./data:/app/data
+      - ./Downloads:/app/Downloads
+      - ./Anime:/app/Anime
+      - ./Serien:/app/Serien
+    environment: [TZ=Europe/Berlin]
+    restart: unless-stopped
+```
+
+**Unraid:** Template von Community Apps oder Docker Hub `wimwamwom/aniloader:latest`
+
+---
+
+## Verwendung
+
+### Web-Interface (`http://localhost:5050`)
+- **📥 Download:** Modi starten/stoppen, Live-Status, Logs
+- **📂 Hinzufügen:** URLs, TXT-Upload, Suche mit Poster
+- **🗃️ Datenbank:** Alle Serien, Sortierung, Filter, Aktionen
+- **⚙️ Einstellungen:** Pfade, Sprachen, Autostart
+
+### API
+```bash
+# Status
+GET /status
+
+# Download starten/stoppen  
+POST /start_download {"mode": "default"}
+POST /stop_download
+
+# URLs hinzufügen
+POST /export {"url": "https://aniworld.to/anime/stream/naruto"}
+
+# Suchen
+POST /search {"query": "attack on titan", "platform": "both"}
+```
+
+**Swagger:** `http://localhost:5050/docs`
+
+### Tampermonkey
+Download `Tampermonkey.user.js` → Installieren → Button auf aniworld.to/s.to Seiten
+
+---
+
+## Config
+
+`data/config.yaml` (automatisch erstellt):
+
+```yaml
+storage:
+  mode: separate              # separate=Anime/Serien getrennt, standard=alles in Downloads
+  download_path: /app/Downloads
+  anime_path: /app/Anime      # aniworld.to → hier  
+  series_path: /app/Serien    # s.to → hier
+
+languages:                   # Priorität von oben nach unten
+  - German Dub
+  - German Sub
+  - English Sub
+
+download:
+  autostart_mode: null       # null, default, german, new, check
+  refresh_titles: false      # Titel beim Start updaten
+  min_free_gb: 2.0
+```
+
+### Modi
+- **default:** Alle unvollständigen Serien
+- **german:** Fehlende deutsche Episoden  
+- **new:** Neue Episoden bei allen Serien
+- **check:** Integritätsprüfung + Reparatur
+
+---
+
+## FAQ
+
+**Q: Downloads funktionieren nicht?**  
+A: ffmpeg installiert? Python 3.11+? Logs prüfen im Download-Tab
+
+**Q: „DNS-Fehler" / Seite nicht erreichbar?**  
+A: DNS-over-HTTPS ist aktiviert, Firewall für HTTPS prüfen
+
+**Q: Filme als „Season 00"?**  
+A: Update auf neueste Version → Filme werden als `Filme/Film01.mkv` gespeichert
+
+**Q: Autostart aktivieren?**  
+A: `config.yaml` → `autostart_mode: default` oder Web-UI Einstellungen
+
+**Q: Tampermonkey Button zeigt „offline"?**  
+A: Server-IP im Skript anpassen, AniLoader muss laufen
+
+---
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/Unraid-compatible-F15A2C?logo=unraid&logoColor=white" alt="Unraid">
+  <img src="web/static/AniLoader.png" alt="AniLoader" width="60"><br>
+  <sub>Made with ❤️ for Anime & Serien</sub>
 </p>
-
----
-
-## Inhaltsverzeichnis
-
-- [Features](#features)
-- [Screenshots](#screenshots)
-- [Voraussetzungen](#voraussetzungen)
-- [Installation](#installation)
-  - [Lokal (Windows / Linux)](#lokal-windows--linux)
-  - [Docker / Docker Compose](#docker--docker-compose)
-  - [Unraid](#unraid)
-- [Konfiguration](#konfiguration)
-  - [config.yaml](#configyaml)
-  - [Speicher-Modi](#speicher-modi)
-  - [Sprachpriorität](#sprachpriorität)
-- [Benutzung](#benutzung)
-  - [Web-Interface](#web-interface)
-  - [Download-Modi](#download-modi)
-  - [Serien hinzufügen](#serien-hinzufügen)
-  - [Tampermonkey Browser-Skript](#tampermonkey-browser-skript)
-- [API-Referenz](#api-referenz)
-- [Projektstruktur](#projektstruktur)
-- [Technische Details](#technische-details)
-- [FAQ / Fehlerbehebung](#faq--fehlerbehebung)
-
----
-
-## Features
-
-| Feature | Beschreibung |
-|---|---|
-| 🌐 **Web-Interface** | Dark-Theme Web-UI mit 4 Tabs – Download, Hinzufügen, Datenbank, Einstellungen |
-| 📥 **4 Download-Modi** | Standard, German, Neue Episoden, Integritäts-Check |
-| 🔍 **Integrierte Suche** | Durchsuche aniworld.to und s.to direkt aus dem Interface |
-| 🇩🇪 **Sprachpriorität** | Konfigurierbare Sprachreihenfolge mit automatischem Fallback |
-| 📁 **Jellyfin-kompatibel** | Automatische Ordnerstruktur `Title (Year) [imdbid-xxx]/Season ss/` |
-| 💾 **SQLite Datenbank** | Verwaltet alle Serien mit Status, Fortschritt und fehlenden Episoden |
-| 🔒 **DNS-over-HTTPS** | Umgeht ISP-DNS-Sperren automatisch über Google DoH |
-| 🐋 **Docker & Unraid** | Fertige Docker-Images mit Health-Check und Volume-Mounts |
-| 🧩 **Tampermonkey-Skript** | Ein-Klick-Download direkt von der aniworld.to / s.to Seite |
-| 📊 **Live-Status** | Echtzeit-Fortschritt mit Auto-Polling im Browser |
-| 📤 **Bulk-Import** | TXT-Datei hochladen oder Drag & Drop für viele URLs auf einmal |
-| ⚙️ **YAML Konfiguration** | Alle Einstellungen über Web-UI oder `config.yaml` änderbar |
-
----
-
-## Screenshots
-
-> Das Web-Interface ist unter `http://<ip>:5050` erreichbar und bietet 4 Tabs:
-
-### Download-Tab
-- **Steuerung**: 4 Download-Modi starten / stoppen
-- **Live-Status**: Aktuelle Serie, Staffel, Episode, Modus
-- **Fortschritt**: Heruntergeladen / Übersprungen / Fehlgeschlagen
-- **Log-Ausgabe**: Echtzeit-Log des aktuellen Laufs
-
-### Hinzufügen-Tab
-- **Link einfügen**: Einzelne URL hinzufügen
-- **TXT-Upload**: Datei mit URLs hochladen (Drag & Drop)
-- **Suche**: Direkt nach Animes/Serien suchen (Plattform wählbar)
-
-### Datenbank-Tab
-- **Übersichtstabelle**: Alle Serien mit Status, Typ, DE-Verfügbarkeit, Fortschritt
-- **Sortierung**: Klick auf Spaltenköpfe zum Sortieren
-- **Filter**: Suchfeld + „Gelöschte anzeigen" Toggle
-- **Aktionen**: Löschen / Wiederherstellen pro Eintrag
-
-### Einstellungen-Tab
-- **Server-Port**: Anpassbar
-- **Sprachpriorität**: Drag & Drop Reihenfolge
-- **Speicher-Modus**: Standard oder separate Pfade
-- **Download-Einstellungen**: Min. freier Speicher, Timeout, Autostart
-
----
-
-## Voraussetzungen
-
-### Lokal
-- **Python 3.11+**
-- **ffmpeg** (wird von `aniworld` CLI benötigt)
-- **aniworld** (wird automatisch über `requirements.txt` installiert)
 
 ### Docker
 - **Docker** und **Docker Compose**
@@ -301,6 +358,7 @@ download:
   min_free_gb: 2.0                  # Mindest-Speicherplatz (GB)
   autostart_mode: null              # null | default | german | new | check
   timeout_seconds: 900              # Timeout pro Episode (Sekunden)
+  refresh_titles: false             # Titel beim Start aktualisieren
 
 data:
   folder: /app/data                 # Pfad für DB, Logs, Config
@@ -327,22 +385,27 @@ Anime und Serien werden in **verschiedene Ordner** sortiert. Optional können Fi
 ```
 Anime/                   ← storage.anime_path = /app/Anime
 ├── Naruto (2002) [imdbid-tt0409591]/
-│   ├── Season 00/   ← Filme
-│   ├── Season 01/
+│   ├── Filme/       ← Filme (Film01 - Title.mkv)
+│   ├── Season 01/   ← Serien (S01E001 - Title.mkv)
 │   └── ...
 
 Serien/                  ← storage.series_path = /app/Serien
 ├── Breaking Bad (2008) [imdbid-tt0903747]/
-│   └── ...
+│   ├── Filme/       ← Filme falls vorhanden
+│   └── Season 01/   ← Serien
 
 Anime-Filme/             ← storage.anime_movies_path = /app/Anime-Filme
-├── Naruto (2002) [imdbid-tt0409591]/  (anime_separate_movies: true)
-│   └── Season 00/
+├── Your Name (2016) [imdbid-tt5311514]/  (anime_separate_movies: true)
+│   └── Filme/
+│       └── Film01 - Your Name.mkv
 
 Serien-Filme/            ← storage.serien_movies_path = /app/Serien-Filme
-├── Breaking Bad (2008) [...]/ (serien_separate_movies: true)
-│   └── Season 00/
+├── Avengers (2019) [...]/ (serien_separate_movies: true)
+│   └── Filme/
+│       └── Film01 - Avengers Endgame.mkv
 ```
+
+> **Film-Struktur:** Filme werden in `Filme/` Ordnern mit `Film01`, `Film02` etc. gespeichert. Die verwirrende `Season 00` Struktur wurde durch eindeutige Film-Benennung ersetzt.
 
 > **Docker-Hinweis:** Im Container sind alle Pfade bereits als Volume gemappt. Die `config.yaml`-Pfade (z.B. `/app/Anime`) müssen den Container-Pfaden in `docker-compose.yml` entsprechen.
 
@@ -482,6 +545,8 @@ AniLoader stellt eine REST-API bereit, die auch vom Web-Interface und dem Tamper
 | `PUT` | `/anime/{id}` | Eintrag aktualisieren |
 | `POST` | `/upload_txt` | TXT-Datei mit URLs importieren (multipart/form-data) |
 | `POST` | `/search` | Suche (`{"query": "...", "platform": "both"}`) |
+| `GET` | `/poster` | Poster-URL für Serie extrahieren (`?url=`) |
+| `GET` | `/proxy_poster` | Poster-Bild mit CORS-Headers laden (`?url=`) |
 | `GET` | `/config` | Aktuelle Konfiguration |
 | `POST` | `/config` | Konfiguration aktualisieren |
 | `GET` | `/disk` | Freier Speicherplatz |
@@ -634,6 +699,20 @@ AniLoader nutzt **niquests** mit Google DNS-over-HTTPS (`doh+google://`) als Res
 mkdir -p data Downloads
 chmod 777 Downloads
 ```
+
+### Wie kann ich den Titel-Refresh aktivieren?
+In der `config.yaml` oder im Einstellungen-Tab → Download:
+```yaml
+download:
+  refresh_titles: true
+```
+Beim nächsten Server-Start werden alle Titel aus der Datenbank von den Original-Webseiten aktualisiert.
+
+### Was zeigt "Fehlende DE" in der Datenbank?
+Diese Spalte zeigt an, wie viele deutsche Episoden noch fehlen (z.B. "E001, E002" oder "5 Episoden"). Der German-Modus kann diese gezielt nachladen.
+
+### Filme werden als "Season 00" angezeigt – ist das normal?
+**Nein!** In der neuen Version werden Filme in `Filme/` Ordnern mit `Film01` Dateinamen gespeichert. Falls du noch `Season 00` siehst, aktualisiere auf die neueste Version.
 
 ### Wie kann ich den Autostart aktivieren?
 In der `config.yaml` oder im Einstellungen-Tab:

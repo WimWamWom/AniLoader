@@ -14,31 +14,43 @@
   <img src="https://img.shields.io/badge/Docker-Hub-2496ED?logo=docker&logoColor=white" alt="Docker Hub">
   <img src="https://img.shields.io/badge/amd64-supported-green" alt="amd64">
   <img src="https://img.shields.io/badge/arm64-supported-green" alt="arm64">
-  <img src="https://img.shields.io/badge/Unraid-compatible-F15A2C?logo=unraid&logoColor=white" alt="Unraid">
 </p>
 
 ---
 
-## Quickstart
+## Features
+
+| Feature | Beschreibung |
+|---|---|
+| 🌐 **Modern Web-Interface** | Dark-Theme UI mit Pill-Style-Tabs (📥📂⚙️) |
+| 📥 **4 Download-Modi** | Standard, German, Neue Episoden, Integritäts-Check |
+| 🔍 **Suche + Poster** | Durchsuche aniworld.to und s.to mit Poster-Vorschau |
+| 🇩🇪 **Sprachpriorität** | Konfigurierbare Reihenfolge mit automatischem Fallback |
+| 📁 **Jellyfin-kompatibel** | `Title (Year) [imdbid]/Season 01/` oder `Filme/` Struktur |
+| 🎬 **Film-Struktur** | `Film01 - Title.mkv` statt `S00E001` |
+| 💾 **SQLite Datenbank** | Serien-Verwaltung mit Status, Fortschritt, fehlende Episoden |
+| 🔒 **DNS-over-HTTPS** | Umgeht ISP-DNS-Sperren automatisch |
+| 📊 **Live-Status** | Echtzeit-Fortschritt mit Auto-Polling im Browser |
+
+---
+
+## Schnellstart
 
 ```bash
 docker run -d \
   --name aniloader \
   -p 5050:5050 \
-  -v /pfad/zu/data:/app/data \
-  -v /pfad/zu/downloads:/app/Downloads \
-  -v /pfad/zu/anime:/app/Anime \
-  -v /pfad/zu/serien:/app/Serien \
-  -v /pfad/zu/anime-filme:/app/Anime-Filme \
-  -v /pfad/zu/serien-filme:/app/Serien-Filme \
-  -e PYTHONUNBUFFERED=1 \
+  -v ./data:/app/data \
+  -v ./Downloads:/app/Downloads \
+  -v ./Anime:/app/Anime \
+  -v ./Serien:/app/Serien \
   -e TZ=Europe/Berlin \
-  --dns 8.8.8.8 --dns 1.1.1.1 \
+  --dns 8.8.8.8 \
   --restart unless-stopped \
   wimwamwom/aniloader:latest
 ```
 
-Web-Interface: `http://<server-ip>:5050`
+**Web-Interface:** `http://localhost:5050`
 
 ---
 
@@ -49,54 +61,185 @@ services:
   aniloader:
     image: wimwamwom/aniloader:latest
     container_name: aniloader
-    hostname: aniloader
     ports:
       - "5050:5050"
     volumes:
       # Persistente Daten (DB, Config, Logs)
-      # config.yaml: data.folder = /app/data
       - ./data:/app/data
       # Download-Verzeichnis (storage.mode: standard)
-      # config.yaml: storage.download_path = /app/Downloads
       - ./Downloads:/app/Downloads
       # Separate Pfade (storage.mode: separate)
-      # config.yaml: storage.anime_path = /app/Anime
-      - ./Anime:/app/Anime
-      # config.yaml: storage.series_path = /app/Serien
-      - ./Serien:/app/Serien
-      # config.yaml: storage.anime_movies_path = /app/Anime-Filme
-      - ./Anime-Filme:/app/Anime-Filme
-      # config.yaml: storage.serien_movies_path = /app/Serien-Filme
-      - ./Serien-Filme:/app/Serien-Filme
+      - ./Anime:/app/Anime              # aniworld.to
+      - ./Serien:/app/Serien            # s.to
+      - ./Anime-Filme:/app/Anime-Filme  # Optional
+      - ./Serien-Filme:/app/Serien-Filme # Optional
     environment:
-      - PYTHONUNBUFFERED=1
       - TZ=Europe/Berlin
     dns:
       - 8.8.8.8
       - 1.1.1.1
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
 ```
 
 ```bash
 docker compose up -d
 ```
 
-> **Selbst bauen:** Statt `image:` kann `build: .` verwendet werden, um aus dem Repository-Quellcode zu bauen.
-
 ---
 
 ## Volumes
+
+| Container-Pfad | Zweck | Pflicht |
+|---|---|---|
+| `/app/data` | SQLite-Datenbank, `config.yaml`, Logs | ✅ Ja |
+| `/app/Downloads` | Standard-Download-Verzeichnis | ✅ Ja |
+| `/app/Anime` | Anime (bei `storage.mode: separate`) | ✅ Ja |
+| `/app/Serien` | Serien (bei `storage.mode: separate`) | ✅ Ja |
+| `/app/Anime-Filme` | Separate Anime-Filme (optional) | ❌ Nein |
+| `/app/Serien-Filme` | Separate Serien-Filme (optional) | ❌ Nein |
+
+---
+
+## Konfiguration
+
+Beim ersten Start wird automatisch `data/config.yaml` erstellt:
+
+```yaml
+server:
+  port: 5050
+
+languages:                          # Priorität von oben nach unten
+  - German Dub
+  - German Sub
+  - English Sub
+  - English Dub
+
+storage:
+  mode: standard                    # standard | separate
+  download_path: /app/Downloads     # Alle Downloads
+  anime_path: /app/Anime            # Nur aniworld.to (separate)
+  series_path: /app/Serien          # Nur s.to (separate)
+  anime_movies_path: /app/Anime-Filme    # Separate Anime-Filme
+  serien_movies_path: /app/Serien-Filme  # Separate Serien-Filme
+  anime_separate_movies: false
+  serien_separate_movies: false
+
+download:
+  min_free_gb: 2.0                  # Mindest-Speicherplatz (GB)
+  autostart_mode: null              # null | default | german | new | check
+  timeout_seconds: 900              # Timeout pro Episode (Sekunden)
+  refresh_titles: false             # Titel beim Start aktualisieren
+
+data:
+  folder: /app/data                 # Pfad für DB, Logs, Config
+```
+
+### Autostart
+
+Container kann beim Start automatisch einen Download-Modus starten:
+
+```yaml
+download:
+  autostart_mode: default   # Optionen: default, german, new, check
+```
+
+| Modus | Beschreibung |
+|---|---|
+| `default` | Alle unvollständigen Serien herunterladen |
+| `german` | Fehlende deutsche Episoden nachprüfen |
+| `new` | Alle Serien auf neue Episoden prüfen |
+| `check` | Integritätsprüfung aller Downloads |
+
+---
+
+## API
+
+**Swagger-Dokumentation:** `http://localhost:5050/docs`
+
+### Download-Steuerung
+```http
+GET  /status                 # Aktueller Status
+POST /start_download         # {"mode": "default"} 
+POST /stop_download          # Download stoppen
+```
+
+### Serien verwalten
+```http  
+POST /export                 # {"url": "https://..."} - URL hinzufügen
+POST /search                 # {"query": "naruto", "platform": "both"}
+GET  /database              # Alle Einträge (?q=filter&sort=title)
+DELETE /anime/{id}          # Löschen (?hard=true)
+POST /anime/{id}/restore    # Wiederherstellen
+```
+
+### Poster & Medien  
+```http
+GET /poster?url=...         # Poster-URL extrahieren
+GET /proxy_poster?url=...   # Poster mit CORS-Headers laden
+```
+
+### System
+```http
+GET  /health               # {"status": "ok"}
+GET  /config               # Aktuelle Konfiguration  
+POST /config               # Konfiguration ändern
+GET  /logs                 # Alle Logs
+```
+
+---
+
+## Unraid
+
+**Docker Hub:** `wimwamwom/aniloader:latest`
+
+**Port:** `5050:5050`
+
+**Volumes:**
+| Container-Pfad | Host-Pfad | Beschreibung |
+|---|---|---|
+| `/app/data` | `/mnt/user/appdata/aniloader` | Datenbank, Config, Logs |
+| `/app/Downloads` | `/mnt/user/data/media/Downloads` | Standard-Downloads |
+| `/app/Anime` | `/mnt/user/data/media/Anime` | Anime (separate Mode) |
+| `/app/Serien` | `/mnt/user/data/media/Serien` | Serien (separate Mode) |
+
+**Environment:** `TZ=Europe/Berlin`
+
+**WebUI:** `http://[IP]:5050`
+
+---
+
+## Fehlerbehebung
+
+### „Permission denied" für Download-Ordner
+```bash
+mkdir -p data Downloads
+chmod 777 Downloads
+```
+
+### Container startet, aber Web-Interface nicht erreichbar
+```bash
+docker port aniloader        # Port-Mapping prüfen
+docker logs aniloader        # Logs prüfen
+```
+
+### Downloads funktionieren nicht
+```bash
+docker logs -f aniloader     # Live-Logs anzeigen
+```
+
+`ffmpeg` und `aniworld` sind im Image enthalten – kein manuelles Installieren nötig.
+
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png" alt="AniLoader" width="50"><br>
+  <sub>Made with ❤️ for Anime & Serien</sub>
+</p>
 
 | Container-Pfad | config.yaml-Key | Beschreibung | Pflicht |
 |---|---|---|---|
@@ -153,6 +296,7 @@ download:
   min_free_gb: 2.0                  # Mindest freier Speicherplatz (GB)
   autostart_mode: null              # null | default | german | new | check
   timeout_seconds: 900              # Timeout pro Episode (Sekunden)
+  refresh_titles: false             # Titel beim Start aktualisieren
 
 data:
   folder: /app/data                 # Pfad für DB, Logs, Config
@@ -197,11 +341,15 @@ download:
 
 | Feature | Beschreibung |
 |---|---|
-| 🌐 **Web-Interface** | Dark-Theme UI mit 4 Tabs – Download, Hinzufügen, Datenbank, Einstellungen |
+| 🌐 **Modern Web-Interface** | Dark-Theme UI mit Pill-Style-Tabs (📥📂⚙️) und Emoji-Navigation |
 | 📥 **4 Download-Modi** | Standard, German, Neue Episoden, Integritäts-Check |
-| 🔍 **Integrierte Suche** | Durchsuche aniworld.to und s.to direkt aus dem Interface |
+| 🔍 **Integrierte Suche** | Durchsuche aniworld.to und s.to mit Poster-Vorschau direkt aus dem Interface |
+| 🖼️ **Poster-Anzeige** | Automatisches Laden von Serien-Postern für AniWorld und S.to Ergebnisse |
+| 🔄 **Titel-Refresh** | Optional: Aktualisiere alle Titel aus der Datenbank beim Start |
+| 🇩🇪 **Fehlende DE-Folgen** | Zeigt missing deutsche Episoden in der Datenbank-Übersicht an |
 | 🇩🇪 **Sprachpriorität** | Konfigurierbare Reihenfolge mit automatischem Fallback |
-| 📁 **Jellyfin-kompatibel** | Ordnerstruktur `Title (Year) [imdbid-xxx]/Season ss/` |
+| 📁 **Jellyfin-kompatibel** | Ordnerstruktur `Title (Year) [imdbid-xxx]/Season ss/` oder `Filme/` |
+| 🎬 **Intelligente Filme-Struktur** | Filme in `Filme/` Ordnern mit `Film01` statt verwirrende `Season 00` |
 | 💾 **SQLite Datenbank** | Serien-Verwaltung mit Status, Fortschritt und fehlenden Episoden |
 | 🔒 **DNS-over-HTTPS** | Umgeht ISP-DNS-Sperren automatisch |
 | 🧩 **Tampermonkey-Skript** | Ein-Klick-Download direkt von aniworld.to / s.to |
@@ -285,6 +433,8 @@ Wichtige Endpunkte:
 | `POST` | `/export` | URL hinzufügen (`{"url": "..."}`) |
 | `GET` | `/database` | Alle DB-Einträge |
 | `POST` | `/search` | Suche (`{"query": "...", "platform": "both"}`) |
+| `GET` | `/poster` | Poster-URL für Serie extrahieren (`?url=`) |
+| `GET` | `/proxy_poster` | Poster-Bild mit CORS-Headers laden (`?url=`) |
 | `GET` | `/config` | Konfiguration abrufen |
 | `POST` | `/config` | Konfiguration ändern |
 
