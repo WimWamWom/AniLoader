@@ -357,8 +357,10 @@ def _parse_aniworld_season(
         meta = tr.find("meta", attrs={"itemprop": "episodeNumber"})
         if meta:
             data = meta.get("content", "0")
-            data = str(data)
-            ep_data["episode"] = data
+            try:
+                ep_data["episode"] = int(data)
+            except (ValueError, TypeError):
+                ep_data["episode"] = 0
         else:
             # Fallback: aus Link-Text
             a = tr.find("a", attrs={"itemprop": "url"})

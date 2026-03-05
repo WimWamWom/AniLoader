@@ -304,6 +304,29 @@ function toggleLogAutoRefresh() {
   }
 }
 
+function copyLogToClipboard() {
+  if (!rawLogText.trim()) {
+    alert('Kein Log zum Kopieren verfügbar.');
+    return;
+  }
+  
+  navigator.clipboard.writeText(rawLogText).then(() => {
+    // Feedback geben
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '✓ Kopiert!';
+    btn.style.backgroundColor = 'var(--success)';
+    
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.style.backgroundColor = '';
+    }, 2000);
+  }).catch(err => {
+    console.error('Fehler beim Kopieren:', err);
+    alert('Fehler beim Kopieren in die Zwischenablage.');
+  });
+}
+
 // ──────────────────────── Archivierte Logs ────────────────────────
 
 async function loadArchivedLogs() {
