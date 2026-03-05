@@ -14,7 +14,6 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-
     port = cfg.get("server", {}).get("port", 5050)
     uvicorn.run(
         "main:app",
