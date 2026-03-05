@@ -104,8 +104,8 @@
             return m ? `https://aniworld.to/anime/stream/${m[1]}` : null;
         }
         if (href.includes('s.to')) {
-            m = href.match(/https:\/\/s\.to\/serie\/stream\/([^\/]+)/);
-            return m ? `https://s.to/serie/stream/${m[1]}` : null;
+            m = href.match(/https:\/\/s\.to\/serie\/([^\/]+)/);
+            return m ? `https://s.to/serie/${m[1]}` : null;
         }
         return null;
     }
@@ -115,7 +115,19 @@
 
     // ── Container finden ──
 
-    const anchor = document.querySelector('#stream') || document.querySelector('.episodes-list');
+    let anchor = null;
+    
+    // Für s.to neue HTML-Struktur
+    if (url.includes('s.to')) {
+        anchor = document.querySelector('nav.mb-3#episode-nav') || 
+                document.querySelector('.d-md-none.mb-2');
+    }
+    
+    // Fallback für aniworld.to oder wenn s.to Selektoren nicht gefunden werden
+    if (!anchor) {
+        anchor = document.querySelector('#stream') || document.querySelector('.episodes-list');
+    }
+    
     if (!anchor) return;
 
     // ── UI-Elemente ──
@@ -185,11 +197,22 @@
                 const res = await apiPost('/export', { url });
                 if (!res || res.status !== 'ok') throw new Error('Export fehlgeschlagen');
             }
-            // Falls nichts läuft → Standard-Download starten
+            
+            // Nur Download starten wenn in Config autostart_mode !== null
             const s = await apiGet('/status');
             if (s?.status !== 'running') {
-                await apiPost('/start_download', { mode: 'default' });
+                try {
+                    const config = await apiGet('/config');
+                    const autostartMode = config?.download?.autostart_mode;
+                    if (autostartMode && autostartMode !== null) {
+                        await apiPost('/start_download', { mode: 'default' });
+                    }
+                } catch (configError) {
+                    // Config-Fehler ignorieren, kein Auto-Download
+                    console.log('[AniLoader] Config nicht verfügbar, kein Auto-Download');
+                }
             }
+            
             await refreshBtn();
         } catch (e) {
             console.error('[AniLoader]', e);
