@@ -171,7 +171,7 @@ def get_poster_url(url: str) -> Optional[str]:
         html = _fetch(base_url)
         soup = BeautifulSoup(html, "lxml")
 
-        # Beide Plattformen nutzen .seriesCoverBox mit lazy-load via data-src
+        # Methode 1: .seriesCoverBox (Standard für beide Plattformen)
         cover_div = soup.find("div", class_="seriesCoverBox")
         if cover_div:
             img = cover_div.find("img")
@@ -184,10 +184,33 @@ def get_poster_url(url: str) -> Optional[str]:
                     domain = "https://aniworld.to" if is_aniworld(url) else "https://s.to"
                     return f"{domain}{src}"
 
-        # Fallback: erstes <img> mit cover/poster im Pfad
+        # Methode 2: Spezifisch für S.to - .backdrop oder .poster-image
+        if is_sto(url):
+            # S.to nutzt oft .backdrop für große Bilder
+            backdrop = soup.find("div", class_="backdrop")
+            if backdrop:
+                img = backdrop.find("img")
+                if img:
+                    src = img.get("data-src") or img.get("src", "")
+                    if src and not src.startswith("data:"):
+                        if src.startswith("http"):
+                            return src
+                        return f"https://s.to{src}"
+
+            # Alternative: .poster-image oder ähnliche Klassen
+            for class_name in ["poster-image", "series-poster", "cover-image"]:
+                poster_img = soup.find("img", class_=class_name)
+                if poster_img:
+                    src = poster_img.get("data-src") or poster_img.get("src", "")
+                    if src and not src.startswith("data:"):
+                        if src.startswith("http"):
+                            return src
+                        return f"https://s.to{src}"
+
+        # Methode 3: Fallback - alle <img> nach cover/poster durchsuchen
         for img in soup.find_all("img"):
             src = img.get("data-src") or img.get("src", "")
-            if src and any(k in src for k in ("/cover/", "/poster/", "stream-cover")):
+            if src and any(k in src for k in ("/cover/", "/poster/", "stream-cover", "/backdrop/")):
                 if src.startswith("data:"):
                     continue
                 if src.startswith("http"):

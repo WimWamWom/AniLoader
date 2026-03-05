@@ -418,6 +418,72 @@ async def browse_directories(request: Request):
     return {"path": str(target), "parent": parent, "dirs": dirs}
 
 
+# ──────────────────────── Poster ────────────────────────
+
+
+@router.get("/poster")
+async def get_poster(url: str = Query(...)):
+    """Gibt die Poster-URL für eine Serie zurück."""
+    if not url or ("aniworld.to" not in url and "s.to" not in url):
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Ungültige URL"},
+        )
+
+    # Cache prüfen
+    if url in _poster_cache:
+        return {"poster_url": _poster_cache[url]}
+
+    try:
+        poster_url = scraper.get_poster_url(url)
+        # Cache speichern (auch None-Werte, um wiederholte Requests zu vermeiden)
+        _poster_cache[url] = poster_url
+        return {"poster_url": poster_url}
+    except Exception as e:
+        log(f"[API-ERROR] Poster-Fehler für {url}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Poster konnte nicht geladen werden"},
+        )
+
+
+@router.get("/proxy_poster")
+async def proxy_poster(url: str = Query(...)):
+    """Lädt ein Poster-Bild über einen Proxy und gibt es zurück."""
+    if not url.startswith(("http://", "https://")):
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Ungültige Bild-URL"},
+        )
+
+    try:
+        import niquests
+        
+        # HTTP-Request mit korrekten Headers
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+            "Referer": "https://aniworld.to/" if "aniworld.to" in url else "https://s.to/",
+        }
+        
+        resp = niquests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        
+        # Content-Type aus Response übernehmen oder fallback
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        
+        return Response(content=resp.content, media_type=content_type)
+        
+    except Exception as e:
+        log(f"[API-ERROR] Proxy-Poster-Fehler für {url}: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Bild konnte nicht geladen werden"},
+        )
+
+
 # ──────────────────────── Logs ────────────────────────
 
 

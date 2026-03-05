@@ -457,7 +457,7 @@ async function loadDatabase() {
 function renderDatabase(entries) {
   const tbody = $('#db-tbody');
   if (!entries || !entries.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="db-empty">Keine Einträge gefunden</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="db-empty">Keine Einträge gefunden</td></tr>';
     return;
   }
 
@@ -475,6 +475,22 @@ function renderDatabase(entries) {
     // Kurz-URL für Anzeige
     const displayUrl = e.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 
+    // Fehlende deutsche Folgen formatieren
+    let fehlendeDE = '–';
+    let missing = [];
+    try {
+      missing = JSON.parse(e.fehlende_deutsch_folgen || '[]');
+      if (missing.length > 0) {
+        if (missing.length <= 3) {
+          fehlendeDE = missing.map(ep => `E${String(ep).padStart(3,'0')}`).join(', ');
+        } else {
+          fehlendeDE = `${missing.length} Episoden`;
+        }
+      }
+    } catch (ex) {
+      fehlendeDE = '–';
+    }
+
     const actionBtns = isDeleted
       ? `<button class="db-btn db-btn-restore" onclick="restoreAnime(${e.id})">&#8635; Erneut laden</button>
          <button class="db-btn db-btn-del" onclick="deleteAnime(${e.id})">&#10005; Löschen</button>`
@@ -486,6 +502,7 @@ function renderDatabase(entries) {
       <td><a class="db-url-link" href="${e.url}" target="_blank" rel="noreferrer" title="${e.url}">${esc(displayUrl)}</a></td>
       <td style="text-align:center">${komplett}</td>
       <td style="text-align:center">${deKomp}</td>
+      <td class="db-missing-de" title="${esc(JSON.stringify(missing || []))}">${esc(fehlendeDE)}</td>
       <td class="db-se">${se}</td>
       <td style="text-align:center">${film || '–'}</td>
       <td><div class="db-actions">${actionBtns}</div></td>
