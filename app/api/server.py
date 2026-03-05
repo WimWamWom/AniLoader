@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..config import get_data_folder, load_config
 from ..database import init_db, import_aniloader_txt, refresh_titles
+from ..file_manager import ensure_aniloader_txt
 from ..logger import cleanup_old_logs, init_logger, log
 
 # Pfade für Web-UI
@@ -30,6 +31,9 @@ async def lifespan(app: FastAPI):
 
     init_logger(data_folder)
     init_db(data_folder)
+    
+    # AniLoader.txt erstellen falls nicht vorhanden
+    ensure_aniloader_txt()
     
     # AniLoader.txt importieren (wie im alten AniLoader)
     try:

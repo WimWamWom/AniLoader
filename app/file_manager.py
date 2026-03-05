@@ -14,6 +14,28 @@ from typing import Optional
 from .config import get_download_path
 from .logger import log
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+# ──────────────────────── Initialisierungsfunktionen ────────────────────────
+
+
+def ensure_aniloader_txt() -> None:
+    """
+    Erstellt AniLoader.txt im Hauptverzeichnis, falls sie nicht existiert.
+    
+    Diese Datei wird vom Tampermonkey-Script verwendet, um Links hinzuzufügen,
+    die dann beim Start der Anwendung importiert werden.
+    """
+    aniloader_txt = BASE_DIR / "AniLoader.txt"
+    
+    if not aniloader_txt.exists():
+        try:
+            aniloader_txt.touch()
+            log("[INIT] AniLoader.txt erstellt")
+        except Exception as e:
+            log(f"[INIT-ERROR] Konnte AniLoader.txt nicht erstellen: {e}")
+
 
 # ──────────────────────── Pfad-Hilfsfunktionen ────────────────────────
 
