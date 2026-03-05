@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from .. import database as db
@@ -561,3 +561,48 @@ async def episode_counts(anime_id: int):
     cfg = load_config()
     counts = count_episodes_on_disk(cfg, anime["url"], anime.get("folder_name"))
     return counts
+
+
+# ──────────────────────── Export ────────────────────────
+
+
+@router.get("/export/database")
+async def export_database():
+    """Exportiert die komplette SQLite-Datenbank als Download."""
+    data_folder = _data_folder()
+    db_path = Path(data_folder) / "AniLoader.db"
+    
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="Datenbank nicht gefunden")
+    
+    return FileResponse(
+        path=str(db_path),
+        filename="AniLoader.db",
+        media_type="application/vnd.sqlite3",
+        headers={"Content-Disposition": "attachment; filename=AniLoader.db"}
+    )
+
+
+@router.get("/export/links")
+async def export_links():
+    """Exportiert alle Links als AniLoader.txt Download."""
+    from ..database import BASE_DIR
+    
+    backup_path = BASE_DIR / "AniLoader.txt.bak"
+    
+    if not backup_path.exists():
+        # Fallback: Erstelle AniLoader.txt.bak aus Datenbank
+        try:
+            db.regenerate_aniloader_backup(_data_folder())
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Backup-Erstellung fehlgeschlagen: {e}")
+    
+    if not backup_path.exists():
+        raise HTTPException(status_code=404, detail="Keine Links zum Export vorhanden")
+    
+    return FileResponse(
+        path=str(backup_path),
+        filename="AniLoader.txt",
+        media_type="text/plain",
+        headers={"Content-Disposition": "attachment; filename=AniLoader.txt"}
+    )

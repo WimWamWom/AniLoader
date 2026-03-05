@@ -992,3 +992,25 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Enter') addLink();
   });
 });
+
+// ──────────────────────── Export-Funktionen ────────────────────────
+
+function exportDatabase() {
+  // Direkter Download der Datenbank-Datei
+  const link = document.createElement('a');
+  link.href = '/export/database';
+  link.download = 'AniLoader.db';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function exportLinks() {
+  // Direkter Download der Links-Datei
+  const link = document.createElement('a');
+  link.href = '/export/links';
+  link.download = 'AniLoader.txt';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
