@@ -50,13 +50,13 @@ docker compose up -d
 - **🐋 Docker-Ready:** Multi-Arch Images (amd64/arm64) mit Health-Checks
 - **🌐 Web-Interface:** Moderne Dark-Theme Oberfläche mit Live-Status  
 - **📥 4 Download-Modi:** Standard, German, New Episode Check, Integrity Check
-- **🔍 Suche + Poster:** Durchsuche beide Plattformen mit Poster-Vorschau
-- **🇩🇪 Sprach-Kaskade:** German Dub → Sub → English (automatischer Fallback)
-- **📁 Jellyfin-Ready:** `Title (Year)/Season 01/S01E001.mkv` + `Filme/Film01.mkv`
+- **🔍 Suche + Poster:** Durchsuche Aniworld und SerieStream
+- **🇩🇪 Sprach-Priorität:** German Dub → Sub → English (automatischer Fallback)
+- **📁 Jellyfin-Ready:** `Title (Year) [IMDB]/Season/Episode.mkv`
 - **💾 Persistent:** SQLite-DB und Config überleben Container-Neustarts
-- **� AniLoader.txt Import:** Automatischer Import beim Container-Start
+- **📄 AniLoader.txt Import:** Automatischer Import beim Container-Start
 - **💾 Export-Funktionen:** Datenbank + Links als Download exportieren
-- **�🔒 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
+- **🔓 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
 - **⚡ Autostart:** Optional bei Container-Start Download-Modus starten
 
 ---

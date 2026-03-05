@@ -47,17 +47,17 @@ docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wim
 
 ## Funktionen
 
-- **🌐 Web-Interface:** Moderne Dark-Theme Oberfläche mit Live-Status
+- **🌐 Web-Interface:** Moderne Dark-Theme Oberfläche mit Live-Status  
 - **📥 4 Download-Modi:** Standard, German, New Episode Check, Integrity Check
-- **🔍 Suche + Poster:** Durchsuche beide Plattformen mit Poster-Vorschau
-- **🇩🇪 Sprach-Kaskade:** German Dub → Sub → English (automatischer Fallback)
-- **📁 Jellyfin-Ready:** `Title (Year)/Season 01/S01E001.mkv` + `Filme/Film01.mkv`
-- **💾 SQLite-DB:** Verwaltet Fortschritt, Status und fehlende Episoden
-- **� AniLoader.txt Import:** Automatischer Import beim Start (wie alter AniLoader)
+- **🔍 Suche + Poster:** Durchsuche Aniworld und SerieStream
+- **🇩🇪 Sprach-Priorität:** German Dub → Sub → English (automatischer Fallback)
+- **📁 Jellyfin-Ready:** `Title (Year) [IMDB]/Season/Episode.mkv`
+- **💾 Persistent:** SQLite-DB und Config überleben Container-Neustarts
+- **📄 AniLoader.txt Import:** Automatischer Import beim Container-Start
 - **💾 Export-Funktionen:** Datenbank + Links als Download exportieren
-- **�🔒 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
-- **🧩 Browser-Integration:** Tampermonkey-Skript für One-Click-Download
-- **🐋 Container-Ready:** Docker + Unraid Support mit Health-Checks
+- **🔓 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
+- **⚡ Autostart:** Optional bei Container-Start Download-Modus starten
+- **🐋 Docker-Ready:** Multi-Arch Images (amd64/arm64) mit Health-Checks
 
 ---
 
