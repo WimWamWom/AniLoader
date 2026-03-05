@@ -53,7 +53,9 @@ docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wim
 - **🇩🇪 Sprach-Kaskade:** German Dub → Sub → English (automatischer Fallback)
 - **📁 Jellyfin-Ready:** `Title (Year)/Season 01/S01E001.mkv` + `Filme/Film01.mkv`
 - **💾 SQLite-DB:** Verwaltet Fortschritt, Status und fehlende Episoden
-- **🔒 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
+- **� AniLoader.txt Import:** Automatischer Import beim Start (wie alter AniLoader)
+- **💾 Export-Funktionen:** Datenbank + Links als Download exportieren
+- **�🔒 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
 - **🧩 Browser-Integration:** Tampermonkey-Skript für One-Click-Download
 - **🐋 Container-Ready:** Docker + Unraid Support mit Health-Checks
 
@@ -149,6 +151,13 @@ docker compose up -d
 **🗃️ Datenbank-Tab**
 - Alle Serien mit Status, Fortschritt, fehlendem DE-Content
 - Sortierung, Filter, Löschen/Wiederherstellen
+- **💾 Export DB:** Komplette SQLite-Datenbank herunterladen
+- **📄 Export Links:** Alle URLs als AniLoader.txt herunterladen
+
+**📜 Logs-Tab**
+- Echtzeit-Logs mit Filter-Funktionen 
+- Archivierte Logs nach Datum durchsuchen
+- Automatische Bereinigung nach konfigurierbaren Tagen
 
 **⚙️ Einstellungen-Tab**
 - Speicherpfade (Standard/Separate Mode)
@@ -177,6 +186,10 @@ POST /search
 
 # Alle Serien
 GET /database?q=naruto&sort=title&dir=asc
+
+# Export-Funktionen
+GET /export/database     # SQLite-DB Download
+GET /export/links        # AniLoader.txt Download
 
 # Konfiguration
 GET /config
@@ -302,6 +315,11 @@ A: Server-IP im Skript korrekt? AniLoader läuft? Browser-Konsole (F12) für Det
 **Q: Autostart beim Docker-Start aktivieren**  
 A: `config.yaml` → `autostart_mode: default` oder in Web-UI Einstellungen ändern
 
+**Q: AniLoader.txt Import wie im alten AniLoader?**  
+A: Links in `AniLoader.txt` (Hauptordner) → beim Start automatisch importiert + Datei geleert
+
+**Q: Datenbank/Links exportieren?**  
+A: Datenbank-Tab → "💾 Export DB" (SQLite-Datei) oder "📄 Export Links" (AniLoader.txt)
 
 **Q: Separate vs Standard Mode?**  
 A: **Standard** = Alles in Downloads. **Separate** = Anime/Serien getrennt für bessere Jellyfin-Organisation

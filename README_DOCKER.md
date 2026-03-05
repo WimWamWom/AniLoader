@@ -54,7 +54,9 @@ docker compose up -d
 - **🇩🇪 Sprach-Kaskade:** German Dub → Sub → English (automatischer Fallback)
 - **📁 Jellyfin-Ready:** `Title (Year)/Season 01/S01E001.mkv` + `Filme/Film01.mkv`
 - **💾 Persistent:** SQLite-DB und Config überleben Container-Neustarts
-- **🔒 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
+- **� AniLoader.txt Import:** Automatischer Import beim Container-Start
+- **💾 Export-Funktionen:** Datenbank + Links als Download exportieren
+- **�🔒 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
 - **⚡ Autostart:** Optional bei Container-Start Download-Modus starten
 
 ---
@@ -174,6 +176,13 @@ docker compose logs -f
 **🗃️ Datenbank-Tab**
 - Alle Serien mit Status, Fortschritt, fehlende DE-Episoden
 - Sortierung, Filter, Löschen/Wiederherstellen
+- **💾 Export DB:** Komplette SQLite-Datenbank herunterladen
+- **📄 Export Links:** Alle URLs als AniLoader.txt herunterladen
+
+**📋 Logs-Tab**
+- Echtzeit-Logs mit Filter-Funktionen
+- Archivierte Logs nach Datum durchsuchen  
+- Automatische Bereinigung nach konfigurierbaren Tagen
 
 **⚙️ Einstellungen-Tab**
 - Storage-Mode (Standard vs Separate)
@@ -204,6 +213,10 @@ curl -X POST http://localhost:5050/export \
 curl -X POST http://localhost:5050/search \
   -H "Content-Type: application/json" \
   -d '{"query": "demon slayer", "platform": "both"}'
+
+# Export-Funktionen
+curl http://localhost:5050/export/database  # SQLite-DB Download
+curl http://localhost:5050/export/links     # AniLoader.txt Download
 ```
 
 ### Tampermonkey
@@ -365,6 +378,12 @@ A: `data/config.yaml` → `autostart_mode: default` oder Web-UI → Einstellunge
 
 **Q: Container nutzt zu viel CPU/RAM**  
 A: Download-Modi sind CPU-intensiv (Video-Processing). Normal während aktiver Downloads
+
+**Q: AniLoader.txt Import im Container?**  
+A: `AniLoader.txt` ins Host-Verzeichnis (wird zu Container-Root gemounted) → automatischer Import beim Start
+
+**Q: Export-Funktionen nutzen?**  
+A: Web-UI → Datenbank-Tab → "💾 Export DB" oder "📄 Export Links" für Downloads
 
 **Q: Multi-Arch Support (ARM/Intel)**  
 A: `wimwamwom/aniloader:latest` unterstützt automatisch amd64 + arm64
