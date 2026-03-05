@@ -22,18 +22,18 @@
     // ════════════════════════════════════════════
 
     // Option A: Domain (z.B. hinter nginx/Caddy Reverse-Proxy)
-    const USE_DOMAIN  = false;
+    const USE_DOMAIN = false;
     const SERVER_DOMAIN = "aniloader.example.com";
-    const USE_HTTPS   = true;
+    const USE_HTTPS = true;
 
     // Option B: Direkte IP
-    const SERVER_IP   = "127.0.0.1";
+    const SERVER_IP = "127.0.0.1";
     const SERVER_PORT = 5050;
 
     // Basic-Auth (optional, für Reverse-Proxy)
-    const USE_AUTH     = false;
-    const AUTH_USER    = "";
-    const AUTH_PASS    = "";
+    const USE_AUTH = false;
+    const AUTH_USER = "";
+    const AUTH_PASS = "";
 
     // ════════════════════════════════════════════
 
@@ -116,18 +116,18 @@
     // ── Container finden ──
 
     let anchor = null;
-    
+
     // Für s.to neue HTML-Struktur
     if (url.includes('s.to')) {
-        anchor = document.querySelector('nav.mb-3#episode-nav') || 
+        anchor = document.querySelector('nav.mb-3#episode-nav') ||
                 document.querySelector('.d-md-none.mb-2');
     }
-    
+
     // Fallback für aniworld.to oder wenn s.to Selektoren nicht gefunden werden
     if (!anchor) {
         anchor = document.querySelector('#stream') || document.querySelector('.episodes-list');
     }
-    
+
     if (!anchor) return;
 
     // ── UI-Elemente ──
@@ -197,7 +197,7 @@
                 const res = await apiPost('/export', { url });
                 if (!res || res.status !== 'ok') throw new Error('Export fehlgeschlagen');
             }
-            
+
             // Nur Download starten wenn in Config autostart_mode !== null
             const s = await apiGet('/status');
             if (s?.status !== 'running') {
@@ -212,7 +212,7 @@
                     console.log('[AniLoader] Config nicht verfügbar, kein Auto-Download');
                 }
             }
-            
+
             await refreshBtn();
         } catch (e) {
             console.error('[AniLoader]', e);
