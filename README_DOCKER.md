@@ -1,4 +1,4 @@
-<h1 align="center"><sub><img src="web/static/AniLoader.png" width="35"></sub>AniLoader </h1>
+<h1 align="center"><sub><img src="https://github.com/WimWamWom/AniLoader/blob/main/web/static/AniLoader.png" width="35"></sub>AniLoader </h1>
 
 
   
