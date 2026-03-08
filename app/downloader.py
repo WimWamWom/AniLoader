@@ -331,7 +331,7 @@ def _run_default(cfg: dict, data_folder: str) -> None:
 
         missing_german: List[str] = db.get_missing_german_episodes(data_folder, anime["id"])
         new_missing_german: List[str] = []
-        any_downloaded = False
+        had_failures = False
 
         # Filme (season=0) als erstes laden
         seasons_ordered = ([0] if 0 in seasons else []) + [s for s in seasons if s != 0]
@@ -364,14 +364,13 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                 result = _download_episode(cfg, data_folder, anime, season, ep)
 
                 if result == "downloaded":
-                    any_downloaded = True
                     status["progress"]["downloaded_episodes"] += 1
                 elif result == "skipped":
                     status["progress"]["skipped_episodes"] += 1
                 elif result == "failed":
+                    had_failures = True
                     status["progress"]["failed_episodes"] += 1
                 elif result == "no_german":
-                    any_downloaded = True
                     new_missing_german.append(ep["url"])
                     status["progress"]["downloaded_episodes"] += 1
 
@@ -392,7 +391,7 @@ def _run_default(cfg: dict, data_folder: str) -> None:
         elif not missing_german:
             db.update_anime(data_folder, anime["id"], deutsch_komplett=1)
 
-        if any_downloaded:
+        if not had_failures:
             db.update_anime(data_folder, anime["id"], complete=1)
             log(f"[DONE] {anime['title']} als komplett markiert")
 

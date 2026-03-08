@@ -312,13 +312,22 @@ def import_txt(data_folder: str, content: str) -> int:
     Importiert URLs aus Textinhalt (eine URL pro Zeile).
     Gibt die Anzahl neu hinzugefügter Einträge zurück.
     """
+    sc = _get_scraper()
     added = 0
     for line in content.strip().splitlines():
         url = line.strip()
         if not url or url.startswith("#"):
             continue
         if "aniworld.to" in url or "s.to" in url:
-            result = add_anime(data_folder, url)
+            # Echten Titel von der Webseite abrufen
+            try:
+                title = sc.get_series_title(url)
+                if not title:
+                    title = url
+            except Exception as e:
+                log(f"[IMPORT-WARN] Titel konnte nicht abgerufen werden ({e}) – nutze URL als Titel")
+                title = url
+            result = add_anime(data_folder, url, title=title)
             if result:
                 added += 1
     return added
