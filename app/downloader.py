@@ -115,6 +115,11 @@ def _run_aniworld_download(
     """
     is_windows = platform.system() == "Windows"
 
+    # TERM=xterm nötig damit curses/ncurses in aniworld sich initialisieren kann,
+    # auch wenn kein echtes Terminal vorhanden ist (z.B. Docker ohne TTY)
+    subprocess_env = os.environ.copy()
+    subprocess_env.setdefault("TERM", "xterm")
+
     if is_windows:
         cmd = f'chcp 65001 >nul & aniworld --language "{language}" -a Download -o "{output_path}" {episode_url}'
         log(f"[CMD] {cmd}")
@@ -127,6 +132,7 @@ def _run_aniworld_download(
                 timeout=timeout,
                 encoding="utf-8",
                 errors="replace",
+                env=subprocess_env,
             )
         except subprocess.TimeoutExpired:
             log(f"[ERROR] Timeout ({timeout}s) für {episode_url}")
@@ -146,6 +152,7 @@ def _run_aniworld_download(
                 timeout=timeout,
                 encoding="utf-8",
                 errors="replace",
+                env=subprocess_env,
             )
         except subprocess.TimeoutExpired:
             log(f"[ERROR] Timeout ({timeout}s) für {episode_url}")

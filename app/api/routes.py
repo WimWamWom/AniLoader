@@ -586,14 +586,13 @@ async def export_database():
 @router.get("/export/links")
 async def export_links():
     """Exportiert alle Links als AniLoader.txt Download."""
-    from ..database import BASE_DIR
-    
-    backup_path = BASE_DIR / "AniLoader.txt.bak"
+    data_folder = _data_folder()
+    backup_path = Path(data_folder) / "AniLoader.txt.bak"
     
     if not backup_path.exists():
         # Fallback: Erstelle AniLoader.txt.bak aus Datenbank
         try:
-            db.regenerate_aniloader_backup(_data_folder())
+            db.regenerate_aniloader_backup(data_folder)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Backup-Erstellung fehlgeschlagen: {e}")
     
