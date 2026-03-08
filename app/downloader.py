@@ -57,6 +57,9 @@ status: Dict = {
 _download_lock = threading.Lock()
 _download_thread: Optional[threading.Thread] = None
 
+_CDN_403_MAX_RETRIES = 2   # max. Anzahl Wiederholungen bei 403
+_CDN_403_RETRY_DELAY = 15  # Sekunden Pause vor 403-Retry
+
 
 def get_status() -> Dict:
     """Gibt den aktuellen Download-Status zurück."""
@@ -122,27 +125,15 @@ def _run_aniworld_download(
 
     if is_windows:
         cmd = f'chcp 65001 >nul & aniworld --language "{language}" -a Download -o "{output_path}" {episode_url}'
-        log(f"[CMD] {cmd}")
-        try:
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
-                env=subprocess_env,
-            )
-        except subprocess.TimeoutExpired:
-            log(f"[ERROR] Timeout ({timeout}s) für {episode_url}")
-            return False
-        except Exception as e:
-            log(f"[ERROR] Subprocess-Fehler: {e}")
-            return False
     else:
         cmd = f"aniworld --language '{language}' -a Download -o '{output_path}' {episode_url}"
-        log(f"[CMD] {cmd}")
+    log(f"[CMD] {cmd}")
+
+    for attempt in range(1 + _CDN_403_MAX_RETRIES):
+        if attempt > 0:
+            log(f"[RETRY] HTTP 403 erkannt – warte {_CDN_403_RETRY_DELAY}s vor Versuch {attempt + 1} …")
+            time.sleep(_CDN_403_RETRY_DELAY)
+
         try:
             result = subprocess.run(
                 cmd,
@@ -161,22 +152,32 @@ def _run_aniworld_download(
             log(f"[ERROR] Subprocess-Fehler: {e}")
             return False
 
-    # Log Output
-    if result.stdout:
-        for line in result.stdout.strip().split("\n"):
-            if line.strip():
-                log(f"[ANIWORLD] {line.strip()}")
+        # Log Output
+        if result.stdout:
+            for line in result.stdout.strip().split("\n"):
+                if line.strip():
+                    log(f"[ANIWORLD] {line.strip()}")
 
-    if result.returncode != 0:
+        if result.returncode == 0:
+            # Kurz warten bis Dateisystem aufholt
+            time.sleep(3)
+            return True
+
+        # Fehlerausgabe prüfen
+        stderr_text = result.stderr or ""
         if result.stderr:
-            for line in result.stderr.strip().split("\n"):
+            for line in stderr_text.strip().split("\n"):
                 if line.strip():
                     log(f"[ANIWORLD-ERR] {line.strip()}")
+
+        # Bei HTTP 403 (CDN-Token abgelaufen) → Retry
+        if "HTTP error 403" in stderr_text or "403 Forbidden" in stderr_text:
+            if attempt < _CDN_403_MAX_RETRIES:
+                continue
+
         return False
 
-    # Kurz warten bis Dateisystem aufholt
-    time.sleep(3)
-    return True
+    return False
 
 
 def _select_language(
@@ -252,6 +253,14 @@ def _download_episode(
         # Sprachen unbekannt → komplette Kaskade
         cascading_languages = languages_config[:]
         log(f"[LANG] Sprachen unbekannt – verwende komplette Kaskade: {cascading_languages}")
+
+    # s.to unterstützt nur German Dub und English Dub
+    if scraper.is_sto(episode_url):
+        _sto_supported = {"German Dub", "English Dub"}
+        _removed = [l for l in cascading_languages if l not in _sto_supported]
+        cascading_languages = [l for l in cascading_languages if l in _sto_supported]
+        if _removed:
+            log(f"[LANG] s.to: Nicht unterstützte Sprachen aus Kaskade entfernt: {_removed}")
 
     # Download: Sprachen-Kaskade (nur mit verfügbaren Sprachen)
     downloaded = False
