@@ -582,28 +582,27 @@ def _extract_sto_languages(element) -> List[str]:
 
     # Methode 1: SVG-Icons mit watch-language Klasse (moderne S.to-Struktur)
     for svg in element.find_all("svg", class_="watch-language"):
+        svg_classes = " ".join(svg.get("class", []))
         use = svg.find("use")
-        if not use:
-            continue
-        href = str(use.get("href") or use.get("xlink:href") or "")
-        
+        href = str(use.get("href") or use.get("xlink:href") or "") if use else ""
+        combined = (href + " " + svg_classes).lower()
+
         lang = None
-        # icon-flag-german, icon-flag-english, etc.
-        if "german" in href:
-            lang = "German Dub"
-        elif "english" in href:
+        # Auf s.to: german-flag = German Dub, english-flag = English Dub
+        # Sub-Varianten haben explizit '-sub' im Icon-Namen/Klasse
+        if "german-sub" in combined or "deutsch-sub" in combined:
+            lang = "German Sub"
+        elif "english-sub" in combined:
             lang = "English Sub"
-        # Falls später Sub-Icons hinzukommen
-        elif "sub" in href.lower():
-            if "german" in href:
-                lang = "German Sub"
-            elif "english" in href:
-                lang = "English Sub"
-        
+        elif "german" in combined:
+            lang = "German Dub"
+        elif "english" in combined:
+            lang = "English Dub"
+
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
-            log(f"[SCRAPER] S.to SVG erkannt: {href} → {lang}")
+            log(f"[SCRAPER] S.to SVG erkannt: {href or svg_classes} → {lang}")
 
     # Methode 2: Fallback für Flag-Images (ältere S.to-Struktur)
     if not langs:
@@ -611,14 +610,14 @@ def _extract_sto_languages(element) -> List[str]:
             src = img.get("src", "") or img.get("data-src", "")
             
             lang = None
-            if src.endswith("german.svg"):
-                lang = "German Dub"
-            elif src.endswith("english.svg"):
-                lang = "English Sub"
-            elif src.endswith("german-sub.svg") or src.endswith("deutsch-sub.svg"):
+            if src.endswith("german-sub.svg") or src.endswith("deutsch-sub.svg"):
                 lang = "German Sub"
             elif src.endswith("english-sub.svg"):
                 lang = "English Sub"
+            elif src.endswith("german.svg"):
+                lang = "German Dub"
+            elif src.endswith("english.svg"):
+                lang = "English Dub"
             
             if lang and lang not in seen:
                 seen.add(lang)
