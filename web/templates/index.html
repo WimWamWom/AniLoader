@@ -23,11 +23,11 @@
 <!-- Tab-Bar -->
 <nav class="tab-bar">
   <div class="tab-container">
-    <button class="tab-btn active" data-tab="tab-download">📥 Download</button>
-    <button class="tab-btn" data-tab="tab-add">➕ Hinzufügen</button>
-    <button class="tab-btn" data-tab="tab-db">📂 Datenbank</button>
-    <button class="tab-btn" data-tab="tab-logs">📜 Logs</button>
-    <button class="tab-btn" data-tab="tab-settings">⚙️ Einstellungen</button>
+    <button class="tab-btn active" data-tab="tab-download">📥 <span class="tab-label">Download</span></button>
+    <button class="tab-btn" data-tab="tab-add">➕ <span class="tab-label">Hinzufügen</span></button>
+    <button class="tab-btn" data-tab="tab-db">📂 <span class="tab-label">Datenbank</span></button>
+    <button class="tab-btn" data-tab="tab-logs">📜 <span class="tab-label">Logs</span></button>
+    <button class="tab-btn" data-tab="tab-settings">⚙️ <span class="tab-label">Einstellungen</span></button>
   </div>
 </nav>
 
@@ -106,7 +106,7 @@
   <!-- Link einfügen -->
   <div class="card">
     <h3>Link hinzufügen</h3>
-    <div style="display:flex; gap:8px; align-items:center;">
+    <div class="input-row">
       <input type="url" id="add-url" placeholder="https://aniworld.to/anime/stream/... oder https://s.to/serie/stream/...">
       <button class="btn btn-primary" onclick="addLink()">Hinzufügen</button>
     </div>
@@ -127,7 +127,7 @@
   <!-- Suche -->
   <div class="card">
     <h3>Suche</h3>
-    <div style="display:flex; gap:8px; margin-bottom:12px;">
+    <div class="input-row" style="margin-bottom:12px;">
       <input type="text" id="search-query" placeholder="Suchbegriff..." autocomplete="off">
       <select id="search-platform" style="width:auto; min-width:140px;">
         <option value="both">Beide</option>

@@ -375,6 +375,13 @@ header .status-badge {
 .btn-sm { padding: 4px 10px; font-size: 0.75em; border-radius: 5px; }
 .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* ─── Input Row Utility ─── */
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 /* ─── Inputs ─── */
 input[type="text"], input[type="number"], input[type="url"],
 select, textarea {
@@ -740,10 +747,6 @@ input::placeholder { color: var(--text-muted); }
   margin-bottom: 10px;
   padding-left: 214px;
   line-height: 1.4;
-}
-
-@media (max-width: 768px) {
-  .setting-hint { padding-left: 0; }
 }
 
 /* ─── Language Sortable ─── */
@@ -1218,22 +1221,100 @@ input[type="checkbox"] {
 }
 
 /* ─── Responsive ─── */
+
+/* Tablet (≤ 768 px) */
 @media (max-width: 768px) {
-  header { padding: 10px 16px; }
-  .tab-bar { padding: 0 16px; overflow-x: auto; }
-  .tab-btn { padding: 10px 12px; font-size: 0.78em; flex-shrink: 0; }
-  .progress-grid { grid-template-columns: repeat(2, 1fr); }
-  .setting-row { flex-direction: column; align-items: flex-start; }
-  .setting-row label { min-width: auto; }
-  .tab-content { padding: 16px; }
-  .card { padding: 16px; }
+
+  /* Header */
+  header { padding: 10px 14px; gap: 10px; }
+  #disk-info { display: none; }
+
+  /* Tab-Bar: horizontal scrollbar, visuell unsichtbar */
+  .tab-bar {
+    padding: 8px 14px;
+    top: 53px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab-container { flex-shrink: 0; }
+  .tab-btn { padding: 8px 14px; font-size: 0.78em; flex-shrink: 0; }
+
+  /* Content / Cards */
+  .tab-content { padding: 14px; }
+  .card { padding: 14px 16px; }
+
+  /* Buttons */
+  .btn { min-height: 40px; }
   .btn-group { gap: 6px; }
+
+  /* Progress Grid: 2 Spalten */
+  .progress-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+  /* Input-Zeilen: umbrechen, URL/Text-Input nimmt volle Breite */
+  .input-row { flex-wrap: wrap; }
+  .input-row > input[type="url"],
+  .input-row > input[type="text"] { flex: 1 1 100%; }
+  .input-row > select { flex: 1 1 auto; min-width: 0; }
+
+  /* Settings: Spalten-Layout */
+  .setting-row { flex-direction: column; align-items: flex-start; }
+  .setting-row label:not(.toggle-switch) { min-width: auto; }
+  /* Toggle-Zeilen horizontal halten */
+  .setting-row:has(> label.toggle-switch) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .setting-hint { padding-left: 0; }
+
+  /* Log-Filterleiste */
+  .log-filter-bar { flex-direction: column; align-items: stretch; }
+  .log-filter-bar input { width: 100%; min-width: 0; }
+  .log-level-buttons { flex-wrap: wrap; }
+
+  /* DB-Filter */
+  .db-filters select { flex: 1; min-width: 110px; }
+
+  /* Modal */
+  .modal { width: 96vw; max-height: 88vh; }
 }
 
+/* Smartphone (≤ 480 px) */
 @media (max-width: 480px) {
+
+  /* Header */
+  header h1 { font-size: 0.95em; }
+
+  /* Tab-Beschriftung ausblenden → nur Emoji sichtbar */
+  .tab-label { display: none; }
+  .tab-btn { padding: 9px 13px; font-size: 1.05em; letter-spacing: 0; }
+
+  /* Content / Cards */
+  .tab-content { padding: 10px; }
+  .card { padding: 12px; margin-bottom: 10px; }
+
+  /* Progress */
   .progress-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .progress-item { padding: 12px 10px; }
-  .progress-item .value { font-size: 1.4em; }
-  .tab-content { padding: 12px; }
-  .card { padding: 14px; margin-bottom: 10px; }
+  .progress-item { padding: 12px 8px; }
+  .progress-item .value { font-size: 1.35em; }
+
+  /* Download-Buttons: je ~50% Breite */
+  .btn-group > .btn {
+    flex: 1 1 calc(50% - 4px);
+    justify-content: center;
+  }
+
+  /* Log */
+  .log-formatted { max-height: calc(100vh - 260px); }
+
+  /* DB-Tabelle: kompaktere Darstellung, unwichtige Spalten ausblenden */
+  .db-table { font-size: 0.78em; }
+  .db-table thead th, .db-table tbody td { padding: 7px 8px; }
+  .db-col-url, .db-col-missing-de { display: none; }
+
+  /* Search-Poster kleiner */
+  .search-poster-wrap { width: 36px; height: 52px; }
 }
