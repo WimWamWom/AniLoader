@@ -241,6 +241,11 @@ def _download_episode(
         ep_langs = scraper.get_episode_languages(episode_url)
         log(f"[LANG] Von Episode-Seite gescraped: {ep_langs}")
 
+    # S.to: Keine Sprache gefunden → Episode nicht verfügbar, überspringen
+    if scraper.is_sto(episode_url) and not ep_langs:
+        log(f"[SKIP] S{season:02d}E{episode_num:03d} – keine Sprache → nicht verfügbar")
+        return "no_language"
+
     # Sprachen zur Kaskade vorbereiten
     cascading_languages = []
     if ep_langs:
@@ -382,15 +387,18 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                 elif result == "no_german":
                     new_missing_german.append(ep["url"])
                     status["progress"]["downloaded_episodes"] += 1
+                elif result == "no_language":
+                    status["progress"]["skipped_episodes"] += 1
 
-                # Progress in DB speichern
-                if season == 0:
-                    db.update_anime(data_folder, anime["id"], last_film=ep["episode"])
-                else:
-                    db.update_anime(
-                        data_folder, anime["id"],
-                        last_season=season, last_episode=ep["episode"],
-                    )
+                # Progress in DB speichern (nicht bei nicht verfügbarer Sprache)
+                if result != "no_language":
+                    if season == 0:
+                        db.update_anime(data_folder, anime["id"], last_film=ep["episode"])
+                    else:
+                        db.update_anime(
+                            data_folder, anime["id"],
+                            last_season=season, last_episode=ep["episode"],
+                        )
 
         # Status Updates
         all_missing = missing_german + new_missing_german
@@ -525,6 +533,8 @@ def _run_new(cfg: dict, data_folder: str) -> None:
                     status["progress"]["skipped_episodes"] += 1
                 elif result == "failed":
                     status["progress"]["failed_episodes"] += 1
+                elif result == "no_language":
+                    status["progress"]["skipped_episodes"] += 1
 
         if has_new:
             log(f"[NEW] Neue Episoden heruntergeladen für {anime['title']}")
