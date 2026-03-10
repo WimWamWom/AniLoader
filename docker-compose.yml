@@ -11,6 +11,9 @@ services:
       # config.yaml: data.folder = /app/data
       - ./data:/app/data
 
+      # ── Web-Interface (Live-Reload ohne Rebuild) ──
+      - ./web:/app/web
+
       # ── Download-Verzeichnis (storage.mode: standard) ──
       # config.yaml: storage.download_path = /app/Downloads
       - ./Downloads:/app/Downloads

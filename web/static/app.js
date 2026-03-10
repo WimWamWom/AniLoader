@@ -163,7 +163,10 @@ async function refreshLog() {
     const el = $('#log-output-mini');
     if (el) {
       const lines = (data.log || '').trim().split('\n');
-      el.textContent = lines.slice(-15).join('\n');
+      el.textContent = lines.slice(-15).map(l =>
+        l.replace(/\[(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})\]/g,
+          (_, y, mo, d, t) => `[${t} ${d}.${mo}.${y.slice(2)}]`)
+      ).join('\n');
       el.scrollTop = el.scrollHeight;
     }
   } catch (e) { /* ignore */ }
@@ -266,7 +269,9 @@ function renderFormattedLog() {
   // Render
   const html = filtered.map(p => {
     if (p.isSeparator) {
-      return `<div class="log-line log-separator">${escH(p.raw)}</div>`;
+      const sepText = p.raw.replace(/(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})/g,
+        (_, y, mo, d, t) => `${t} ${d}.${mo}.${y.slice(2)}`);
+      return `<div class="log-line log-separator">${escH(sepText)}</div>`;
     }
 
     const ts = p.timestamp
