@@ -80,9 +80,9 @@ async function refreshStatus() {
     updateText('#dl-title', s.current_title || '–');
     updateText('#dl-season', s.current_season != null ? `S${String(s.current_season).padStart(2,'0')}` : '–');
     updateText('#dl-episode', s.current_episode != null ? `E${String(s.current_episode).padStart(3,'0')}` : '–');
-    updateText('#dl-started', s.started_at || '–');
-    updateText('#dl-series-started', s.series_started_at || '–');
-    updateText('#dl-episode-started', s.episode_started_at || '–');
+    updateText('#dl-started', s.started_at ? formatTimestamp(s.started_at) : '–');
+    updateText('#dl-series-started', s.series_started_at ? formatTimestamp(s.series_started_at) : '–');
+    updateText('#dl-episode-started', s.episode_started_at ? formatTimestamp(s.episode_started_at) : '–');
 
     const p = s.progress || {};
     updateText('#prog-series', `${p.current_series_index || 0}/${p.total_series || 0}`);
@@ -122,6 +122,13 @@ async function refreshStatus() {
   } catch (e) {
     console.error('Status refresh error:', e);
   }
+}
+
+function formatTimestamp(ts) {
+  if (!ts) return ts;
+  const m = ts.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})$/);
+  if (!m) return ts;
+  return `${m[4]} ${m[3]}.${m[2]}.${m[1].slice(2)}`;
 }
 
 // Smooth text update – only update DOM if value changed, with subtle flash
@@ -263,7 +270,7 @@ function renderFormattedLog() {
     }
 
     const ts = p.timestamp
-      ? `<span class="log-ts">${escH(p.timestamp)}</span>`
+      ? `<span class="log-ts">${escH(formatTimestamp(p.timestamp))}</span>`
       : '';
 
     let tagHtml = '';
