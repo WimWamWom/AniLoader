@@ -2,6 +2,13 @@
 
 const API = '';  // Relativer Pfad (same origin)
 
+// ──────────────────────── Intervalle (anpassbar) ────────────────────────
+const INTERVAL_STATUS_IDLE    = 10000;  // ms – Status-Polling im Leerlauf
+const INTERVAL_STATUS_RUNNING =  2000;  // ms – Status-Polling beim Download
+const INTERVAL_LOG_MINI       =  3000;  // ms – Mini-Log im Download-Tab
+const INTERVAL_LOG_FULL       =  500;  // ms – Vollständiger Log im Logs-Tab
+const INTERVAL_DISK           = 60000;  // ms – Speicherplatz-Anzeige
+
 // ──────────────────────── Hilfsfunktionen ────────────────────────
 
 async function api(path, opts = {}) {
@@ -104,12 +111,12 @@ async function refreshStatus() {
       }
     }
 
-    // Adaptives Poll-Intervall: 2s beim Laden, 10s im Leerlauf
+    // Adaptives Poll-Intervall: schnell beim Laden, langsam im Leerlauf
     const nowActive = isRunning;
     if (nowActive !== _statusPollActive) {
       _statusPollActive = nowActive;
       clearInterval(statusInterval);
-      statusInterval = setInterval(refreshStatus, nowActive ? 2000 : 10000);
+      statusInterval = setInterval(refreshStatus, nowActive ? INTERVAL_STATUS_RUNNING : INTERVAL_STATUS_IDLE);
     }
 
   } catch (e) {
@@ -160,6 +167,17 @@ async function refreshLog() {
 let logLevel = 'all';       // 'all' | 'error' | 'warn' | 'ok' | 'dl'
 let rawLogText = '';
 let logAutoRefreshInterval = null;
+let _logAutoScroll = true;  // Auto-Scroll Zustand
+
+function toggleAutoScroll() {
+  _logAutoScroll = !_logAutoScroll;
+  const cb = $('#log-autoscroll');
+  if (cb) cb.checked = _logAutoScroll;
+  if (_logAutoScroll) {
+    const container = $('#log-output-full');
+    if (container) container.scrollTop = container.scrollHeight;
+  }
+}
 
 // Tag → CSS-Klasse Mapping
 const TAG_CLASSES = {
@@ -1014,16 +1032,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Status-Polling
   refreshStatus();
-  statusInterval = setInterval(refreshStatus, 5000);
+  statusInterval = setInterval(refreshStatus, INTERVAL_STATUS_IDLE);
 
   // Mini-Log Polling
   refreshLog();
-  setInterval(refreshLog, 8000);
+  setInterval(refreshLog, INTERVAL_LOG_MINI);
 
   // Log-Auto-Refresh (Logs-Tab) – nur aktualisieren wenn Tab aktiv
   logAutoRefreshInterval = setInterval(() => {
     if ($('#tab-logs')?.classList.contains('active')) refreshFullLog();
-  }, 8000);
+  }, INTERVAL_LOG_FULL);
+
+  // Auto-Scroll deaktivieren wenn User manuell nach oben scrollt
+  const logContainer = $('#log-output-full');
+  if (logContainer) {
+    let _userScrolling = false;
+    logContainer.addEventListener('wheel', () => { _userScrolling = true; });
+    logContainer.addEventListener('touchmove', () => { _userScrolling = true; });
+    logContainer.addEventListener('scroll', () => {
+      if (!_userScrolling) return;
+      _userScrolling = false;
+      const atBottom = logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 40;
+      if (!atBottom && _logAutoScroll) {
+        _logAutoScroll = false;
+        const cb = $('#log-autoscroll');
+        if (cb) cb.checked = false;
+      }
+    });
+  }
 
   // Disk Info – periodisch aktualisieren (alle 60s)
   function refreshDiskInfo() {
@@ -1036,7 +1072,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).catch(() => {});
   }
   refreshDiskInfo();
-  setInterval(refreshDiskInfo, 60000);
+  setInterval(refreshDiskInfo, INTERVAL_DISK);
 
   // Enter-Key für Suche (alle Ergebnisse)
   $('#search-query')?.addEventListener('keydown', e => {

@@ -1333,6 +1333,13 @@ input[type="checkbox"] {
   pointer-events: none;
 }
 
+/* ─── Auto-Scroll Button ─── */
+.btn-autoscroll.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: rgba(108, 138, 255, 0.3);
+}
+
 /* ─── DB Count Badge ─── */
 .db-count-badge {
   display: inline-block;
