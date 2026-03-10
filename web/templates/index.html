@@ -18,6 +18,7 @@
   <h1>AniLoader</h1>
   <span id="status-badge" class="status-badge badge-idle">idle</span>
   <span id="disk-info"></span>
+  <div id="download-progress-bar" class="download-progress-bar"></div>
 </header>
 
 <!-- Tab-Bar -->
@@ -62,9 +63,24 @@
         <div class="value"><span id="dl-season">–</span> <span id="dl-episode">–</span></div>
         <div class="label">Staffel / Episode</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Zeitstempel -->
+  <div class="card">
+    <h3>Zeitstempel</h3>
+    <div class="progress-grid">
       <div class="progress-item">
         <div class="value" id="dl-started" style="font-size:0.9em;">–</div>
-        <div class="label">Gestartet</div>
+        <div class="label">Lauf gestartet</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="dl-series-started" style="font-size:0.9em;">–</div>
+        <div class="label">Serie gestartet</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="dl-episode-started" style="font-size:0.9em;">–</div>
+        <div class="label">Episode gestartet</div>
       </div>
     </div>
   </div>
@@ -144,7 +160,10 @@
 <!-- ═══════════════════════ Datenbank Tab ═══════════════════════ -->
 <div id="tab-db" class="tab-content">
   <div class="card">
-    <h3>Datenbank</h3>
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+      <h3 style="margin-bottom:0;">Datenbank</h3>
+      <span id="db-count" class="db-count-badge"></span>
+    </div>
 
     <!-- Suchleiste -->
     <input type="text" id="db-search" class="db-search-input" placeholder="&#128269; Suche nach Titel oder URL..." oninput="loadDatabase()">
@@ -415,6 +434,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20260305"></script>
+<script src="/static/app.js?v=20260310"></script>
 </body>
 </html>

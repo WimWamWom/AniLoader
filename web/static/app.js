@@ -54,6 +54,7 @@ function initTabs() {
 // ──────────────────────── Download Tab ────────────────────────
 
 let statusInterval = null;
+let _statusPollActive = false;  // adaptive polling state
 
 async function refreshStatus() {
   try {
@@ -73,6 +74,8 @@ async function refreshStatus() {
     updateText('#dl-season', s.current_season != null ? `S${String(s.current_season).padStart(2,'0')}` : '–');
     updateText('#dl-episode', s.current_episode != null ? `E${String(s.current_episode).padStart(3,'0')}` : '–');
     updateText('#dl-started', s.started_at || '–');
+    updateText('#dl-series-started', s.series_started_at || '–');
+    updateText('#dl-episode-started', s.episode_started_at || '–');
 
     const p = s.progress || {};
     updateText('#prog-series', `${p.current_series_index || 0}/${p.total_series || 0}`);
@@ -84,6 +87,30 @@ async function refreshStatus() {
     const isRunning = s.status === 'running' || s.status === 'stopping';
     $$('.btn-start').forEach(b => b.disabled = isRunning);
     $('#btn-stop').disabled = !isRunning || s.status === 'stopping';
+
+    // Download-Fortschrittsbalken
+    const pb = $('#download-progress-bar');
+    if (pb) {
+      const total = p.total_series || 0;
+      if (isRunning && total > 0) {
+        pb.style.width = ((p.current_series_index || 0) / total * 100).toFixed(1) + '%';
+        pb.style.opacity = '1';
+      } else if (s.status === 'finished') {
+        pb.style.width = '100%';
+        pb.style.opacity = '1';
+      } else {
+        pb.style.width = '0%';
+        pb.style.opacity = '0';
+      }
+    }
+
+    // Adaptives Poll-Intervall: 2s beim Laden, 10s im Leerlauf
+    const nowActive = isRunning;
+    if (nowActive !== _statusPollActive) {
+      _statusPollActive = nowActive;
+      clearInterval(statusInterval);
+      statusInterval = setInterval(refreshStatus, nowActive ? 2000 : 10000);
+    }
 
   } catch (e) {
     console.error('Status refresh error:', e);
@@ -144,7 +171,8 @@ const TAG_CLASSES = {
   'STOP': 'tag-stop', 'SERIE': 'tag-serie', 'NEW': 'tag-new',
   'CHECK': 'tag-check', 'GERMAN': 'tag-german', 'ANIWORLD': 'tag-aniworld',
   'ANIWORLD-ERR': 'tag-error', 'AUTOSTART': 'tag-start', 'SUCHE': 'tag-scraper',
-  'LOG-ERROR': 'tag-error',
+  'LOG-ERROR': 'tag-error', 'LANG': 'tag-skip', 'RETRY': 'tag-warn',
+  'DOWNLOAD': 'tag-dl',
 };
 
 // Tag → Level-Gruppe (für Filter)
@@ -152,9 +180,9 @@ const TAG_TO_LEVEL = {
   'ERROR': 'error', 'FATAL': 'error', 'FAIL': 'error',
   'DB-ERROR': 'error', 'ANIWORLD-ERR': 'error', 'LOG-ERROR': 'error',
   'CONFIG-WARN': 'error',
-  'WARN': 'warn',
+  'WARN': 'warn', 'RETRY': 'warn',
   'OK': 'ok', 'DONE': 'ok', 'START': 'ok', 'NEW': 'ok',
-  'DL': 'dl', 'CMD': 'dl', 'ANIWORLD': 'dl',
+  'DL': 'dl', 'CMD': 'dl', 'ANIWORLD': 'dl', 'LANG': 'dl', 'DOWNLOAD': 'dl',
 };
 
 function parseLogLine(line) {
@@ -589,6 +617,8 @@ async function loadDatabase() {
 
 function renderDatabase(entries) {
   const tbody = $('#db-tbody');
+  const countEl = $('#db-count');
+  if (countEl) countEl.textContent = entries?.length ? `${entries.length} Einträge` : '';
   if (!entries || !entries.length) {
     tbody.innerHTML = '<tr><td colspan="9" class="db-empty">Keine Einträge gefunden</td></tr>';
     return;
@@ -990,19 +1020,23 @@ document.addEventListener('DOMContentLoaded', () => {
   refreshLog();
   setInterval(refreshLog, 8000);
 
-  // Log-Auto-Refresh (Logs-Tab)
-  logAutoRefreshInterval = setInterval(refreshFullLog, 8000);
+  // Log-Auto-Refresh (Logs-Tab) – nur aktualisieren wenn Tab aktiv
+  logAutoRefreshInterval = setInterval(() => {
+    if ($('#tab-logs')?.classList.contains('active')) refreshFullLog();
+  }, 8000);
 
-  // Disk Info – mit farbiger Anzeige
-  api('/disk').then(d => {
-    const el = $('#disk-info');
-    if (el && d.free_gb !== undefined) {
+  // Disk Info – periodisch aktualisieren (alle 60s)
+  function refreshDiskInfo() {
+    api('/disk').then(d => {
+      const el = $('#disk-info');
+      if (!el || d.free_gb === undefined) return;
       const gb = parseFloat(d.free_gb);
       el.textContent = `💾 ${d.free_gb} GB frei`;
-      if (gb < 5) el.style.color = 'var(--danger)';
-      else if (gb < 20) el.style.color = 'var(--warning)';
-    }
-  });
+      el.style.color = gb < 5 ? 'var(--danger)' : gb < 20 ? 'var(--warning)' : '';
+    }).catch(() => {});
+  }
+  refreshDiskInfo();
+  setInterval(refreshDiskInfo, 60000);
 
   // Enter-Key für Suche (alle Ergebnisse)
   $('#search-query')?.addEventListener('keydown', e => {

@@ -44,6 +44,8 @@ status: Dict = {
     "current_episode": None,
     "current_is_film": False,
     "started_at": None,
+    "series_started_at": None,
+    "episode_started_at": None,
     "progress": {
         "total_series": 0,
         "completed_series": 0,
@@ -94,6 +96,8 @@ def _reset_status():
     status["current_episode"] = None
     status["current_is_film"] = False
     status["started_at"] = None
+    status["series_started_at"] = None
+    status["episode_started_at"] = None
     status["progress"] = {
         "total_series": 0,
         "completed_series": 0,
@@ -215,6 +219,7 @@ def _download_episode(
     status["current_season"] = season
     status["current_episode"] = episode_num
     status["current_is_film"] = is_film
+    status["episode_started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
     # Speicherplatz prüfen
     free_gb = get_free_space_gb(output_path)
@@ -331,6 +336,8 @@ def _run_default(cfg: dict, data_folder: str) -> None:
         status["current_title"] = anime["title"]
         status["current_id"] = anime["id"]
         status["current_url"] = anime["url"]
+        status["series_started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        status["episode_started_at"] = None
         status["progress"]["current_series_index"] = idx + 1
 
         base_url = scraper.get_base_url(anime["url"])
@@ -437,6 +444,8 @@ def _run_german(cfg: dict, data_folder: str) -> None:
         status["current_title"] = anime["title"]
         status["current_id"] = anime["id"]
         status["current_url"] = anime["url"]
+        status["series_started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        status["episode_started_at"] = None
         status["progress"]["current_series_index"] = idx + 1
 
         log(f"\n[GERMAN] {anime['title']} – {len(missing)} fehlende deutsche Episoden")
@@ -481,6 +490,8 @@ def _run_new(cfg: dict, data_folder: str) -> None:
         status["current_title"] = anime["title"]
         status["current_id"] = anime["id"]
         status["current_url"] = anime["url"]
+        status["series_started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        status["episode_started_at"] = None
         status["progress"]["current_series_index"] = idx + 1
 
         base_url = scraper.get_base_url(anime["url"])
@@ -561,6 +572,8 @@ def _run_check(cfg: dict, data_folder: str) -> None:
         status["current_title"] = anime["title"]
         status["current_id"] = anime["id"]
         status["current_url"] = anime["url"]
+        status["series_started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        status["episode_started_at"] = None
         status["progress"]["current_series_index"] = idx + 1
 
         base_url = scraper.get_base_url(anime["url"])

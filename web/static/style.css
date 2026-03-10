@@ -789,7 +789,7 @@ input::placeholder { color: var(--text-muted); }
 .log-selector {
   width: 100%;
   padding: 6px 10px;
-  background: var(--bg-subtle) !important;
+  background: var(--bg-elevated) !important;
   border: 1px solid var(--border) !important;
   color: var(--text) !important;
   border-radius: var(--radius);
@@ -800,11 +800,11 @@ input::placeholder { color: var(--text-muted); }
 .log-selector:focus {
   outline: none;
   border-color: var(--primary);
-  background: var(--card-bg) !important;
+  background: var(--bg-card) !important;
 }
 
 .log-selector option {
-  background: var(--card-bg) !important;
+  background: var(--bg-card) !important;
   color: var(--text) !important;
   padding: 4px 8px;
   border: none;
@@ -1317,4 +1317,32 @@ input[type="checkbox"] {
 
   /* Search-Poster kleiner */
   .search-poster-wrap { width: 36px; height: 52px; }
+}
+
+/* ─── Download Progress Bar ─── */
+.download-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  border-radius: 0 2px 0 0;
+  transition: width 0.8s ease, opacity 0.4s ease;
+  width: 0%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ─── DB Count Badge ─── */
+.db-count-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 12px;
+  font-size: 0.72em;
+  font-weight: 600;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  letter-spacing: 0.02em;
+  vertical-align: middle;
 }
