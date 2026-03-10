@@ -43,6 +43,8 @@ status: Dict = {
     "current_season": None,
     "current_episode": None,
     "current_is_film": False,
+    "total_seasons": 0,
+    "total_episodes_in_season": 0,
     "started_at": None,
     "series_started_at": None,
     "episode_started_at": None,
@@ -95,6 +97,8 @@ def _reset_status():
     status["current_season"] = None
     status["current_episode"] = None
     status["current_is_film"] = False
+    status["total_seasons"] = 0
+    status["total_episodes_in_season"] = 0
     status["started_at"] = None
     status["series_started_at"] = None
     status["episode_started_at"] = None
@@ -356,6 +360,7 @@ def _run_default(cfg: dict, data_folder: str) -> None:
 
         # Filme (season=0) als erstes laden
         seasons_ordered = ([0] if 0 in seasons else []) + [s for s in seasons if s != 0]
+        status["total_seasons"] = max((s for s in seasons if s != 0), default=0)
 
         for season in seasons_ordered:
             if _check_stop():
@@ -366,6 +371,7 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                 continue
 
             episodes = scraper.get_episodes_for_season(base_url, season)
+            status["total_episodes_in_season"] = len(episodes) if episodes else 0
             if not episodes:
                 label = "Filme" if season == 0 else f"Staffel {season}"
                 log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
@@ -502,6 +508,7 @@ def _run_new(cfg: dict, data_folder: str) -> None:
         seasons = scraper.get_season_numbers(anime["url"])
         if not seasons:
             continue
+        status["total_seasons"] = max((s for s in seasons if s != 0), default=0)
 
         has_new = False
 
@@ -510,6 +517,7 @@ def _run_new(cfg: dict, data_folder: str) -> None:
                 return
 
             episodes = scraper.get_episodes_for_season(base_url, season)
+            status["total_episodes_in_season"] = len(episodes) if episodes else 0
             if not episodes:
                 label = "Filme" if season == 0 else f"Staffel {season}"
                 log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
@@ -582,12 +590,14 @@ def _run_check(cfg: dict, data_folder: str) -> None:
         seasons = scraper.get_season_numbers(anime["url"])
         if not seasons:
             continue
+        status["total_seasons"] = max((s for s in seasons if s != 0), default=0)
 
         for season in seasons:
             if _check_stop():
                 return
 
             episodes = scraper.get_episodes_for_season(base_url, season)
+            status["total_episodes_in_season"] = len(episodes) if episodes else 0
             if not episodes:
                 label = "Filme" if season == 0 else f"Staffel {season}"
                 log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")

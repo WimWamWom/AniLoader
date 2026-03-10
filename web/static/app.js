@@ -80,6 +80,25 @@ async function refreshStatus() {
     updateText('#dl-title', s.current_title || '–');
     updateText('#dl-season', s.current_season != null ? `S${String(s.current_season).padStart(2,'0')}` : '–');
     updateText('#dl-episode', s.current_episode != null ? `E${String(s.current_episode).padStart(3,'0')}` : '–');
+
+    // Episode-Fortschrittsbalken
+    const totalSeasons = s.total_seasons || 0;
+    const totalEps = s.total_episodes_in_season || 0;
+    const curEp = s.current_episode || 0;
+    const epWrap = $('#dl-ep-progress-wrap');
+    const epBar  = $('#dl-ep-progress-bar');
+    if (totalSeasons > 0 && s.current_season != null) {
+      const sTotal = `S${String(totalSeasons).padStart(2, '0')}`;
+      const eTotal = totalEps > 0 ? `E${String(totalEps).padStart(3, '0')}` : '–––';
+      updateText('#dl-ep-total', `von ${sTotal} ${eTotal}`);
+      if (epWrap) epWrap.style.display = '';
+      if (epBar && totalEps > 0) epBar.style.width = (curEp / totalEps * 100).toFixed(1) + '%';
+    } else {
+      updateText('#dl-ep-total', '');
+      if (epWrap) epWrap.style.display = 'none';
+      if (epBar) epBar.style.width = '0%';
+    }
+
     updateText('#dl-started', s.started_at ? formatTimestamp(s.started_at) : '–');
     updateText('#dl-series-started', s.series_started_at ? formatTimestamp(s.series_started_at) : '–');
     updateText('#dl-episode-started', s.episode_started_at ? formatTimestamp(s.episode_started_at) : '–');
