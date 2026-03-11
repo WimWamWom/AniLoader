@@ -349,9 +349,10 @@ def _run_default(cfg: dict, data_folder: str) -> None:
         status["progress"]["current_series_index"] = idx + 1
 
         base_url = scraper.get_base_url(anime["url"])
-        log(f"{'='*60}")
-        log(f"[SERIE] {anime['title']} – {base_url}")
-        log(f"{'='*60}")
+        start_msg = f"[SERIE] {anime['title']} – {base_url}"
+        log(f"{'='*len(start_msg)}")
+        log(start_msg)
+        log(f"{'='*len(start_msg)}")
 
         seasons = scraper.get_season_numbers(anime["url"])
         if not seasons:
