@@ -81,18 +81,25 @@ async function refreshStatus() {
     updateText('#dl-season', s.current_season != null ? `S${String(s.current_season).padStart(2,'0')}` : '–');
     updateText('#dl-episode', s.current_episode != null ? `E${String(s.current_episode).padStart(3,'0')}` : '–');
 
-    // Episode-Fortschrittsbalken
+    // Episode-Fortschrittsbalken (Gesamtfortschritt über alle Staffeln)
     const totalSeasons = s.total_seasons || 0;
     const totalEps = s.total_episodes_in_season || 0;
     const curEp = s.current_episode || 0;
+    const totalOverall = s.total_episodes_overall || 0;
+    const completedOverall = s.completed_episodes_overall || 0;
     const epWrap = $('#dl-ep-progress-wrap');
     const epBar  = $('#dl-ep-progress-bar');
     if (totalSeasons > 0 && s.current_season != null) {
-      const sTotal = `S${String(totalSeasons).padStart(2, '0')}`;
-      const eTotal = totalEps > 0 ? `E${String(totalEps).padStart(3, '0')}` : '–––';
-      updateText('#dl-ep-total', `von ${sTotal} ${eTotal}`);
+      const sCur  = `S${String(s.current_season).padStart(2, '0')}`;
+      const eCur  = `E${String(curEp).padStart(3, '0')}`;
+      const sMax  = `S${String(totalSeasons).padStart(2, '0')}`;
+      const eMax  = totalEps > 0 ? `E${String(totalEps).padStart(3, '0')}` : '–––';
+      updateText('#dl-ep-total', `${sCur}${eCur} von ${sMax}${eMax}`);
       if (epWrap) epWrap.style.display = '';
-      if (epBar && totalEps > 0) epBar.style.width = (curEp / totalEps * 100).toFixed(1) + '%';
+      if (epBar && totalOverall > 0)
+        epBar.style.width = (completedOverall / totalOverall * 100).toFixed(1) + '%';
+      else if (epBar && totalEps > 0)
+        epBar.style.width = (curEp / totalEps * 100).toFixed(1) + '%';
     } else {
       updateText('#dl-ep-total', '');
       if (epWrap) epWrap.style.display = 'none';

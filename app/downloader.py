@@ -45,6 +45,8 @@ status: Dict = {
     "current_is_film": False,
     "total_seasons": 0,
     "total_episodes_in_season": 0,
+    "total_episodes_overall": 0,
+    "completed_episodes_overall": 0,
     "started_at": None,
     "series_started_at": None,
     "episode_started_at": None,
@@ -99,6 +101,8 @@ def _reset_status():
     status["current_is_film"] = False
     status["total_seasons"] = 0
     status["total_episodes_in_season"] = 0
+    status["total_episodes_overall"] = 0
+    status["completed_episodes_overall"] = 0
     status["started_at"] = None
     status["series_started_at"] = None
     status["episode_started_at"] = None
@@ -362,6 +366,16 @@ def _run_default(cfg: dict, data_folder: str) -> None:
         seasons_ordered = ([0] if 0 in seasons else []) + [s for s in seasons if s != 0]
         status["total_seasons"] = max((s for s in seasons if s != 0), default=0)
 
+        # Pre-fetch aller Episodenlisten für Gesamtfortschritt
+        all_eps_by_season: Dict[int, List] = {}
+        for _s in seasons_ordered:
+            if _s != 0 and _s < anime.get("last_season", 0):
+                all_eps_by_season[_s] = []
+                continue
+            all_eps_by_season[_s] = scraper.get_episodes_for_season(base_url, _s) or []
+        status["total_episodes_overall"] = sum(len(v) for v in all_eps_by_season.values())
+        status["completed_episodes_overall"] = 0
+
         for season in seasons_ordered:
             if _check_stop():
                 return
@@ -370,8 +384,8 @@ def _run_default(cfg: dict, data_folder: str) -> None:
             if season != 0 and season < anime.get("last_season", 0):
                 continue
 
-            episodes = scraper.get_episodes_for_season(base_url, season)
-            status["total_episodes_in_season"] = len(episodes) if episodes else 0
+            episodes = all_eps_by_season.get(season, [])
+            status["total_episodes_in_season"] = len(episodes)
             if not episodes:
                 label = "Filme" if season == 0 else f"Staffel {season}"
                 log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
@@ -384,11 +398,14 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                 # Überspringe bereits heruntergeladene Episoden
                 if season != 0:
                     if season == anime.get("last_season", 0) and ep["episode"] <= anime.get("last_episode", 0):
+                        status["completed_episodes_overall"] += 1
                         continue
                 elif ep["episode"] <= anime.get("last_film", 0):
+                    status["completed_episodes_overall"] += 1
                     continue
 
                 result = _download_episode(cfg, data_folder, anime, season, ep)
+                status["completed_episodes_overall"] += 1
 
                 if result == "downloaded":
                     status["progress"]["downloaded_episodes"] += 1
@@ -459,6 +476,8 @@ def _run_german(cfg: dict, data_folder: str) -> None:
         still_missing: List[str] = []
         output_path = get_download_path(cfg, anime["url"])
         timeout = cfg.get("download", {}).get("timeout_seconds", 900)
+        status["total_episodes_overall"] = len(missing)
+        status["completed_episodes_overall"] = 0
 
         for episode_url in missing:
             if _check_stop():
@@ -472,6 +491,7 @@ def _run_german(cfg: dict, data_folder: str) -> None:
                 log(f"[SKIP] German Dub noch nicht verfügbar: {episode_url}")
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
+            status["completed_episodes_overall"] += 1
 
         db.set_missing_german_episodes(data_folder, anime["id"], still_missing)
         if not still_missing:
@@ -510,14 +530,21 @@ def _run_new(cfg: dict, data_folder: str) -> None:
             continue
         status["total_seasons"] = max((s for s in seasons if s != 0), default=0)
 
+        # Pre-fetch aller Episodenlisten für Gesamtfortschritt
+        all_eps_by_season: Dict[int, List] = {}
+        for _s in seasons:
+            all_eps_by_season[_s] = scraper.get_episodes_for_season(base_url, _s) or []
+        status["total_episodes_overall"] = sum(len(v) for v in all_eps_by_season.values())
+        status["completed_episodes_overall"] = 0
+
         has_new = False
 
         for season in seasons:
             if _check_stop():
                 return
 
-            episodes = scraper.get_episodes_for_season(base_url, season)
-            status["total_episodes_in_season"] = len(episodes) if episodes else 0
+            episodes = all_eps_by_season.get(season, [])
+            status["total_episodes_in_season"] = len(episodes)
             if not episodes:
                 label = "Filme" if season == 0 else f"Staffel {season}"
                 log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
@@ -530,13 +557,17 @@ def _run_new(cfg: dict, data_folder: str) -> None:
                 # Nur neue Episoden (nach dem letzten bekannten Stand)
                 if season == 0:
                     if ep["episode"] <= last_film:
+                        status["completed_episodes_overall"] += 1
                         continue
                 elif season < last_season:
+                    status["completed_episodes_overall"] += 1
                     continue
                 elif season == last_season and ep["episode"] <= last_episode:
+                    status["completed_episodes_overall"] += 1
                     continue
 
                 result = _download_episode(cfg, data_folder, anime, season, ep)
+                status["completed_episodes_overall"] += 1
                 if result in ("downloaded", "no_german"):
                     has_new = True
                     status["progress"]["downloaded_episodes"] += 1
@@ -592,12 +623,19 @@ def _run_check(cfg: dict, data_folder: str) -> None:
             continue
         status["total_seasons"] = max((s for s in seasons if s != 0), default=0)
 
+        # Pre-fetch aller Episodenlisten für Gesamtfortschritt
+        all_eps_by_season: Dict[int, List] = {}
+        for _s in seasons:
+            all_eps_by_season[_s] = scraper.get_episodes_for_season(base_url, _s) or []
+        status["total_episodes_overall"] = sum(len(v) for v in all_eps_by_season.values())
+        status["completed_episodes_overall"] = 0
+
         for season in seasons:
             if _check_stop():
                 return
 
-            episodes = scraper.get_episodes_for_season(base_url, season)
-            status["total_episodes_in_season"] = len(episodes) if episodes else 0
+            episodes = all_eps_by_season.get(season, [])
+            status["total_episodes_in_season"] = len(episodes)
             if not episodes:
                 label = "Filme" if season == 0 else f"Staffel {season}"
                 log(f"[WARN] Keine Episoden gefunden für {label} – überspringe")
@@ -614,12 +652,14 @@ def _run_check(cfg: dict, data_folder: str) -> None:
 
                 if existing and check_file_integrity(existing):
                     status["progress"]["skipped_episodes"] += 1
+                    status["completed_episodes_overall"] += 1
                     continue
 
                 if existing:
                     log(f"[CHECK] Defekte Datei: {existing.name} – lade erneut herunter")
 
                 result = _download_episode(cfg, data_folder, anime, season, ep)
+                status["completed_episodes_overall"] += 1
                 if result in ("downloaded", "no_german"):
                     status["progress"]["downloaded_episodes"] += 1
                 elif result == "failed":
