@@ -204,6 +204,14 @@ let logLevel = 'all';       // 'all' | 'error' | 'warn' | 'ok' | 'dl'
 let rawLogText = '';
 let logAutoRefreshInterval = null;
 let _logAutoScroll = true;  // Auto-Scroll Zustand
+let _parsedLines = [];       // Cache aller geparsten Zeilen
+let _renderedCount = 0;      // Anzahl bereits gerenderter Zeilen (ohne Filter)
+let _activeFilter = false;   // Ob zuletzt ein Filter aktiv war
+let _renderLogTimer = null;
+function debouncedRenderLog() {
+  clearTimeout(_renderLogTimer);
+  _renderLogTimer = setTimeout(() => renderFormattedLog(true), 250);
+}
 
 function toggleAutoScroll() {
   _logAutoScroll = !_logAutoScroll;
@@ -268,61 +276,83 @@ function matchesLevel(tag, level) {
   return tagLevel === level;
 }
 
-function renderFormattedLog() {
+function renderLineHTML(p) {
+  if (p.isSeparator) {
+    const sepText = p.raw.replace(/(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})/g,
+      (_, y, mo, d, t) => `${t} ${d}.${mo}.${y.slice(2)}`);
+    return `<div class="log-line log-separator">${escH(sepText)}</div>`;
+  }
+  const ts = p.timestamp
+    ? `<span class="log-ts">${escH(formatTimestamp(p.timestamp))}</span>`
+    : '';
+  let tagHtml = '';
+  if (p.tag) {
+    const cls = TAG_CLASSES[p.tag.toUpperCase()] || TAG_CLASSES[p.tag.split('-')[0]?.toUpperCase()] || 'tag-default';
+    tagHtml = `<span class="log-tag ${cls}">${escH(p.tag)}</span>`;
+  }
+  const msg = highlightMessage(p.message || '', p.tag);
+  return `<div class="log-line">${ts}${tagHtml}<span class="log-msg">${msg}</span></div>`;
+}
+
+function renderFormattedLog(forceFullRender = false) {
   const container = $('#log-output-full');
   if (!container) return;
 
   const filterText = ($('#log-filter')?.value || '').toLowerCase();
+  const hasFilter = filterText.length > 0 || logLevel !== 'all';
   const lines = rawLogText.trim().split('\n').filter(l => l.trim());
 
-  if (!lines.length || (lines.length === 1 && !lines[0].trim())) {
+  if (!lines.length) {
     container.innerHTML = '<span style="color:#666">Keine Logs vorhanden.</span>';
     updateLogStats([]);
+    _parsedLines = [];
+    _renderedCount = 0;
     return;
   }
 
-  const parsed = lines.map(parseLogLine);
+  // Nur neue Zeilen parsen und an Cache anhängen
+  if (lines.length > _parsedLines.length) {
+    const newParsed = lines.slice(_parsedLines.length).map(parseLogLine);
+    _parsedLines = _parsedLines.concat(newParsed);
+  } else if (lines.length < _parsedLines.length) {
+    // Log wurde zurückgesetzt (neuer Lauf / andere Datei geladen)
+    _parsedLines = lines.map(parseLogLine);
+    _renderedCount = 0;
+    forceFullRender = true;
+  }
 
-  // Filter
-  const filtered = parsed.filter(p => {
-    // Level filter
-    if (logLevel !== 'all' && !matchesLevel(p.tag, logLevel) && !p.isSeparator) return false;
-    // Text filter
-    if (filterText && !p.raw.toLowerCase().includes(filterText)) return false;
-    return true;
-  });
+  // Filter-Zustand hat sich geändert → voll neu rendern
+  if (hasFilter !== _activeFilter) forceFullRender = true;
+  _activeFilter = hasFilter;
 
-  // Render
-  const html = filtered.map(p => {
-    if (p.isSeparator) {
-      const sepText = p.raw.replace(/(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})/g,
-        (_, y, mo, d, t) => `${t} ${d}.${mo}.${y.slice(2)}`);
-      return `<div class="log-line log-separator">${escH(sepText)}</div>`;
+  if (forceFullRender || hasFilter || _renderedCount === 0) {
+    // Vollständiger Re-render (bei Filter oder erstem Laden)
+    const display = hasFilter
+      ? _parsedLines.filter(p => {
+          if (logLevel !== 'all' && !matchesLevel(p.tag, logLevel) && !p.isSeparator) return false;
+          if (filterText && !p.raw.toLowerCase().includes(filterText)) return false;
+          return true;
+        })
+      : _parsedLines;
+
+    container.innerHTML = display.map(renderLineHTML).join('')
+      || '<span style="color:#666">Keine passenden Eintr\u00e4ge.</span>';
+
+    if (!hasFilter) _renderedCount = _parsedLines.length;
+  } else {
+    // Inkrementell: nur neue Zeilen anhängen, DOM-Knoten bleiben unberührt
+    const newLines = _parsedLines.slice(_renderedCount);
+    if (newLines.length > 0) {
+      container.insertAdjacentHTML('beforeend', newLines.map(renderLineHTML).join(''));
+      _renderedCount = _parsedLines.length;
     }
+  }
 
-    const ts = p.timestamp
-      ? `<span class="log-ts">${escH(formatTimestamp(p.timestamp))}</span>`
-      : '';
-
-    let tagHtml = '';
-    if (p.tag) {
-      const cls = TAG_CLASSES[p.tag.toUpperCase()] || TAG_CLASSES[p.tag.split('-')[0]?.toUpperCase()] || 'tag-default';
-      tagHtml = `<span class="log-tag ${cls}">${escH(p.tag)}</span>`;
-    }
-
-    const msg = highlightMessage(p.message || '', p.tag);
-
-    return `<div class="log-line">${ts}${tagHtml}<span class="log-msg">${msg}</span></div>`;
-  }).join('');
-
-  container.innerHTML = html || '<span style="color:#666">Keine passenden Eintr\u00e4ge.</span>';
-
-  // Auto-scroll
   if ($('#log-autoscroll')?.checked) {
     container.scrollTop = container.scrollHeight;
   }
 
-  updateLogStats(parsed);
+  updateLogStats(_parsedLines);
 }
 
 function highlightMessage(msg, tag) {
@@ -364,14 +394,14 @@ function setLogLevel(level) {
   $$('.log-level-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.level === level);
   });
-  renderFormattedLog();
+  renderFormattedLog(true);
 }
 
 async function refreshFullLog() {
   try {
     const data = await api('/last_run');
     rawLogText = data.log || '';
-    renderFormattedLog();
+    renderFormattedLog(false);
   } catch (e) {
     const container = $('#log-output-full');
     if (container) container.innerHTML = '<span style="color:var(--danger)">Logs konnten nicht geladen werden.</span>';
@@ -458,7 +488,7 @@ async function loadSelectedLog() {
       // Archivierter Log
       const data = await api(`/archived_logs/${encodeURIComponent(selectedLog)}`);
       rawLogText = data.content || '';
-      renderFormattedLog();
+      renderFormattedLog(true);  // Neue Datei → immer voll neu rendern
       
       // Auto-Refresh deaktivieren für archivierte Logs
       const autoRefresh = $('#log-auto-refresh');

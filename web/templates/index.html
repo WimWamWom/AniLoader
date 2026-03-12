@@ -240,7 +240,7 @@
       </div>
     </div>
     <div class="log-filter-bar">
-      <input type="text" id="log-filter" placeholder="Filter (z.B. ERROR, Serienname...)" oninput="renderFormattedLog()">
+      <input type="text" id="log-filter" placeholder="Filter (z.B. ERROR, Serienname...)" oninput="debouncedRenderLog()">
       <div class="log-level-buttons">
         <button class="log-level-btn active" data-level="all" onclick="setLogLevel('all')">Alle</button>
         <button class="log-level-btn" data-level="error" onclick="setLogLevel('error')">Fehler</button>
