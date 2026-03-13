@@ -108,7 +108,8 @@ def episode_already_downloaded(
     if folder_name:
         search_dirs = [base_path / folder_name / subdir]
     elif title_hint:
-        title_lower = title_hint.lower()[:15]
+        title_sanitized = re.sub(r'[<>:"/\\|?*]', '', title_hint)
+        title_lower = title_sanitized.lower()[:15]
         search_dirs = [
             d / subdir
             for d in base_path.iterdir()
@@ -165,7 +166,8 @@ def find_downloaded_file(
         search_roots = [base / folder_name]
     elif title_hint:
         # Titel bekannt → Unterordner filtern die den Titel-Anfang enthalten
-        title_lower = title_hint.lower()[:15]
+        title_sanitized = re.sub(r'[<>:"/\\|?*]', '', title_hint)
+        title_lower = title_sanitized.lower()[:15]
         search_roots = [
             d for d in base.iterdir()
             if d.is_dir() and title_lower in d.name.lower()
