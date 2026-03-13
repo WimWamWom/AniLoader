@@ -130,7 +130,8 @@ def main() -> None:
     if ok:
         print("\n✓ Gespeichert.\n")
         updated = db.get_anime_by_id(data_folder, ANIME_ID)
-        print(fmt_row(updated))
+        if updated:
+            print(fmt_row(updated))
     else:
         print("✗ Fehler beim Speichern.")
 
