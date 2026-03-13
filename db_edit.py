@@ -27,7 +27,21 @@ ANIME_ID = 1
 # Zum expliziten Löschen/Zurücksetzen: None (Text) oder 0 (Zahlen)
 
 BEHALTEN = object()  # Sentinel – diesen Wert bitte nicht ändern
-DELETE   = object()  # Sentinel – Feld leeren (NULL setzen)
+DELETE   = object()  # Sentinel – Feld auf Default-Wert zurücksetzen
+
+# Default-Werte gemäß DB-Schema
+FIELD_DEFAULTS = {
+    "complete":                0,
+    "deutsch_komplett":        0,
+    "deleted":                 0,
+    "last_season":             0,
+    "last_episode":            0,
+    "last_film":               0,
+    "fehlende_deutsch_folgen": "[]",
+    "folder_name":             None,
+    "title":                   None,
+    "url":                     None,
+}
 
 title               = BEHALTEN   # z.B. "My Hero Academia"
 url                 = BEHALTEN   # z.B. "https://aniworld.to/anime/stream/..."
@@ -106,7 +120,7 @@ def main() -> None:
     }
 
     updates = {
-        k: (None if v is DELETE else v)
+        k: (FIELD_DEFAULTS.get(k) if v is DELETE else v)
         for k, v in local_vars.items()
         if v is not BEHALTEN
     }
@@ -118,7 +132,7 @@ def main() -> None:
     print("\n── Geplante Änderungen ──────────────────────────────────")
     for k, v in updates.items():
         alt = row.get(k)
-        display_v = "<DELETE>" if v is None and local_vars[k] is DELETE else repr(v)
+        display_v = f"<DEFAULT: {repr(v)}>" if local_vars[k] is DELETE else repr(v)
         print(f"  {k:28} {repr(alt):30} → {display_v}")
 
     confirm = input("\nÜbernehmen? [j/N] ").strip().lower()
