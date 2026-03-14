@@ -7,6 +7,7 @@ falls DoH im Netzwerk blockiert ist (z.B. Firmennetz).
 """
 
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -19,6 +20,11 @@ from .logger import log
 
 _session: Optional[Session] = None
 _dns_mode: str = "doh"  # 'doh' | 'system'
+
+# Harter Wall-Clock-Timeout für jeden HTTP-Request (inkl. DNS-Auflösung).
+# niquests' timeout= greift nicht für die interne DoH-DNS-Phase –
+# daher sichern wir jeden Request zusätzlich via ThreadPoolExecutor ab.
+_HTTP_HARD_TIMEOUT: int = 30  # Sekunden
 
 
 def _get_session(force_new: bool = False) -> Session:
@@ -46,35 +52,67 @@ def _get_session(force_new: bool = False) -> Session:
 
 
 def _fetch(url: str) -> str:
-    """Fetch HTML für eine URL. Fällt auf System-DNS zurück, wenn DoH fehlschlägt."""
+    """Fetch HTML für eine URL. Fällt auf System-DNS zurück, wenn DoH fehlschlägt.
+
+    Nutzt einen Hard-Timeout via ThreadPoolExecutor, da niquests' timeout=-Parameter
+    die interne DNS-Resolver-Phase (DoH) nicht abdeckt und dort endlos hängen kann.
+    """
     global _dns_mode, _session
-    try:
-        resp = _get_session().get(url, timeout=15)
-        resp.raise_for_status()
-        return str(resp.text)
-    except Exception as e:
-        if _dns_mode == "doh":
-            log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
+
+    def _do_fetch() -> str:
+        try:
+            resp = _get_session().get(url, timeout=15)
+            resp.raise_for_status()
+            return str(resp.text)
+        except Exception as e:
+            if _dns_mode == "doh":
+                log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
+                _dns_mode = "system"
+                _session = None  # Session neu erstellen
+                resp = _get_session(force_new=True).get(url, timeout=15)
+                resp.raise_for_status()
+                return str(resp.text)
+            raise
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_do_fetch)
+        try:
+            return future.result(timeout=_HTTP_HARD_TIMEOUT)
+        except FutureTimeoutError:
+            log(f"[SCRAPER] Hard-Timeout ({_HTTP_HARD_TIMEOUT}s) für {url} – DNS hängt, wechsle auf System-DNS")
             _dns_mode = "system"
-            _session = None  # Session neu erstellen
+            _session = None
+            # Direkter Versuch mit System-DNS, ohne doH
             resp = _get_session(force_new=True).get(url, timeout=15)
             resp.raise_for_status()
             return str(resp.text)
-        raise
 
 
 def _post(url: str, **kwargs):
     """POST-Request mit DNS-Fallback."""
     global _dns_mode, _session
-    try:
-        return _get_session().post(url, **kwargs)
-    except Exception as e:
-        if _dns_mode == "doh":
-            log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
+    kwargs.setdefault("timeout", 15)
+
+    def _do_post():
+        try:
+            return _get_session().post(url, **kwargs)
+        except Exception as e:
+            if _dns_mode == "doh":
+                log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
+                _dns_mode = "system"
+                _session = None
+                return _get_session(force_new=True).post(url, **kwargs)
+            raise
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_do_post)
+        try:
+            return future.result(timeout=_HTTP_HARD_TIMEOUT)
+        except FutureTimeoutError:
+            log(f"[SCRAPER] Hard-Timeout ({_HTTP_HARD_TIMEOUT}s) für POST {url} – DNS hängt, wechsle auf System-DNS")
             _dns_mode = "system"
             _session = None
             return _get_session(force_new=True).post(url, **kwargs)
-        raise
 
 
 # ──────────────────────── URL-Hilfsfunktionen ────────────────────────
