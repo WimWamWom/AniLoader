@@ -430,6 +430,10 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                             data_folder, anime["id"],
                             last_season=season, last_episode=ep["episode"],
                         )
+                # Warte X Sekunden nach jedem Download
+                wait_seconds = 15  # Hier die gewünschte Wartezeit einstellen
+                log(f"[WAIT] Warte {wait_seconds} Sekunden vor nächstem Download...")
+                time.sleep(wait_seconds)
 
         # Status Updates
         all_missing = missing_german + new_missing_german
