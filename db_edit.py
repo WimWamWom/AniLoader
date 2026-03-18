@@ -30,29 +30,17 @@ BEHALTEN = object()  # Sentinel – diesen Wert bitte nicht ändern
 DELETE   = object()  # Sentinel – Feld auf Default-Wert zurücksetzen
 
 # Default-Werte gemäß DB-Schema
-FIELD_DEFAULTS = {
-    "complete":                0,
-    "deutsch_komplett":        0,
-    "deleted":                 0,
-    "last_season":             0,
-    "last_episode":            0,
-    "last_film":               0,
-    "fehlende_deutsch_folgen": "[]",
-    "folder_name":             None,
-    "title":                   None,
-    "url":                     None,
-}
 
 title               = BEHALTEN   # z.B. "My Hero Academia"
 url                 = BEHALTEN   # z.B. "https://aniworld.to/anime/stream/..."
-complete            = DELETE  # 0 oder 1
-deutsch_komplett    = DELETE  # 0 oder 1
-deleted             = DELETE  # 0 oder 1
-last_season         = DELETE   # z.B. 3
-last_episode        = DELETE   # z.B. 12
-last_film           = DELETE   # z.B. 0
-folder_name         = DELETE   # z.B. "My.Hero.Academia"  |  None = leeren
-fehlende_deutsch_folgen = DELETE # z.B. "[]"
+complete            = BEHALTEN  # 0 oder 1
+deutsch_komplett    = BEHALTEN  # 0 oder 1
+deleted             = BEHALTEN  # 0 oder 1
+last_season         = BEHALTEN   # z.B. 3
+last_episode        = BEHALTEN   # z.B. 12
+last_film           = BEHALTEN   # z.B. 0
+folder_name         = BEHALTEN   # z.B. "My.Hero.Academia"  |  None = leeren
+fehlende_deutsch_folgen = BEHALTEN # z.B. "[]"
 
 # ══════════════════════════════════════════════════════
 #  AB HIER NICHTS ÄNDERN
@@ -65,6 +53,18 @@ EDITABLE_FIELDS = [
 ]
 
 INT_FIELDS = {"complete", "deutsch_komplett", "deleted", "last_season", "last_episode", "last_film"}
+FIELD_DEFAULTS = {
+    "complete":                0,
+    "deutsch_komplett":        0,
+    "deleted":                 0,
+    "last_season":             0,
+    "last_episode":            0,
+    "last_film":               0,
+    "fehlende_deutsch_folgen": "[]",
+    "folder_name":             None,
+    "title":                   None,
+    "url":                     None,
+}
 
 
 def get_data_folder_path() -> str:
