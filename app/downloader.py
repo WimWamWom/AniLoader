@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
-
+import random
 from . import database as db
 from . import scraper
 from .config import get_data_folder, get_download_path, load_config
@@ -431,7 +431,8 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                             last_season=season, last_episode=ep["episode"],
                         )
                 # Warte X Sekunden nach jedem Download
-                wait_seconds = 15  # Hier die gewünschte Wartezeit einstellen
+
+                wait_seconds = random.randint(30, 90)  # Hier die gewünschte Wartezeit einstellen
                 log(f"[WAIT] Warte {wait_seconds} Sekunden vor nächstem Download...")
                 time.sleep(wait_seconds)
 
