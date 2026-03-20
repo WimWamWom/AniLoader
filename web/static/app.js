@@ -358,14 +358,12 @@ function renderFormattedLog(forceFullRender = false) {
 function highlightMessage(msg, tag) {
   let s = escH(msg);
 
-  // URLs erkennen
-  s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:var(--primary);text-decoration:underline;">$1</a>');
+  // 1. Dateinamen zuerst (solange der String noch sauber ist)
+  s = s.replace(/([^\s<]+\.(mkv|mp4|txt))/gi, '<span style="color:#aaf">$1</span>');
 
-  // Dateinamen (.mkv, .mp4, .txt) und darin Season/Episode hervorheben
-  s = s.replace(/([^\s<]+\.(mkv|mp4|txt))/gi, function(m) {
-    // Season/Episode Nummern im Dateinamen hervorheben
-    return '<span style="color:#aaf">' + m.replace(/(S\d{2}E\d{3})/g, '<strong style="color:var(--primary)">$1</strong>') + '</span>';
-  });
+  // 2. URLs erkennen
+  s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" style="color:var(--primary);text-decoration:underline;">$1</a>');
+  s = s.replace(/(S\d{2}E\d{3})/g);
 
   return s;
 } 

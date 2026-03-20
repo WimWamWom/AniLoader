@@ -431,8 +431,15 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                             last_season=season, last_episode=ep["episode"],
                         )
                 # Warte X Sekunden nach jedem Download
-
-                wait_seconds = 120 # Hier die gewünschte Wartezeit einstellen
+                waitcounter = 0
+                if waitcounter < 5:
+                    wait_seconds = 120 # Hier die gewünschte Wartezeit einstellen
+                    waitcounter += 1
+                elif waitcounter== 5:
+                    wait_seconds = 300
+                    waitcounter = 0
+                else:
+                    waitcounter = 0
                 # wait_seconds = random.randint(30, 90)  # Hier die gewünschte Wartezeit einstellen
                 log(f"[WAIT] Warte {wait_seconds} Sekunden vor nächstem Download...")
                 time.sleep(wait_seconds)
