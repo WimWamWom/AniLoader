@@ -432,7 +432,8 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                         )
                 # Warte X Sekunden nach jedem Download
 
-                wait_seconds = random.randint(30, 90)  # Hier die gewünschte Wartezeit einstellen
+                wait_seconds = 120 # Hier die gewünschte Wartezeit einstellen
+                # wait_seconds = random.randint(30, 90)  # Hier die gewünschte Wartezeit einstellen
                 log(f"[WAIT] Warte {wait_seconds} Sekunden vor nächstem Download...")
                 time.sleep(wait_seconds)
 
