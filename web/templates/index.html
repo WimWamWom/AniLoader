@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AniLoader</title>
+  <link rel="icon" type="image/png" href="/static/AniLoader.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <img src="/static/AniLoader.png" alt="AniLoader" class="header-logo">
+  <h1>AniLoader</h1>
+  <span id="status-badge" class="status-badge badge-idle">idle</span>
+  <span id="disk-info"></span>
+  <div id="download-progress-bar" class="download-progress-bar"></div>
+</header>
+
+<!-- Tab-Bar -->
+<nav class="tab-bar">
+  <div class="tab-container">
+    <button class="tab-btn active" data-tab="tab-download">📥 <span class="tab-label">Download</span></button>
+    <button class="tab-btn" data-tab="tab-add">➕ <span class="tab-label">Hinzufügen</span></button>
+    <button class="tab-btn" data-tab="tab-db">📂 <span class="tab-label">Datenbank</span></button>
+    <button class="tab-btn" data-tab="tab-logs">📜 <span class="tab-label">Logs</span></button>
+    <button class="tab-btn" data-tab="tab-settings">⚙️ <span class="tab-label">Einstellungen</span></button>
+  </div>
+</nav>
+
+<!-- ═══════════════════════ Download Tab ═══════════════════════ -->
+<div id="tab-download" class="tab-content active">
+
+  <!-- Steuerung -->
+  <div class="card">
+    <h3>Download-Steuerung</h3>
+    <div class="btn-group" style="margin-bottom:16px;">
+      <button class="btn btn-primary btn-start" onclick="startDownload('default')">▶ Standard</button>
+      <button class="btn btn-success btn-start" onclick="startDownload('german')">🇩🇪 German</button>
+      <button class="btn btn-warning btn-start" onclick="startDownload('new')">🆕 Neue Episoden</button>
+      <button class="btn btn-secondary btn-start" onclick="startDownload('check')">🔍 Check</button>
+      <button class="btn btn-danger" id="btn-stop" onclick="stopDownload()" disabled>⏹ Stop</button>
+    </div>
+  </div>
+
+  <!-- Aktueller Status -->
+  <div class="card">
+    <h3>Aktueller Download</h3>
+    <div class="progress-grid">
+      <div class="progress-item">
+        <div class="value" id="dl-title" style="font-size:1em;">–</div>
+        <div class="label">Aktuelle Serie</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="dl-mode">–</div>
+        <div class="label">Modus</div>
+      </div>
+      <div class="progress-item">
+        <div class="value"><span id="dl-season">–</span> <span id="dl-episode">–</span>
+          <span id="dl-ep-total" class="ep-total-label"></span>
+        </div>
+        <div class="ep-progress-bar-wrap" id="dl-ep-progress-wrap" style="display:none;">
+          <div class="ep-progress-bar" id="dl-ep-progress-bar"></div>
+        </div>
+        <div class="label">Staffel / Episode</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zeitstempel -->
+  <div class="card">
+    <h3>Zeitstempel</h3>
+    <div class="progress-grid">
+      <div class="progress-item">
+        <div class="value" id="dl-started" style="font-size:0.9em;">–</div>
+        <div class="label">Lauf gestartet</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="dl-series-started" style="font-size:0.9em;">–</div>
+        <div class="label">Serie gestartet</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="dl-episode-started" style="font-size:0.9em;">–</div>
+        <div class="label">Episode gestartet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="card">
+    <h3>Fortschritt</h3>
+    <div class="progress-grid">
+      <div class="progress-item">
+        <div class="value" id="prog-series">0/0</div>
+        <div class="label">Serien</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="prog-downloaded">0</div>
+        <div class="label">Heruntergeladen</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="prog-skipped">0</div>
+        <div class="label">Übersprungen</div>
+      </div>
+      <div class="progress-item">
+        <div class="value" id="prog-failed">0</div>
+        <div class="label">Fehlgeschlagen</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mini-Log -->
+  <div class="card">
+    <h3>Live-Log</h3>
+    <div id="log-output-mini" class="log-output log-mini">Warte auf Logs...</div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════ Hinzufügen Tab ═══════════════════════ -->
+<div id="tab-add" class="tab-content">
+
+  <!-- Link einfügen -->
+  <div class="card">
+    <h3>Link hinzufügen</h3>
+    <div class="input-row">
+      <input type="url" id="add-url" placeholder="https://aniworld.to/anime/stream/... oder https://s.to/serie/stream/...">
+      <button class="btn btn-primary" onclick="addLink()">Hinzufügen</button>
+    </div>
+    <small id="add-msg" style="display:none; margin-top:10px;" class="toast-msg"></small>
+  </div>
+
+  <!-- TXT Upload -->
+  <div class="card">
+    <h3>TXT-Datei hochladen</h3>
+    <div id="upload-area" class="upload-area">
+      <p>Datei hierher ziehen oder klicken</p>
+      <small style="color:var(--text-muted)">Eine URL pro Zeile</small>
+    </div>
+    <input type="file" id="file-input" accept=".txt" style="display:none" onchange="uploadTxt()">
+    <small id="upload-msg" style="display:none; margin-top:10px;" class="toast-msg"></small>
+  </div>
+
+  <!-- Suche -->
+  <div class="card">
+    <h3>Suche</h3>
+    <div class="input-row" style="margin-bottom:12px;">
+      <input type="text" id="search-query" placeholder="Suchbegriff..." autocomplete="off">
+      <select id="search-platform" style="width:auto; min-width:140px;">
+        <option value="both">Beide</option>
+        <option value="aniworld">AniWorld (Anime)</option>
+        <option value="sto">S.to (Serien)</option>
+      </select>
+      <button class="btn btn-primary" onclick="searchAnime()">Suchen</button>
+    </div>
+    <small id="search-msg" style="display:none; margin-bottom:10px;" class="toast-msg"></small>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Datenbank Tab ═══════════════════════ -->
+<div id="tab-db" class="tab-content">
+  <div class="card">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+      <h3 style="margin-bottom:0;">Datenbank</h3>
+      <span id="db-count" class="db-count-badge"></span>
+    </div>
+
+    <!-- Suchleiste -->
+    <input type="text" id="db-search" class="db-search-input" placeholder="&#128269; Suche nach Titel oder URL..." oninput="loadDatabase()">
+
+    <!-- Filterleiste -->
+    <div class="db-filters">
+      <select id="db-complete" onchange="loadDatabase()">
+        <option value="">Status: Alle</option>
+        <option value="1">✅ Komplett</option>
+        <option value="0">❌ Nicht komplett</option>
+        <option value="deleted">🚫 Gelöscht</option>
+      </select>
+      <select id="db-deutsch" onchange="loadDatabase()">
+        <option value="">Deutsch: Alle</option>
+        <option value="1">✅ DE komplett</option>
+        <option value="0">❌ DE fehlt</option>
+      </select>
+      <select id="db-sort" onchange="loadDatabase()">
+        <option value="id">Sortierung: Nr.</option>
+        <option value="title">Sortierung: Titel</option>
+        <option value="last_season">Sortierung: Staffel</option>
+        <option value="last_episode">Sortierung: Episode</option>
+        <option value="last_film">Sortierung: Film</option>
+      </select>
+      <button class="db-order-btn" id="db-order-btn" onclick="toggleDbOrder()">↑ Aufsteigend</button>
+      <button class="db-reload-btn" onclick="loadDatabase()">⟳ Laden</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportDatabase()" title="Datenbank als Datei exportieren">💾 Export DB</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportLinks()" title="Links als AniLoader.txt exportieren">📄 Export Links</button>
+    </div>
+
+    <!-- Tabelle -->
+    <div class="db-table-wrap">
+      <table class="db-table">
+        <thead>
+          <tr>
+            <th class="db-col-nr" onclick="sortDb('id')">#</th>
+            <th class="db-col-title" onclick="sortDb('title')">Titel</th>
+            <th class="db-col-url">Link</th>
+            <th class="db-col-bool" onclick="sortDb('complete')">Komplett</th>
+            <th class="db-col-bool">DE</th>
+            <th class="db-col-missing-de">Fehlende DE</th>
+            <th class="db-col-se" onclick="sortDb('last_season')">S/E</th>
+            <th class="db-col-film" onclick="sortDb('last_film')">Film</th>
+            <th class="db-col-action">Aktion</th>
+          </tr>
+        </thead>
+        <tbody id="db-tbody">
+          <tr><td colspan="9" class="db-empty">Lade...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Logs Tab ═══════════════════════ -->
+<div id="tab-logs" class="tab-content">
+  <div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+      <h3 style="margin-bottom:0;">Logs</h3>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em; color:var(--text-muted); cursor:pointer;">
+          <input type="checkbox" id="log-autoscroll" checked onchange="toggleAutoScroll()"> Auto-Scroll
+        </label>
+        <label style="display:flex; align-items:center; gap:4px; font-size:0.85em; color:var(--text-muted); cursor:pointer;">
+          <input type="checkbox" id="log-auto-refresh" checked onchange="toggleLogAutoRefresh()"> Auto-Refresh
+        </label>
+        <button class="btn btn-secondary btn-sm" onclick="refreshFullLog()" title="Jetzt aktualisieren">⟳ Aktualisieren</button>
+        <button class="btn btn-secondary btn-sm" onclick="copyLogToClipboard(this)" title="Log in Zwischenablage kopieren">📋 Kopieren</button>
+      </div>
+    </div>
+    <div class="log-filter-bar">
+      <input type="text" id="log-filter" placeholder="Filter (z.B. ERROR, Serienname...)" oninput="debouncedRenderLog()">
+      <div class="log-level-buttons">
+        <button class="log-level-btn active" data-level="all" onclick="setLogLevel('all')">Alle</button>
+        <button class="log-level-btn" data-level="error" onclick="setLogLevel('error')">Fehler</button>
+        <button class="log-level-btn" data-level="warn" onclick="setLogLevel('warn')">Warnungen</button>
+        <button class="log-level-btn" data-level="ok" onclick="setLogLevel('ok')">Erfolg</button>
+        <button class="log-level-btn" data-level="dl" onclick="setLogLevel('dl')">Downloads</button>
+      </div>
+    </div>
+    
+    <!-- Log-Auswahl und Einstellungen -->
+    <div style="display:flex; gap:16px; margin-bottom:12px; flex-wrap:wrap; align-items:end;">
+      <div style="flex:1; min-width:250px;">
+        <label for="log-selector" style="font-size:0.85em; color:var(--text-muted); display:block; margin-bottom:4px;">Log-Datei:</label>
+        <select id="log-selector" onchange="loadSelectedLog()" class="log-selector">
+          <option value="current">Aktueller Lauf (last_run.txt)</option>
+        </select>
+      </div>
+      <div style="min-width:180px;">
+        <label for="cfg-log-retention-days" style="font-size:0.85em; color:var(--text-muted); display:block; margin-bottom:4px;">📜 Bereinigung nach (Tagen):</label>
+        <input type="number" id="cfg-log-retention-days" min="1" max="365" value="7" style="width:100%; padding:4px 8px; background:var(--card-bg); border:1px solid var(--border); color:var(--text); border-radius:4px;">
+      </div>
+      <div>
+        <button class="btn btn-secondary btn-sm" onclick="saveLogSettings()" title="Log-Einstellungen speichern">💾 Speichern</button>
+      </div>
+    </div>
+    
+    <div id="log-stats" class="log-stats"></div>
+    <div id="log-output-full" class="log-output log-formatted">Warte auf Logs...</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Einstellungen Tab ═══════════════════════ -->
+<div id="tab-settings" class="tab-content">
+
+  <!-- Settings Sub-Navigation -->
+  <div class="settings-pills">
+    <button class="settings-pill active" data-settings="settings-storage">📁 Speicherorte</button>
+    <button class="settings-pill" data-settings="settings-download">⚙️ Download</button>
+    <button class="settings-pill" data-settings="settings-system">🖥️ System</button>
+  </div>
+
+  <!-- Speicherorte -->
+  <div id="settings-storage" class="settings-panel active">
+    <div class="card">
+      <div class="card-head">
+        <h3>📁 Speicherorganisation</h3>
+        <p class="card-desc">Konfiguriere, wo deine Downloads gespeichert werden</p>
+      </div>
+      <div class="setting-row">
+        <label>Modus</label>
+        <select id="cfg-storage-mode" onchange="toggleStoragePaths()">
+          <option value="standard">Standard (ein Ordner)</option>
+          <option value="separate">Separate Ordner</option>
+        </select>
+      </div>
+      <span class="setting-hint">„Standard“ speichert alles in einem Ordner. „Separat“ erlaubt getrennte Pfade für Anime und Serien.</span>
+      <div class="setting-row">
+        <label>Download-Pfad</label>
+        <div class="path-input-group">
+          <input type="text" id="cfg-download-path">
+          <button class="btn-browse" onclick="openFolderPicker('cfg-download-path')" title="Ordner wählen">📁 Wählen</button>
+        </div>
+      </div>
+      <div id="separate-paths" style="display:none;">
+        <div class="setting-row">
+          <label>Anime-Pfad</label>
+          <div class="path-input-group">
+            <input type="text" id="cfg-anime-path">
+            <button class="btn-browse" onclick="openFolderPicker('cfg-anime-path')" title="Ordner wählen">📁 Wählen</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <label>Serien-Pfad</label>
+          <div class="path-input-group">
+            <input type="text" id="cfg-series-path">
+            <button class="btn-browse" onclick="openFolderPicker('cfg-series-path')" title="Ordner wählen">📁 Wählen</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <label style="min-width:auto;">
+            <input type="checkbox" id="cfg-anime-sep-movies"> Anime-Filme separater Ordner
+          </label>
+        </div>
+        <div class="setting-row">
+          <label>Anime-Filme-Pfad</label>
+          <div class="path-input-group">
+            <input type="text" id="cfg-anime-movies-path">
+            <button class="btn-browse" onclick="openFolderPicker('cfg-anime-movies-path')" title="Ordner wählen">📁 Wählen</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <label style="min-width:auto;">
+            <input type="checkbox" id="cfg-serien-sep-movies"> Serien-Filme separater Ordner
+          </label>
+        </div>
+        <div class="setting-row">
+          <label>Serien-Filme-Pfad</label>
+          <div class="path-input-group">
+            <input type="text" id="cfg-serien-movies-path">
+            <button class="btn-browse" onclick="openFolderPicker('cfg-serien-movies-path')" title="Ordner wählen">📁 Wählen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Download-Einstellungen -->
+  <div id="settings-download" class="settings-panel">
+    <div class="card">
+      <div class="card-head">
+        <h3>🌐 Sprachpriorität</h3>
+        <p class="card-desc">Bestimme die Priorität der Sprachen. Die oberste Sprache wird bevorzugt, bei Nichtverfügbarkeit wird die nächste versucht.</p>
+      </div>
+      <p style="color:var(--text-muted); font-size:0.82em; margin-bottom:8px;">Drag &amp; Drop zum Umsortieren</p>
+      <ul id="lang-list" class="lang-list"></ul>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>⚙️ Download-Verhalten</h3>
+        <p class="card-desc">Konfiguriere Timeouts, Autostart und Titelaktualisierung</p>
+      </div>
+      <div class="setting-row">
+        <label>Timeout (Sekunden)</label>
+        <input type="number" id="cfg-timeout" min="60" step="60" value="900">
+      </div>
+      <span class="setting-hint">Maximale Zeit pro Episode-Download. Wird abgebrochen, wenn die Zeit überschritten wird (Standard: 900s = 15 Min).</span>
+      <div class="setting-row">
+        <label>Autostart-Modus</label>
+        <select id="cfg-autostart">
+          <option value="">Deaktiviert</option>
+          <option value="default">Standard</option>
+          <option value="german">German</option>
+          <option value="new">Neue Episoden</option>
+          <option value="check">Check</option>
+        </select>
+      </div>
+      <span class="setting-hint">Startet automatisch einen Download-Modus beim Starten von AniLoader.</span>
+
+      <div class="setting-divider"></div>
+
+      <div class="setting-row">
+        <label>🔄 Titel beim Start aktualisieren</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="cfg-refresh-titles">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <span class="setting-hint">Aktualisiert beim Serverstart alle Titel in der Datenbank anhand der Webseiten. Korrigiert falsche oder fehlende Titel automatisch.</span>
+    </div>
+  </div>
+
+  <!-- System-Einstellungen -->
+  <div id="settings-system" class="settings-panel">
+    <div class="card">
+      <div class="card-head">
+        <h3>🖥️ System</h3>
+        <p class="card-desc">Allgemeine Systemkonfiguration</p>
+      </div>
+      <div class="setting-row">
+        <label>Port</label>
+        <input type="number" id="cfg-port" min="1" max="65535" value="5050">
+      </div>
+      <span class="setting-hint">Der Port, auf dem die Web-Oberfläche erreichbar ist (Standard: 5050). Erfordert Neustart.</span>
+      <div class="setting-row">
+        <label>Min. freier Speicher (GB)</label>
+        <input type="number" id="cfg-min-free" min="0" step="0.5" value="2.0">
+      </div>
+      <span class="setting-hint">Downloads werden pausiert, wenn weniger als dieser Speicherplatz frei ist.</span>
+    </div>
+  </div>
+
+  <!-- Speichern -->
+  <div style="margin-top:16px; display:flex; gap:10px; align-items:center;">
+    <button class="btn btn-primary" onclick="saveSettings()">💾 Einstellungen speichern</button>
+    <small id="settings-msg" style="display:none; margin-left:12px;" class="toast-msg"></small>
+  </div>
+</div>
+
+<!-- Folder Picker Modal -->
+<div id="folder-picker-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>📁 Ordner wählen</h3>
+      <button class="modal-close" onclick="closeFolderPicker()">&times;</button>
+    </div>
+    <div id="folder-breadcrumb" class="modal-breadcrumb"></div>
+    <div class="modal-body">
+      <ul id="folder-list" class="folder-list"></ul>
+    </div>
+    <div class="modal-footer">
+      <span id="folder-current-path" class="current-path"></span>
+      <button class="btn btn-secondary btn-sm" onclick="closeFolderPicker()">Abbrechen</button>
+      <button class="btn btn-primary btn-sm" onclick="selectFolder()">Auswählen</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=20260310"></script>
+</body>
+</html>

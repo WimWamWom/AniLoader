@@ -1,352 +1,394 @@
+<h1 align="center"><sub><img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/refs/heads/main/web/static/AniLoader.png" width="35"></sub>AniLoader </h1>
 
-[🇩🇪 Deutsch] | [🇬🇧 English Docker Documentation](https://github.com/WimWamWom/AniLoader/blob/main/README_DOCKER_en.md)
 
-# <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/static/AniLoader.png" width="32" align="center"> AniLoader Docker Dokumentation
+  
+  Anime & Serien Download-Manager mit Web-Interface
+  Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur
+---
 
-Diese Anleitung beschreibt die Installation und Konfiguration von AniLoader mit Docker.
+## TL;DR
+```bash
+# Schnellstart Docker
+docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wimwamwom/aniloader:latest
 
-## Inhaltsverzeichnis
+# Docker Compose (empfohlen)
+curl -o docker-compose.yml https://raw.githubusercontent.com/WimWamWom/AniLoader/main/docker-compose.yml
+docker compose up -d
+```
 
-- [Quick Start](#quick-start)
-- [Installation](#installation)
-  - [Docker Hub](#docker-hub)
-  - [Manueller Build](#manueller-build)
-- [Volumes & Pfade](#volumes--pfade)
-- [Konfiguration](#konfiguration)
-  - [Standard Mode](#standard-mode)
-  - [Separate Mode](#separate-mode)
-- [Speicherorganisation](#speicherorganisation)
-- [Unraid Installation](#unraid-installation)
-- [Tampermonkey Browser-Extension](#tampermonkey-browser-extension)
-- [Docker Hub Upload](#docker-hub-upload)
-- [Troubleshooting](#troubleshooting)
+**Web-Interface:** `http://localhost:5050` → Serie hinzufügen → Download starten → Fertig!
 
 ---
 
-## Quick Start
+## Inhaltsübersicht
+
+- [Funktionen](#funktionen)
+- [Installation](#installation)
+  - [Docker Run](#docker-run)
+  - [Docker Compose](#docker-compose)
+  - [Unraid](#unraid)
+- [Verwendung](#verwendung)
+  - [Web-Interface](#web-interface)
+  - [API](#api)
+  - [Tampermonkey](#tampermonkey)
+- [Konfiguration](#konfiguration)
+- [Volumes & Pfade](#volumes--pfade)
+- [Datei-Struktur](#datei-struktur)
+  - [Standard-Modus](#standard-modus)
+  - [Separate-Modus](#separate-modus)
+- [FAQ](#faq)
+
+---
+
+## Funktionen
+
+- **🐋 Docker-Ready:** Multi-Arch Images (amd64/arm64) mit Health-Checks
+- **🌐 Web-Interface:** Moderne Dark-Theme Oberfläche mit Live-Status  
+- **📥 4 Download-Modi:** Standard, German, New Episode Check, Integrity Check
+- **🔍 Suche + Poster:** Durchsuche Aniworld und SerieStream
+- **🇩🇪 Sprach-Priorität:** German Dub → Sub → English (automatischer Fallback)
+- **📁 Jellyfin-Ready:** `Title (Year) [IMDB]/Season/Episode.mkv`
+- **💾 Persistent:** SQLite-DB und Config überleben Container-Neustarts
+- **📄 AniLoader.txt Import:** Automatischer Import beim Container-Start
+- **💾 Export-Funktionen:** Datenbank + Links als Download exportieren
+- **🔓 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
+- **⚡ Autostart:** Optional bei Container-Start Download-Modus starten
+
+---
+
+## Installation
 
 ### Docker Run
 ```bash
+# Minimale Konfiguration
 docker run -d \
   --name aniloader \
-  -p 5000:5000 \
-  -v /path/to/data:/app/data \
-  -v /path/to/downloads:/app/Downloads \
+  -p 5050:5050 \
+  -v ./data:/app/data \
+  -v ./Downloads:/app/Downloads \
+  -e TZ=Europe/Berlin \
+  --restart unless-stopped \
+  wimwamwom/aniloader:latest
+
+# Separate Modus (Anime/Serien getrennt)
+docker run -d \
+  --name aniloader \
+  -p 5050:5050 \
+  -v ./data:/app/data \
+  -v ./Downloads:/app/Downloads \
+  -v ./Anime:/app/Anime \
+  -v ./Serien:/app/Serien \
+  -e TZ=Europe/Berlin \
+  --dns 8.8.8.8 \
   --restart unless-stopped \
   wimwamwom/aniloader:latest
 ```
 
 ### Docker Compose
 ```yaml
-version: '3.8'
-
+# docker-compose.yml
 services:
   aniloader:
     image: wimwamwom/aniloader:latest
     container_name: aniloader
+    hostname: aniloader
     ports:
-      - "5000:5000"
+      - "5050:5050"
     volumes:
+      # Persistente Daten (Config, DB, Logs)
       - ./data:/app/data
+      # Downloads (Standard-Modus)
       - ./Downloads:/app/Downloads
+      # Separate Pfade (Optional)
+      - ./Anime:/app/Anime              # aniworld.to
+      - ./Serien:/app/Serien            # s.to
+      - ./Anime-Filme:/app/Anime-Filme  # Separate Filme
+      - ./Serien-Filme:/app/Serien-Filme
     environment:
+      - TZ=Europe/Berlin
       - PYTHONUNBUFFERED=1
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
+
+```bash
+# Ordner erstellen + Rechte
+mkdir -p data Downloads Anime Serien Anime-Filme Serien-Filme
+chmod 777 Downloads Anime Serien
+
+# Starten
+docker compose up -d
+
+# Logs verfolgen
+docker compose logs -f
+```
+
+### Unraid
+**Community Apps:** AniLoader Template  
+**Docker Hub:** `wimwamwom/aniloader:latest`
+
+**Port Mapping:**
+- Container: `5050` → Host: `5050`
+
+**Volume Mappings:**
+| Container-Pfad | Host-Pfad | Beschreibung |
+|---|---|---|
+| `/app/data` | `/mnt/user/appdata/aniloader` | Config, DB, Logs |
+| `/app/Downloads` | `/mnt/user/data/Downloads` | Standard-Downloads |
+| `/app/Anime` | `/mnt/user/data/Anime` | Anime (separate mode) |
+| `/app/Serien` | `/mnt/user/data/Serien` | Serien (separate mode) |
+
+**Environment Variables:**
+- `TZ=Europe/Berlin`
+- `PYTHONUNBUFFERED=1`
+
+**WebUI:** `http://[IP]:5050`
 
 ---
 
-## Installation
+## Verwendung
 
-### Docker Hub
+### Web-Interface
+**URL:** `http://localhost:5050`
 
-Das Image ist auf Docker Hub verfügbar:
+**📥 Download-Tab**
+- Download-Modi starten/stoppen (default, german, new, check)
+- Live-Status mit aktueller Serie/Episode/Fortschritt  
+- Echtzeit-Logs des laufenden Downloads
+
+**📂 Hinzufügen-Tab**
+- URLs einzeln eingeben oder per TXT-Upload
+- Integrierte Suche mit Poster-Vorschau
+- Drag & Drop für Bulk-Import
+
+**🗃️ Datenbank-Tab**
+- Alle Serien mit Status, Fortschritt, fehlende DE-Episoden
+- Sortierung, Filter, Löschen/Wiederherstellen
+- **💾 Export DB:** Komplette SQLite-Datenbank herunterladen
+- **📄 Export Links:** Alle URLs als AniLoader.txt herunterladen
+
+**📋 Logs-Tab**
+- Echtzeit-Logs mit Filter-Funktionen
+- Archivierte Logs nach Datum durchsuchen  
+- Automatische Bereinigung nach konfigurierbaren Tagen
+
+**⚙️ Einstellungen-Tab**
+- Storage-Mode (Standard vs Separate)
+- Sprachpriorität per Drag & Drop
+- Autostart, Titel-Refresh, System-Settings
+
+### API
+**Base URL:** `http://localhost:5050`  
+**Swagger Docs:** `/docs`
+
 ```bash
-docker pull wimwamwom/aniloader:latest
+# Container-Status + AniLoader-Status
+docker ps  # Container läuft?
+curl http://localhost:5050/health  # {"status": "ok"}
+curl http://localhost:5050/status  # Download-Status
+
+# Downloads steuern
+curl -X POST http://localhost:5050/start_download \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "default"}'
+
+# URLs hinzufügen
+curl -X POST http://localhost:5050/export \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://aniworld.to/anime/stream/naruto"}'
+
+# Suchen mit Platform
+curl -X POST http://localhost:5050/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "demon slayer", "platform": "both"}'
+
+# Export-Funktionen
+curl http://localhost:5050/export/database  # SQLite-DB Download
+curl http://localhost:5050/export/links     # AniLoader.txt Download
 ```
 
-### Manueller Build
-
-```bash
-# Repository klonen
-git clone https://github.com/WimWamWom/AniLoader
-cd AniLoader
-
-# Image bauen
-docker build -t aniloader:latest .
-
-# Optional: Lokal testen
-docker run -d -p 5000:5000 \
-  -v ${PWD}/data:/app/data \
-  -v ${PWD}/Downloads:/app/Downloads \
-  --name aniloader-test aniloader:latest
+### Tampermonkey
+1. **Tampermonkey Extension** installieren  
+2. **`Tampermonkey.user.js`** vom Repository → Install
+3. **Docker-IP konfigurieren** im Skript:
+```javascript
+const USE_DOMAIN = false;
+const SERVER_IP = "192.168.1.100";    // Docker-Host-IP
+const SERVER_PORT = 5050;
 ```
-
----
-
-## Volumes & Pfade
-
-| Container Path | Beschreibung | Erforderlich |
-|---------------|--------------|--------------|
-| `/app/data` | Datenbank & Konfiguration | ✅ Ja |
-| `/app/Downloads` | Standard Download-Verzeichnis | ✅ Ja |
-| `/movies` | Filme (nur bei `storage_mode: separate`) | ❌ Optional |
-| `/series` | Serien (nur bei `storage_mode: separate`) | ❌ Optional |
-| `/animes` | Animes (nur bei `storage_mode: separate`) | ❌ Optional |
+4. **Button auf aniworld.to/s.to** nutzen
 
 ---
 
 ## Konfiguration
 
-Erstelle eine `config.json` im Data-Volume (`/app/data/config.json`):
+**Automatische Erstellung:** `data/config.yaml`  
+**Änderung:** Web-Interface → Einstellungen oder Datei editieren
 
-```json
-{
-  "languages": ["German Dub", "German Sub", "English Dub", "English Sub"],
-  "min_free_gb": 2.0,
-  "download_path": "",
-  "autostart_mode": null,
-  "refresh_titles": true,
-  "storage_mode": "standard",
-  "movies_path": "",
-  "series_path": "",
-  "server_port": 5000
-}
-```
-
-### Standard Mode
-
-Alle Downloads landen in `/app/Downloads`:
-
-```json
-{
-  "storage_mode": "standard",
-  "download_path": "/app/Downloads"
-}
-```
-
-**Struktur:**
-```
-Downloads/
-  ├── Demon Slayer/
-  │   ├── Filme/
-  │   └── Staffel 1/
-  └── Attack on Titan/
-```
-
-### Separate Mode
-
-Filme und Serien/Animes getrennt speichern:
-
-```json
-{
-  "storage_mode": "separate",
-  "anime_path": "/animes",
-  "serien_path": "/series",
-  "anime_separate_movies": false,
-  "serien_separate_movies": false
-}
-```
-
-**docker-compose.yml für Separate Mode:**
 ```yaml
-version: '3.8'
+server:
+  port: 5050
 
-services:
-  aniloader:
-    image: wimwamwom/aniloader:latest
-    container_name: aniloader
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./data:/app/data
-      - /mnt/media/Animes:/animes
-      - /mnt/media/Serien:/series
-    restart: unless-stopped
+languages:                    # Download-Priorität
+  - German Dub               # 1. Erste verfügbare Sprache
+  - German Sub               # 2. Fallback  
+  - English Sub              # 3. Fallback
+  - English Dub              # 4. Letztmöglicher Fallback
+
+storage:
+  mode: separate             # standard | separate
+  download_path: /app/Downloads        # Standard-Modus
+  anime_path: /app/Anime              # aniworld.to → hier
+  series_path: /app/Serien            # s.to → hier
+  anime_movies_path: /app/Anime-Filme  # Optional: Separate Filme
+  serien_movies_path: /app/Serien-Filme
+  anime_separate_movies: false
+  serien_separate_movies: false
+
+download:
+  autostart_mode: null       # null, default, german, new, check  
+  refresh_titles: false      # Titel beim Start aktualisieren
+  min_free_gb: 2.0          # Mindest-Speicherplatz
+  timeout_seconds: 900       # Download-Timeout pro Episode
+
+data:
+  folder: /app/data          # Config, DB, Logs (gemounted!)
 ```
+
+**Autostart-Modi:**
+- **null:** Kein Autostart
+- **default:** Alle unvollständigen Serien beim Container-Start  
+- **german:** Fehlende deutsche Episoden
+- **new:** Neue Episoden-Check
+- **check:** Integritätsprüfung
 
 ---
 
-## Speicherorganisation
+## Volumes & Pfade
 
-AniLoader erkennt automatisch den Content-Type:
-- **Animes:** URLs von `aniworld.to`
-- **Serien:** URLs von `s.to`
-
-### Ordnerstruktur-Optionen
-
-**Standard (Filme im Serienordner):**
-```
-Animes/
-  └── Demon Slayer/
-      ├── Filme/
-      │   └── Film01 - Mugen Train.mp4
-      └── Staffel 1/
-          └── S01E01 - Episode.mp4
-```
-
-**Mit Film-Trennung (`anime_separate_movies: true`):**
-```
-Animes/
-  ├── Filme/
-  │   └── Demon Slayer/
-  │       └── Film01 - Mugen Train.mp4
-  └── Demon Slayer/
-      └── Staffel 1/
-          └── S01E01 - Episode.mp4
-```
-
----
-
-## Unraid Installation
-
-### Via Docker Hub
-
-1. Öffne **Unraid WebUI** → **Docker** Tab
-2. Klicke **Add Container**
-3. Konfiguration:
-
-| Feld | Wert |
-|------|------|
-| Name | `aniloader` |
-| Repository | `wimwamwom/aniloader:latest` |
-| Network Type | `bridge` |
-
-**Port Mapping:**
-| Container Port | Host Port |
-|----------------|-----------|
-| `5000` | `5000` |
-
-**Volume Mappings:**
-
-| Container Path | Host Path |
-|----------------|-----------|
-| `/app/data` | `/mnt/user/appdata/aniloader/data` |
-| `/app/Downloads` | `/mnt/user/Downloads/AniLoader` |
-| `/animes` (optional) | `/mnt/user/Anime` |
-| `/series` (optional) | `/mnt/user/TV Shows` |
-
-4. Klicke **Apply**
-
-### Via docker-compose
-
-1. Installiere **Compose Manager** Plugin via Community Applications
-2. Kopiere `docker-compose.yml` nach `/mnt/user/appdata/aniloader/`
-3. Passe Pfade an
-4. Starte via Compose Manager
-
----
-
-## Tampermonkey Browser-Extension
-
-Das Tampermonkey-Skript fügt einen "📤 Downloaden"-Button auf AniWorld.to und S.to hinzu.
-
-### Installation
-
-1. Installiere [Tampermonkey](https://www.tampermonkey.net/) für deinen Browser
-2. Installiere das Skript: [Tampermonkey.user.js](https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js)
-3. Passe die Server-Konfiguration an:
-
-```javascript
-// Im Skript oben anpassen:
-const SERVER_IP = "192.168.1.100";  // Deine Server-IP
-const SERVER_PORT = 5000;            // Dein Port
-```
-
-### Button-Status
-
-| Button | Bedeutung |
-|--------|-----------|
-| 📤 Downloaden | Noch nicht in AniLoader |
-| 📄 In der Liste | Bereits hinzugefügt |
-| ⬇️ Downloaded | Wird gerade geladen |
-| ✅ Gedownloaded | Download komplett |
-| ⛔ Server offline | Server nicht erreichbar |
-
-### Troubleshooting
-
-**"Server offline" obwohl Server läuft:**
-- Prüfe IP und Port im Skript
-- Teste manuell: `http://SERVER_IP:PORT/status`
-
-**CORS-Fehler:**
-- Seit Version 1.5 behoben
-- Docker-Container neu starten: `docker restart aniloader`
-- Browser-Cache leeren (Strg+F5)
-
----
-
-## Docker Hub Upload
-
-### Image zu Docker Hub hochladen
-
+### Pflicht-Volumes
 ```bash
-# 1. Bei Docker Hub anmelden
-docker login
-
-# 2. Image taggen
-docker tag aniloader:latest deinusername/aniloader:latest
-
-# 3. Image pushen
-docker push deinusername/aniloader:latest
+-v ./data:/app/data                    # Config + SQLite-DB + Logs
+-v ./Downloads:/app/Downloads          # Downloads (Standard-Modus)
 ```
 
-### Automatische Builds mit GitHub Actions
-
-Das Repository enthält einen GitHub Actions Workflow (`.github/workflows/docker-build.yml`), der bei jedem Push automatisch ein neues Image baut und zu Docker Hub pusht.
-
-**Erforderliche GitHub Secrets:**
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
----
-
-## Troubleshooting
-
-### Container startet nicht
+### Optional-Volumes (Separate-Modus)
 ```bash
-docker logs aniloader
+-v ./Anime:/app/Anime                  # aniworld.to Content
+-v ./Serien:/app/Serien                # s.to Content  
+-v ./Anime-Filme:/app/Anime-Filme      # Separate Anime-Filme
+-v ./Serien-Filme:/app/Serien-Filme    # Separate Serien-Filme
 ```
 
-### Permission-Probleme
+**Wichtig:** Container-Pfade (rechts) müssen mit `config.yaml` übereinstimmen!
+
+### Berechtigungen
 ```bash
-# Auf Unraid
-chown -R nobody:users /mnt/user/appdata/aniloader
-chmod -R 755 /mnt/user/appdata/aniloader
-chmod -R 755 /mnt/user/Downloads/AniLoader
-```
+# Linux: Downloads-Ordner beschreibbar machen
+chmod 777 Downloads Anime Serien
 
-### Download funktioniert nicht
-```bash
-# Prüfe aniworld CLI
-docker exec aniloader aniworld --version
-
-# Live-Logs
-docker logs -f aniloader
-```
-
-### Webinterface nicht erreichbar
-- Prüfe Port-Mapping
-- Prüfe Firewall-Einstellungen
-- Prüfe ob Port in config.json mit Container-Port übereinstimmt
-
-### Health Check Status
-```bash
-docker inspect --format='{{.State.Health.Status}}' aniloader
+# Docker-User hat UID 1000 - alternativ:
+chown -R 1000:1000 data Downloads Anime Serien
 ```
 
 ---
 
-## Environment Variables
+## Datei-Struktur
 
-| Variable | Beschreibung | Default |
-|----------|--------------|---------|
-| `PYTHONUNBUFFERED` | Python Output Buffering | `1` |
+### Standard-Modus
+**Ein Volume für alles** (`storage.mode: standard`)
+
+```
+Downloads/                              # ./Downloads:/app/Downloads
+├── Naruto (2002) [imdbid-tt0409591]/
+│   ├── Season 01/
+│   │   ├── S01E001 - Uzumaki Naruto.mkv
+│   │   ├── S01E002 - My Name is Konohamaru [Sub].mkv
+│   │   └── S01E003 - Sasuke and Sakura [English].mkv
+│   ├── Season 02/
+│   └── Filme/
+│       └── Film01 - Naruto Movie.mkv
+└── Breaking Bad (2008) [imdbid-tt0903747]/
+    ├── Season 01/
+    └── Season 05/
+```
+
+### Separate-Modus
+**Getrennte Volumes** (`storage.mode: separate`)
+
+```
+Anime/                                  # ./Anime:/app/Anime (aniworld.to)
+├── Naruto (2002)/
+│   ├── Season 01/
+│   ├── Season 02/
+│   └── Filme/
+└── Attack on Titan (2013)/
+    ├── Season 01/
+    └── Season 04/
+
+Serien/                                 # ./Serien:/app/Serien (s.to)
+├── Breaking Bad (2008)/
+│   ├── Season 01/
+│   └── Season 05/
+└── The Office (2005)/
+    ├── Season 01/
+    └── Season 09/
+
+Anime-Filme/                            # ./Anime-Filme:/app/Anime-Filme  
+└── Your Name (2016)/                   # anime_separate_movies: true
+    └── Filme/
+        └── Film01 - Your Name [Sub].mkv
+```
+
+**Datei-Benennung:**
+- **Serien:** `S01E001 - Titel.mkv`
+- **Filme:** `Film01 - Titel.mkv` 
+- **Sprach-Suffixe:** `[Sub]`, `[English Dub]`, `[English Sub]`
 
 ---
 
-## Links
+## FAQ
 
-- [GitHub Repository](https://github.com/WimWamWom/AniLoader)
-- [Docker Hub](https://hub.docker.com/r/wimwamwom/aniloader)
-- [Haupt-README](README.md)
+**Q: Container startet, aber Web-Interface nicht erreichbar**  
+A: `docker ps` → Port-Mapping korrekt? `docker logs aniloader` → Startup-Fehler?
+
+**Q: "Permission denied" für Download-Ordner**  
+A: `chmod 777 Downloads Anime Serien` oder `chown -R 1000:1000 Downloads`
+
+**Q: Downloads funktionieren nicht im Container**  
+A: ffmpeg und aniworld-CLI sind pre-installiert. `docker logs -f aniloader` für Details
+
+**Q: Konfiguration geht bei Container-Neustart verloren**  
+A: `data/` Volume gemounted? Ohne Volume wird config.yaml nicht gespeichert!
+
+**Q: Autostart aktivieren bei Docker-Start**  
+A: `data/config.yaml` → `autostart_mode: default` oder Web-UI → Einstellungen → System
+
+**Q: Container nutzt zu viel CPU/RAM**  
+A: Download-Modi sind CPU-intensiv (Video-Processing). Normal während aktiver Downloads
+
+**Q: AniLoader.txt Import im Container?**  
+A: `AniLoader.txt` ins Host-Verzeichnis (wird zu Container-Root gemounted) → automatischer Import beim Start
+
+**Q: Export-Funktionen nutzen?**  
+A: Web-UI → Datenbank-Tab → "💾 Export DB" oder "📄 Export Links" für Downloads
+
+**Q: Multi-Arch Support (ARM/Intel)**  
+A: `wimwamwom/aniloader:latest` unterstützt automatisch amd64 + arm64
+
+**Q: Reverse Proxy (nginx/Traefik)**  
+A: Container-Port 5050, externe URL im Tampermonkey-Skript anpassen
+
+---
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png" alt="AniLoader" width="60"><br>
+  <sub>Made with ❤️ for Anime & Serien</sub>
+</p>

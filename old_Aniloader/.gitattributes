@@ -1,0 +1,31 @@
+# Line endings für verschiedene Dateitypen
+
+# Bash-Scripts müssen LF haben (Unix/Linux/Unraid)
+*.sh text eol=lf
+
+# Python-Dateien
+*.py text eol=lf
+
+# JSON, YAML, Markdown
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+
+# HTML, CSS, JavaScript
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# Windows-spezifische Dateien (PowerShell, Batch)
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binärdateien
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.db binary

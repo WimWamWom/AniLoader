@@ -1,7 +1,10 @@
-Flask
-flask-cors
-requests
-beautifulsoup4
-dnspython
-aniworld
-waitress 
+fastapi==0.100.1
+starlette==0.27.0
+jinja2==3.1.2
+uvicorn[standard]==0.22.0
+pyyaml>=6.0
+niquests>=3.0.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+python-multipart>=0.0.5
+aniworld @ git+https://github.com/phoenixthrush/AniWorld-Downloader.git@models
