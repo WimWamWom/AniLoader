@@ -430,11 +430,11 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                             data_folder, anime["id"],
                             last_season=season, last_episode=ep["episode"],
                         )
-                sec_min = 480
-                sec_max = 600
-                wait_seconds = random.randint(sec_min, sec_max)
-                log(f"[WAIT] Warte {wait_seconds} Sekunden vor nächstem Download...")
-                time.sleep(wait_seconds)
+                # sec_min = 480
+                # sec_max = 600
+                # wait_seconds = random.randint(sec_min, sec_max)
+                # log(f"[WAIT] Warte {wait_seconds} Sekunden vor nächstem Download...")
+                # time.sleep(wait_seconds)
 
         # Status Updates
         all_missing = missing_german + new_missing_german
