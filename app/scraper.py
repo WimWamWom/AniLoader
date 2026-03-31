@@ -296,7 +296,6 @@ def get_season_numbers(url: str) -> List[int]:
                 href = str(a.get("href", "")).rstrip("/")
                 if href.endswith("/filme") and 0 not in seasons:
                     seasons.insert(0, 0)
-                    log(f"[SCRAPER] Filme-Link gefunden: {href}")
                     break
 
         elif is_sto(base_url):
@@ -316,7 +315,6 @@ def get_season_numbers(url: str) -> List[int]:
                     seasons.insert(0, 0)
                     break
 
-        log(f"[SCRAPER] Staffeln gefunden für {base_url}: {sorted(set(seasons))}")
         return sorted(set(seasons))
 
     except Exception as e:
@@ -359,7 +357,6 @@ def get_episodes_for_season(
     else:
         season_url = build_season_url(base_url, season)
 
-    log(f"[SCRAPER] Lade {'Filme' if season == 0 else f'Staffel {season}'}: {season_url}")
     try:
         html = _fetch(season_url)
     except Exception as e:
@@ -391,14 +388,12 @@ def _parse_aniworld_season(
         for candidate_id in ["seasonFilme", "season0", "seasonFilms"]:
             tbody = soup.find("tbody", id=candidate_id)
             if tbody:
-                log(f"[SCRAPER] Filme-tbody gefunden: id={candidate_id}")
                 break
         if not tbody:
             # Fallback: erste tbody die Episoden-Rows enthält
             for tb in soup.find_all("tbody"):
                 if tb.find("tr", attrs={"data-episode-id": True}):
                     tbody = tb
-                    log(f"[SCRAPER] Filme-tbody via Fallback gefunden (id={tb.get('id', 'kein-id')})")
                     break
     else:
         tbody = soup.find("tbody", id=f"season{season}")
@@ -640,7 +635,6 @@ def _extract_sto_languages(element) -> List[str]:
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
-            log(f"[SCRAPER] S.to SVG erkannt: {href or svg_classes} → {lang}")
 
     # Methode 2: Fallback für Flag-Images (ältere S.to-Struktur)
     if not langs:
