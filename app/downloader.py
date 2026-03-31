@@ -272,7 +272,6 @@ def _download_episode(
         for lang in languages_config:
             if lang in ep_langs:
                 cascading_languages.append(lang)
-        log(f"[LANG] Finale Kaskade: {cascading_languages}")
     else:
         # Sprachen unbekannt → komplette Kaskade
         cascading_languages = languages_config[:]
