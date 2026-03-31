@@ -658,6 +658,51 @@ def _extract_sto_languages(element) -> List[str]:
     return langs
 
 
+# ──────────────────────── Stream-Verfügbarkeit ────────────────────────
+
+
+def is_episode_available(episode_url: str) -> bool:
+    """
+    Prüft ob eine Episode tatsächlich Streams hat (kein Ankündigungs-Placeholder).
+
+    Zuverlässigstes Merkmal auf aniworld.to:
+    - Episoden MIT Streams:    <ul class="row"> enthält <li class="episodeLink..."> Elemente
+    - Episoden OHNE Streams:   <ul class="row"> ist leer ODER fehlt komplett
+
+    Fallback: Prüft ob changeLanguageBox Flag-Images enthält.
+
+    Gibt True zurück wenn mindestens ein Hoster-Link gefunden wurde.
+    Gibt True zurück wenn die Seite nicht aniworld.to ist (S.to hat eigene Logik).
+    """
+    if not is_aniworld(episode_url):
+        return True  # Nur für aniworld.to relevant
+
+    try:
+        html = _fetch(episode_url)
+        soup = BeautifulSoup(html, "lxml")
+
+        # Primärcheck: <ul class="row"> mit Hoster-<li> Einträgen
+        for ul in soup.find_all("ul", class_="row"):
+            li_items = ul.find_all("li", class_=lambda c: bool(c and "episodeLink" in c))
+            if li_items:
+                return True
+
+        # Fallback: Flag-Images in changeLanguageBox
+        lang_box = soup.find("div", class_="changeLanguageBox")
+        if lang_box and lang_box.find("img"):
+            return True
+
+        # Weiterer Fallback: data-link-target Attribute (Redirect-Links)
+        if soup.find(attrs={"data-link-target": True}):
+            return True
+
+        return False
+
+    except Exception as e:
+        log(f"[SCRAPER] Verfügbarkeits-Check fehlgeschlagen für {episode_url}: {e}")
+        return True  # Im Zweifel: nicht überspringen
+
+
 # ──────────────────────── Episode-Sprachen (Fallback) ────────────────────────
 
 

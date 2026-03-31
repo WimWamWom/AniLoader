@@ -254,6 +254,12 @@ def _download_episode(
         ep_langs = scraper.get_episode_languages(episode_url)
         log(f"[LANG] Von Episode-Seite gescraped: {ep_langs}")
 
+    # AniWorld: Prüfe ob Episode überhaupt Streams hat (kein Ankündigungs-Placeholder)
+    if scraper.is_aniworld(episode_url) and not ep_langs:
+        if not scraper.is_episode_available(episode_url):
+            log(f"[SKIP] S{season:02d}E{episode_num:03d} – keine Streams verfügbar (Ankündigung)")
+            return "no_language"
+
     # S.to: Keine Sprache gefunden → Episode nicht verfügbar, überspringen
     if scraper.is_sto(episode_url) and not ep_langs:
         log(f"[SKIP] S{season:02d}E{episode_num:03d} – keine Sprache → nicht verfügbar")
@@ -544,6 +550,8 @@ def _run_new(cfg: dict, data_folder: str) -> None:
         status["completed_episodes_overall"] = 0
 
         has_new = False
+        had_failures = False
+        had_no_language = False
 
         for season in seasons:
             if _check_stop():
@@ -588,14 +596,22 @@ def _run_new(cfg: dict, data_folder: str) -> None:
                 elif result == "skipped":
                     status["progress"]["skipped_episodes"] += 1
                 elif result == "failed":
+                    had_failures = True
                     status["progress"]["failed_episodes"] += 1
                 elif result == "no_language":
+                    had_no_language = True
                     status["progress"]["skipped_episodes"] += 1
 
         if has_new:
             log(f"[NEW] Neue Episoden heruntergeladen für {anime['title']}")
         else:
             log(f"[NEW] Keine neuen Episoden für {anime['title']}")
+
+        # Komplett markieren wenn alle verfügbaren Episoden geladen sind und
+        # die verbleibenden Folgen nur Ankündigungen ohne Streams sind
+        if had_no_language and not had_failures:
+            db.update_anime(data_folder, anime["id"], complete=1)
+            log(f"[DONE] {anime['title']} als komplett markiert (letzte Folgen noch nicht verfügbar)")
 
         status["progress"]["completed_series"] += 1
 
