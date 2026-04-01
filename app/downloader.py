@@ -401,15 +401,6 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                 if _check_stop():
                     return
 
-                # Überspringe bereits heruntergeladene Episoden
-                if season != 0:
-                    if season == anime.get("last_season", 0) and ep["episode"] <= anime.get("last_episode", 0):
-                        status["completed_episodes_overall"] += 1
-                        continue
-                elif ep["episode"] <= anime.get("last_film", 0):
-                    status["completed_episodes_overall"] += 1
-                    continue
-
                 result = _download_episode(cfg, data_folder, anime, season, ep)
                 status["completed_episodes_overall"] += 1
 
@@ -426,8 +417,10 @@ def _run_default(cfg: dict, data_folder: str) -> None:
                 elif result == "no_language":
                     status["progress"]["skipped_episodes"] += 1
 
-                # Progress in DB speichern (nicht bei nicht verfügbarer Sprache)
-                if result != "no_language":
+                # Progress in DB speichern (nicht bei nicht verfügbarer Sprache oder Fehler)
+                # WICHTIG: Fehlgeschlagene Episoden NICHT als "erledigt" markieren,
+                # damit sie beim nächsten Lauf erneut versucht werden.
+                if result not in ("no_language", "failed"):
                     if season == 0:
                         db.update_anime(data_folder, anime["id"], last_film=ep["episode"])
                     else:
