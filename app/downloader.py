@@ -61,6 +61,7 @@ status: Dict = {
 }
 
 _download_lock = threading.Lock()
+_status_lock = threading.Lock()
 _download_thread: Optional[threading.Thread] = None
 
 _CDN_403_MAX_RETRIES = 2   # max. Anzahl Wiederholungen bei 403
@@ -69,51 +70,56 @@ _CDN_403_RETRY_DELAY = 15  # Sekunden Pause vor 403-Retry
 
 def get_status() -> Dict:
     """Gibt den aktuellen Download-Status zurück."""
-    return status.copy()
+    with _status_lock:
+        return status.copy()
 
 
 def is_running() -> bool:
-    return status["status"] in ("running", "stopping")
+    with _status_lock:
+        return status["status"] in ("running", "stopping")
 
 
 def request_stop() -> bool:
     """Fordert einen graceful Stop an (nach aktuellem Episode-Download)."""
-    if status["status"] == "running":
-        status["status"] = "stopping"
-        log("[DOWNLOAD] Stop angefordert – wird nach aktuellem Download gestoppt")
-        return True
-    return False
+    with _status_lock:
+        if status["status"] == "running":
+            status["status"] = "stopping"
+            log("[DOWNLOAD] Stop angefordert – wird nach aktuellem Download gestoppt")
+            return True
+        return False
 
 
 def _check_stop() -> bool:
     """Prüft ob ein Stop angefordert wurde."""
-    return status["status"] == "stopping"
+    with _status_lock:
+        return status["status"] == "stopping"
 
 
 def _reset_status():
-    status["status"] = "idle"
-    status["mode"] = None
-    status["current_title"] = None
-    status["current_id"] = None
-    status["current_url"] = None
-    status["current_season"] = None
-    status["current_episode"] = None
-    status["current_is_film"] = False
-    status["total_seasons"] = 0
-    status["total_episodes_in_season"] = 0
-    status["total_episodes_overall"] = 0
-    status["completed_episodes_overall"] = 0
-    status["started_at"] = None
-    status["series_started_at"] = None
-    status["episode_started_at"] = None
-    status["progress"] = {
-        "total_series": 0,
-        "completed_series": 0,
-        "current_series_index": 0,
-        "downloaded_episodes": 0,
-        "skipped_episodes": 0,
-        "failed_episodes": 0,
-    }
+    with _status_lock:
+        status["status"] = "idle"
+        status["mode"] = None
+        status["current_title"] = None
+        status["current_id"] = None
+        status["current_url"] = None
+        status["current_season"] = None
+        status["current_episode"] = None
+        status["current_is_film"] = False
+        status["total_seasons"] = 0
+        status["total_episodes_in_season"] = 0
+        status["total_episodes_overall"] = 0
+        status["completed_episodes_overall"] = 0
+        status["started_at"] = None
+        status["series_started_at"] = None
+        status["episode_started_at"] = None
+        status["progress"] = {
+            "total_series": 0,
+            "completed_series": 0,
+            "current_series_index": 0,
+            "downloaded_episodes": 0,
+            "skipped_episodes": 0,
+            "failed_episodes": 0,
+        }
 
 
 # ──────────────────────── Subprocess Download ────────────────────────
@@ -701,9 +707,10 @@ def _download_worker(mode: str) -> None:
         start_new_run()
         log(f"[START] Download-Modus: {mode}")
 
-        status["status"] = "running"
-        status["mode"] = mode
-        status["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        with _status_lock:
+            status["status"] = "running"
+            status["mode"] = mode
+            status["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
         runner = MODE_RUNNERS.get(mode)
         if runner:
@@ -711,18 +718,22 @@ def _download_worker(mode: str) -> None:
         else:
             log(f"[ERROR] Unbekannter Modus: {mode}")
 
-        if status["status"] == "stopping":
+        with _status_lock:
+            stopping = status["status"] == "stopping"
+        if stopping:
             log("[STOP] Download gestoppt")
         else:
             log("[DONE] Download abgeschlossen")
 
-        status["status"] = "finished"
+        with _status_lock:
+            status["status"] = "finished"
 
     except Exception as e:
         log(f"[FATAL] Download-Thread-Fehler: {e}")
         import traceback
         log(traceback.format_exc())
-        status["status"] = "finished"
+        with _status_lock:
+            status["status"] = "finished"
 
 
 def start_download(mode: str = "default") -> bool:

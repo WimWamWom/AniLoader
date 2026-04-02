@@ -327,9 +327,12 @@ def import_txt(data_folder: str, content: str) -> int:
             except Exception as e:
                 log(f"[IMPORT-WARN] Titel konnte nicht abgerufen werden ({e}) – nutze URL als Titel")
                 title = url
-            result = add_anime(data_folder, url, title=title)
-            if result:
-                added += 1
+            try:
+                result = add_anime(data_folder, url, title=title)
+                if result:
+                    added += 1
+            except Exception as e:
+                log(f"[IMPORT-WARN] Eintrag konnte nicht gespeichert werden ({e}) – übersprungen: {url}")
     return added
 
 
