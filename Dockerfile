@@ -40,11 +40,16 @@ LABEL net.unraid.docker.icon="https://raw.githubusercontent.com/WimWamWom/AniLoa
 
 WORKDIR /app
 
-# ffmpeg: required by aniworld CLI for media muxing.
-# curl: used by the Docker health check.
+# ffmpeg:  required by aniworld CLI for media muxing.
+# curl:    used by the Docker health check.
+# xvfb:   virtual framebuffer so patchright/Chromium can run with headless=False
+#          (needed for CAPTCHA solving — Chromium requires a display even in Docker).
+# x11-utils: provides xdpyinfo, used in entrypoint.sh to wait until Xvfb is ready.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
+    xvfb \
+    x11-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Python packages installed in the builder stage.
@@ -64,6 +69,8 @@ RUN patchright install-deps chromium
 COPY main.py .
 COPY app/ ./app/
 COPY web/ ./web/
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 # Directories for persistent data.
 RUN mkdir -p /app/data /app/Downloads /app/Anime /app/Serien /app/Anime-Filme /app/Serien-Filme
@@ -77,4 +84,5 @@ ENV PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5050/health || exit 1
 
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["python", "main.py"]
