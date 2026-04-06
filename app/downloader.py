@@ -68,6 +68,13 @@ _CDN_403_MAX_RETRIES = 2   # max. Anzahl Wiederholungen bei 403
 _CDN_403_RETRY_DELAY = 15  # Sekunden Pause vor 403-Retry
 
 
+def _normalize_aniworld_cli_url(url: str) -> str:
+    """Passt URLs an das Format an, das die installierte aniworld-CLI akzeptiert."""
+    if scraper.is_sto(url):
+        return url.replace("/serie/stream/", "/serie/", 1)
+    return url
+
+
 def get_status() -> Dict:
     """Gibt den aktuellen Download-Status zurück."""
     with _status_lock:
@@ -140,11 +147,15 @@ def _run_aniworld_download(
     # auch wenn kein echtes Terminal vorhanden ist (z.B. Docker ohne TTY)
     subprocess_env = os.environ.copy()
     subprocess_env.setdefault("TERM", "xterm")
+    cli_url = _normalize_aniworld_cli_url(episode_url)
+
+    if cli_url != episode_url:
+        log(f"[CMD] Normalisiere URL für aniworld CLI: {episode_url} -> {cli_url}")
 
     if is_windows:
-        cmd = f'chcp 65001 >nul & aniworld --language "{language}" -a Download -o "{output_path}" {episode_url}'
+        cmd = f'chcp 65001 >nul & aniworld --language "{language}" -a Download -o "{output_path}" {cli_url}'
     else:
-        cmd = f"aniworld --language '{language}' -a Download -o '{output_path}' {episode_url}"
+        cmd = f"aniworld --language '{language}' -a Download -o '{output_path}' {cli_url}"
     log(f"[CMD] {cmd}")
 
     for attempt in range(1 + _CDN_403_MAX_RETRIES):
