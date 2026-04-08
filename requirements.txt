@@ -10,3 +10,4 @@ python-multipart>=0.0.5
 patchright
 aniworld @ git+https://github.com/WimWamWom/AniWorld-Downloader-Fork.git@models#egg=aniworld
 
+
