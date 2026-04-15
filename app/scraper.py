@@ -884,7 +884,6 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
     Returns:
         Liste von Dicts: [{"title": "...", "url": "...", "description": "...", "platform": "..."}]
     """
-    log(f"[SUCHE] Starte Suche: '{query}' (Plattform: {platform})")
 
     aniworld_results: List[Dict] = []
     sto_results: List[Dict] = []
@@ -897,9 +896,7 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
                 data={"keyword": query},
                 timeout=10,
             )
-            log(f"[SUCHE] AniWorld HTTP {resp.status_code}")
             data = resp.json() if resp.status_code == 200 else []
-            log(f"[SUCHE] AniWorld API lieferte {len(data)} Roheinträge")
             for item in data:
                 link = item.get("link", "")
                 if "/anime/stream/" in link:
@@ -910,7 +907,6 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
                         "description": item.get("description", ""),
                         "platform": "AniWorld",
                     })
-            log(f"[SUCHE] AniWorld: {len(aniworld_results)} Anime-Treffer")
         except Exception as e:
             log(f"[SUCHE] AniWorld-Fehler: {e}")
 
@@ -922,10 +918,8 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
                 params={"term": query},
                 timeout=10,
             )
-            log(f"[SUCHE] S.to HTTP {resp.status_code}")
             data_raw = resp.json() if resp.status_code == 200 else {}
             shows = data_raw.get("shows", []) or []
-            log(f"[SUCHE] S.to API lieferte {len(shows)} Roheinträge")
             for show in shows:
                 raw_url = show.get("url", "") or ""
                 # Normalize: /serie/<slug> oder /serie/stream/<slug> → /serie/stream/<slug>
@@ -945,7 +939,6 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
                     "description": "",
                     "platform": "S.to",
                 })
-            log(f"[SUCHE] S.to: {len(sto_results)} Serien-Treffer")
         except Exception as e:
             log(f"[SUCHE] S.to-Fehler: {e}")
 
