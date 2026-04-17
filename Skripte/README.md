@@ -1,96 +1,150 @@
-# Unraid Skripte – Automatischer Scan mit Discord-Benachrichtigung
+# AniLoader Hilfsskripte
 
-Diese Skripte sind **optional** und für Unraid-Nutzer gedacht, die automatische Downloads per Cronjob auslösen und sich per Discord über neue Episoden benachrichtigen lassen möchten.
+Dieses Verzeichnis enthält Automations- und Wartungsskripte für AniLoader.
+Funktionsgleiche Varianten sind jeweils als `.sh` und `.ps1` vorhanden.
 
-## Skripte
+## Quick Start
 
-| Skript | Beschreibung | Empfohlener Cron |
-|--------|--------------|------------------|
-| `check-new.sh` | Prüft alle Serien auf **neue Episoden** (Modus `new`) | `0 */6 * * *` (alle 6h) |
-| `check-german.sh` | Prüft auf **fehlende deutsche Episoden** (Modus `german`) | `0 3 * * 0` (So 3 Uhr) |
-| `last_run_summary.sh` | Wertet den **letzten Lauf** aus und sendet Discord-Nachricht | Manuell / nach Bedarf |
+- Neue Folgen prüfen: `check-new.sh` oder `check-new.ps1`
+- Fehlende deutsche Folgen prüfen: `check-german.sh` oder `check-german.ps1`
+- Letzten Lauf auswerten: `last_run_summary.sh` oder `last_run_summary.ps1`
+- Einzelnen DB-Eintrag ändern: `db_edit.py`
+- Titel/Ordnernamen prüfen: `fodlder_name_check.py`
 
-## Funktionsweise
+## Übersicht nach Aufgabe
 
-### check-new.sh / check-german.sh
-1. Prüft ob AniLoader gerade beschäftigt ist (wartet bis zu 3 Stunden)
-2. Startet den Download im jeweiligen Modus über die API
-3. Wartet auf Abschluss
-4. Wertet die Logs aus und zählt heruntergeladene Episoden
-5. Sendet bei neuen Episoden eine **Discord-Nachricht** mit gruppierten Details
+| Aufgabe | Dateien | Zweck |
+|--------|---------|-------|
+| Neue Episoden prüfen und benachrichtigen | `check-new.sh` + `check-new.ps1` | Startet Modus `new`, wertet den Lauf aus, sendet Discord bei Treffern |
+| Fehlende deutsche Episoden prüfen und benachrichtigen | `check-german.sh` + `check-german.ps1` | Startet Modus `german`, wertet nur German-Dub-Downloads aus |
+| Letzten Lauf zusammenfassen | `last_run_summary.sh` + `last_run_summary.ps1` | Liest `last_run`, erkennt Modus automatisch und sendet optional Discord |
+| Datenbankeintrag gezielt bearbeiten | `db_edit.py` | Ändert einzelne Felder eines DB-Eintrags per ID mit Bestätigung |
+| Titel gegen Ordnername prüfen | `fodlder_name_check.py` | Findet DB-Einträge, bei denen `title` und `folder_name` nicht zusammenpassen |
 
-### last_run_summary.sh
-1. Holt die Logs des letzten Laufs (API oder lokale Datei)
-2. Erkennt automatisch den Modus (german / new / default / check)
-3. Zählt heruntergeladene Episoden
-4. Sendet bei Ergebnissen eine Discord-Benachrichtigung
+## Detailliert pro Skript
 
-## Installation (Unraid User Scripts)
+### 1) check-new (.sh/.ps1)
 
-1. **User Scripts Plugin** installieren (falls noch nicht vorhanden):
-   - Unraid → Apps → „User Scripts" suchen → installieren
+**Dateien:** `check-new.sh`, `check-new.ps1`
 
-2. **Skript hinzufügen**:
-   - Settings → User Scripts → „Add New Script"
-   - Inhalt des gewünschten `.sh`-Skripts einfügen
+**Was es macht:**
+1. Prüft, ob AniLoader aktuell läuft (`/status`).
+2. Wartet bei Bedarf bis `MAX_WAIT_MINUTES`.
+3. Startet Download-Modus `new` über `/start_download`.
+4. Wartet bis der Lauf fertig ist.
+5. Liest `/last_run` aus.
+6. Zählt erfolgreich geladene Episoden über Download- und Verify-Logzeilen.
+7. Sendet nur dann Discord, wenn neue Episoden gefunden wurden.
 
-3. **Konfiguration anpassen** (oben im Skript):
-   ```bash
-   # AniLoader API Adresse
-   API_ENDPOINT="https://your-domain.example.com"
-   # oder lokal: API_ENDPOINT="http://192.168.1.100:5050"
-   
-   # Basic Auth (falls hinter Reverse Proxy mit Auth)
-   API_AUTH="username:password"
-   # Ohne Auth: API_AUTH=""
-   
-   # Discord Webhook URLs
-   DISCORD_WEBHOOK_URLS=(
-       "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
-   )
-   
-   # Maximale Wartezeit in Minuten (0 = unbegrenzt)
-   MAX_WAIT_MINUTES=180
-   ```
+**Typischer Einsatz:** zyklisch (z.B. alle 6 Stunden).
 
-4. **Schedule setzen**:
-   - `check-new.sh`: Custom Cron → `0 */6 * * *` (alle 6 Stunden)
-   - `check-german.sh`: Custom Cron → `0 3 * * 0` (Sonntags um 3 Uhr)
-   - `last_run_summary.sh`: „Run Manually" oder als Ergänzung
+---
 
-## Discord Webhook einrichten
+### 2) check-german (.sh/.ps1)
 
-1. Discord → Server Settings → Integrations → Webhooks
-2. „New Webhook" → Name & Channel wählen → „Copy Webhook URL"
-3. URL in das Skript eintragen (mehrere Webhooks möglich)
+**Dateien:** `check-german.sh`, `check-german.ps1`
 
-### Discord Embed Beispiel
+**Was es macht:**
+1. Prüft, ob AniLoader frei ist (`/status`) und wartet bei Bedarf.
+2. Startet Download-Modus `german` über `/start_download`.
+3. Wartet bis der Lauf abgeschlossen ist.
+4. Liest `/last_run` aus.
+5. Zählt nur Downloads, die als **German Dub** geloggt wurden.
+6. Sendet nur dann Discord, wenn neue deutsche Episoden gefunden wurden.
 
-Die Benachrichtigungen werden als gruppierte Embeds gesendet:
+**Typischer Einsatz:** seltener Cron-Job (z.B. 1x pro Woche).
 
+---
+
+### 3) last_run_summary (.sh/.ps1)
+
+**Dateien:** `last_run_summary.sh`, `last_run_summary.ps1`
+
+**Was es macht:**
+1. Holt Logs entweder von der API (`/last_run`) oder aus lokaler Datei.
+2. Erkennt den Modus automatisch (`german`, `new`, `default`, `check`).
+3. Ermittelt gefundene/geladene Episoden aus den Logzeilen.
+4. Gibt eine Zusammenfassung im Terminal aus.
+5. Sendet Discord nur bei vorhandenen Episoden.
+
+**Typischer Einsatz:** manuell nach einem Lauf oder als Reporting-Schritt.
+
+---
+
+### 4) db_edit.py
+
+**Datei:** `db_edit.py`
+
+**Was es macht:**
+1. Lädt einen Datensatz über `ANIME_ID` aus der Datenbank.
+2. Zeigt den aktuellen Stand aller editierbaren Felder.
+3. Übernimmt nur Felder, die im Konfigurationsblock geändert wurden.
+4. Fragt vor dem Speichern explizit nach Bestätigung.
+5. Zeigt nach dem Speichern den aktualisierten Datensatz.
+
+**Besonderheit:**
+- `BEHALTEN` = Feld nicht ändern.
+- `DELETE` = Feld auf den jeweiligen Default zurücksetzen.
+
+**Typischer Einsatz:** Korrekturen einzelner DB-Einträge (Titel, Ordnername, Statusfelder).
+
+---
+
+### 5) fodlder_name_check.py
+
+**Datei:** `fodlder_name_check.py`
+
+**Was es macht:**
+1. Liest alle AniLoader-Einträge aus der Datenbank.
+2. Vergleicht `title` mit `folder_name`.
+3. Ignoriert typische Suffixe im Ordnernamen, z.B. Jahr/Zeitraum und IMDb-Block.
+4. Normalisiert Sonderzeichen, Trennzeichen und Schreibweisen für robusten Vergleich.
+5. Gibt übersichtliche Listen für:
+   - fehlende Ordnernamen
+   - abweichende Ordnernamen
+
+**Optionen:**
+- `--include-deleted`: nimmt gelöschte Einträge in die Prüfung auf.
+
+**Typischer Einsatz:** Qualitätscheck der Datenbank vor/ nach größeren Importen.
+
+## Konfiguration der API/Discord-Skripte
+
+In allen drei Automations-Skriptpaaren werden oben dieselben Werte gesetzt:
+
+- `API_ENDPOINT`: AniLoader-URL, z.B. `http://192.168.1.100:5050`
+- `API_AUTH`: optional `username:password` für Basic Auth
+- `DISCORD_WEBHOOK_URLS`: eine oder mehrere Webhook-URLs
+- `MAX_WAIT_MINUTES`: maximale Wartezeit, wenn ein Lauf bereits aktiv ist (`0` = unbegrenzt)
+
+## Ausführung
+
+### Bash (.sh)
+
+```bash
+bash ./check-new.sh
+bash ./check-german.sh
+bash ./last_run_summary.sh
 ```
-📺 AniLoader - Neue Episoden Check
-────────────────────────────────────
-✅ 5 neue Episode(n) heruntergeladen!
-📊 3 Serie(n) aktualisiert
 
-Naruto (2 x)
-  - S01E045
-  - S01E046
+### PowerShell (.ps1)
 
-One Piece
-  - S02E100
-
-Breaking Bad (2 x)
-  - S03E001
-  - S03E002
+```powershell
+powershell -ExecutionPolicy Bypass -File .\check-new.ps1
+powershell -ExecutionPolicy Bypass -File .\check-german.ps1
+powershell -ExecutionPolicy Bypass -File .\last_run_summary.ps1
 ```
 
-Bei mehr als 25 Serien werden automatisch mehrere Embeds erstellt.
+### Python-Helfer
+
+```bash
+python ./db_edit.py
+python ./fodlder_name_check.py
+python ./fodlder_name_check.py --include-deleted
+```
 
 ## Hinweise
 
-- Die Skripte kommunizieren über die **REST-API** mit AniLoader – der Container muss laufen
-- Discord-Benachrichtigungen werden **nur gesendet**, wenn tatsächlich neue Episoden heruntergeladen wurden
-- Alle Skripte warten automatisch, falls gerade ein Download läuft (max. 3 Stunden)
-- Umlaute (ä, ö, ü, ß) in Serien-Namen werden korrekt dargestellt
+- Für die API-basierten Skripte muss AniLoader laufen und erreichbar sein.
+- Discord-Benachrichtigungen werden nur gesendet, wenn Episoden gefunden wurden.
+- `.sh` und `.ps1` eines Paares sind funktional gleich gedacht; nutze die passende Variante für deine Umgebung.
