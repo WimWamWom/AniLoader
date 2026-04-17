@@ -873,13 +873,14 @@ def get_episode_title(episode_url: str) -> Optional[str]:
 # ──────────────────────── Suche ────────────────────────
 
 
-def search_anime(query: str, platform: str = "both") -> List[Dict]:
+def search_anime(query: str, platform: str = "both", log_search: bool = False) -> List[Dict]:
     """
     Sucht nach Serien/Animes.
 
     Args:
         query: Suchbegriff
         platform: "aniworld" | "sto" | "both"
+        log_search: Loggt nur bei aktiv ausgelöster Suche die Ergebnisanzahlen
 
     Returns:
         Liste von Dicts: [{"title": "...", "url": "...", "description": "...", "platform": "..."}]
@@ -889,7 +890,6 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
     sto_results: List[Dict] = []
 
     if platform in ("aniworld", "both"):
-        log("[SUCHE] Frage AniWorld ab …")
         try:
             resp = _post(
                 "https://aniworld.to/ajax/search",
@@ -911,7 +911,6 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
             log(f"[SUCHE] AniWorld-Fehler: {e}")
 
     if platform in ("sto", "both"):
-        log("[SUCHE] Frage S.to ab …")
         try:
             resp = _get_session().get(
                 "https://s.to/api/search/suggest",
@@ -953,8 +952,9 @@ def search_anime(query: str, platform: str = "both") -> List[Dict]:
             results.append(sto_results[i_st])
             i_st += 1
 
-    log(f"[SUCHE] Fertig – {len(results)} Ergebnisse gesamt "
-        f"(AniWorld: {len(aniworld_results)}, S.to: {len(sto_results)})")
+    if log_search:
+        log(f"[SUCHE] AniWorld: {len(aniworld_results)}, S.to: {len(sto_results)}")
+
     return results
 
 

@@ -257,10 +257,19 @@ async def search(request: Request):
             content={"status": "error", "message": "Suchbegriff fehlt"},
         )
 
-    results = scraper.search_anime(query, platform)
-
     # Optionales Limit (für Live-Suche)
     limit = body.get("limit")
+    log_search = not (limit and isinstance(limit, int) and limit > 0)
+
+    try:
+        results = scraper.search_anime(query, platform, log_search=log_search)
+    except Exception as e:
+        log(f"[SUCHE-ERROR] {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Suche fehlgeschlagen"},
+        )
+
     if limit and isinstance(limit, int) and limit > 0:
         results = results[:limit]
 
