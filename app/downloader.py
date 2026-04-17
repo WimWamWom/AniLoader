@@ -12,6 +12,7 @@ Download erfolgt per aniworld CLI (subprocess).
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 import threading
@@ -66,6 +67,19 @@ _download_thread: Optional[threading.Thread] = None
 
 _CDN_403_MAX_RETRIES = 2   # max. Anzahl Wiederholungen bei 403
 _CDN_403_RETRY_DELAY = 15  # Sekunden Pause vor 403-Retry
+
+
+def _parse_season_episode_from_url(episode_url: str) -> Optional[tuple[int, int]]:
+    """Extrahiert (season, episode) aus einer Episoden-/Film-URL."""
+    m = re.search(r"/staffel-(\d+)/episode-(\d+)", episode_url)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+
+    m = re.search(r"/filme/film-(\d+)", episode_url)
+    if m:
+        return 0, int(m.group(1))
+
+    return None
 
 
 def _normalize_aniworld_cli_url(url: str) -> str:
@@ -474,7 +488,10 @@ def _run_german(cfg: dict, data_folder: str) -> None:
     anime_list = db.get_active_anime(data_folder)
     status["progress"]["total_series"] = len(anime_list)
 
-    languages_config = cfg.get("languages", [])
+    # German-Mode soll konsistent über die normale Episode-Pipeline laufen,
+    # aber ausschließlich German Dub versuchen.
+    german_cfg = dict(cfg)
+    german_cfg["languages"] = ["German Dub"]
 
     for idx, anime in enumerate(anime_list):
         if _check_stop():
@@ -495,8 +512,6 @@ def _run_german(cfg: dict, data_folder: str) -> None:
         log(f"\n[GERMAN] {anime['title']} – {len(missing)} fehlende deutsche Episoden")
 
         still_missing: List[str] = []
-        output_path = get_download_path(cfg, anime["url"])
-        timeout = cfg.get("download", {}).get("timeout_seconds", 900)
         status["total_episodes_overall"] = len(missing)
         status["completed_episodes_overall"] = 0
 
@@ -505,13 +520,84 @@ def _run_german(cfg: dict, data_folder: str) -> None:
                 return
 
             log(f"[DL] Versuche German Dub für {episode_url}")
-            if _run_aniworld_download(episode_url, "German Dub", output_path, timeout):
+            parsed = _parse_season_episode_from_url(episode_url)
+            if not parsed:
+                # Fallback: URL-Format unbekannt -> alter Direkt-Download
+                output_path = get_download_path(german_cfg, anime["url"])
+                timeout = german_cfg.get("download", {}).get("timeout_seconds", 900)
+                if _run_aniworld_download(episode_url, "German Dub", output_path, timeout):
+                    log(f"[OK] German Dub erfolgreich: {episode_url}")
+                    status["progress"]["downloaded_episodes"] += 1
+                else:
+                    log(f"[SKIP] German Dub noch nicht verfügbar: {episode_url}")
+                    still_missing.append(episode_url)
+                    status["progress"]["skipped_episodes"] += 1
+                status["completed_episodes_overall"] += 1
+                continue
+
+            season, episode_num = parsed
+            output_path = get_download_path(german_cfg, anime["url"], season == 0)
+
+            # Altlasten-Reparatur: rohe SxxExxx/S00Exxx-Datei aus früheren Läufen
+            # ohne erneuten Download in das Zielformat überführen.
+            found_existing = find_downloaded_file(
+                output_path,
+                season,
+                episode_num,
+                folder_name=anime.get("folder_name"),
+                title_hint=anime.get("title"),
+            )
+            if found_existing:
+                repaired = rename_episode_file(found_existing, season, episode_num, "", "German Dub")
+                if repaired:
+                    log(f"[OK] Bestehende Datei repariert: {episode_url}")
+                    status["progress"]["downloaded_episodes"] += 1
+                    if season == 0:
+                        db.update_anime(data_folder, anime["id"], last_film=episode_num)
+                    else:
+                        db.update_anime(
+                            data_folder,
+                            anime["id"],
+                            last_season=season,
+                            last_episode=episode_num,
+                        )
+                    status["completed_episodes_overall"] += 1
+                    continue
+
+            episode_info = {
+                "episode": episode_num,
+                "url": episode_url,
+                # Titel optional aus Seite holen; Pipeline nutzt fallbacks falls leer.
+                "title_de": "",
+                "title_en": "",
+                "languages": ["German Dub"],
+            }
+
+            # Für robustes Renaming/Moving den Standardpfad nutzen.
+            result = _download_episode(german_cfg, data_folder, anime, season, episode_info)
+
+            if result == "downloaded":
                 log(f"[OK] German Dub erfolgreich: {episode_url}")
                 status["progress"]["downloaded_episodes"] += 1
-            else:
+                if season == 0:
+                    db.update_anime(data_folder, anime["id"], last_film=episode_num)
+                else:
+                    db.update_anime(
+                        data_folder,
+                        anime["id"],
+                        last_season=season,
+                        last_episode=episode_num,
+                    )
+            elif result == "failed" or result == "no_language":
                 log(f"[SKIP] German Dub noch nicht verfügbar: {episode_url}")
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
+            else:
+                # skipped/no_german: nicht als erfolgreich aus missing entfernen,
+                # damit potentielle Altlasten erneut geprüft werden können.
+                still_missing.append(episode_url)
+                status["progress"]["skipped_episodes"] += 1
+
             status["completed_episodes_overall"] += 1
 
         db.set_missing_german_episodes(data_folder, anime["id"], still_missing)
