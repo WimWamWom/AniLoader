@@ -779,6 +779,8 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
         has_new = False
         had_failures = False
         had_no_language = False
+        missing_german: List[str] = db.get_missing_german_episodes(data_folder, anime["id"])
+        new_missing_german: List[str] = []
 
         for season in seasons:
             if _check_stop():
@@ -821,6 +823,8 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                         "episode": ep["episode"],
                         "language": used_language,
                     })
+                    if result == "no_german":
+                        new_missing_german.append(ep["url"])
                 elif result == "skipped":
                     status["progress"]["skipped_episodes"] += 1
 
@@ -847,6 +851,15 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                 elif result == "no_language":
                     had_no_language = True
                     status["progress"]["skipped_episodes"] += 1
+
+        # Missing-German in DB speichern (analog zu Default-Modus)
+        all_missing = missing_german + new_missing_german
+        if all_missing:
+            db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
+            db.update_anime(data_folder, anime["id"], deutsch_komplett=0)
+            log(f"[NEW] {len(new_missing_german)} neue fehlende deutsche Episoden für {anime['title']}")
+        elif not missing_german:
+            db.update_anime(data_folder, anime["id"], deutsch_komplett=1)
 
         if has_new:
             log(f"[NEW] Neue Episoden heruntergeladen für {anime['title']}")
