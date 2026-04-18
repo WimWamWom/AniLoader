@@ -99,6 +99,35 @@ def _normalize_aniworld_cli_url(url: str) -> str:
     return url
 
 
+def _normalize_language_label(label: str) -> str:
+    """Normalisiert bekannte Sprach-Labels auf interne Namen."""
+    text = str(label or "").strip().lower()
+    if text in ("german dub", "german", "deutsch", "de"):
+        return "German Dub"
+    if text in ("german sub", "deutsch sub", "deutsch untertitel"):
+        return "German Sub"
+    if text in ("english dub", "english", "en"):
+        return "English Dub"
+    if text in ("english sub", "englisch sub", "englische untertitel"):
+        return "English Sub"
+    return str(label or "").strip()
+
+
+def _normalize_language_list(languages: List[str]) -> List[str]:
+    """Normalisiert Sprachliste und entfernt Duplikate, Reihenfolge bleibt erhalten."""
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for lang in languages or []:
+        norm = _normalize_language_label(lang)
+        if not norm:
+            continue
+        if norm in seen:
+            continue
+        seen.add(norm)
+        normalized.append(norm)
+    return normalized
+
+
 def get_status() -> Dict:
     """Gibt den aktuellen Download-Status zurück."""
     with _status_lock:
@@ -299,13 +328,13 @@ def _download_episode(
         return _result("skipped")
 
     # Sprachen IMMER von der Episoden-Seite holen (vor dem Download)
-    ep_langs = episode_info.get("languages", [])
+    ep_langs = _normalize_language_list(episode_info.get("languages", []))
     log(f"[LANG] S{season:02d}E{episode_num:03d} – Sprachen aus Staffel-Seite: {ep_langs}")
     
     if not ep_langs:
         # Von Staffelseite nicht vorhanden → von Episoden-Seite scrapen
         log(f"[LANG] Scrape Sprachen von Episode-Seite …")
-        ep_langs = scraper.get_episode_languages(episode_url)
+        ep_langs = _normalize_language_list(scraper.get_episode_languages(episode_url))
         log(f"[LANG] Von Episode-Seite gescraped: {ep_langs}")
 
     # AniWorld: Prüfe ob Episode überhaupt Streams hat (kein Ankündigungs-Placeholder)
@@ -609,13 +638,17 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
 
             # Scraper-Check: Ist German Dub auf der Seite verfügbar?
             log(f"[CHECK] Prüfe Sprachverfügbarkeit für {episode_url}")
-            available_langs = scraper.get_episode_languages(episode_url)
-            if "German Dub" not in available_langs:
+            available_langs = _normalize_language_list(scraper.get_episode_languages(episode_url))
+            if available_langs and "German Dub" not in available_langs:
                 log(f"[SKIP] German Dub nicht verfügbar (Scraper): {episode_url} – verfügbar: {available_langs}")
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
                 status["completed_episodes_overall"] += 1
                 continue
+
+            if not available_langs and scraper.is_sto(episode_url):
+                # s.to ändert HTML-Strukturen häufiger; bei leerem Ergebnis lieber Download versuchen.
+                log(f"[WARN] s.to-Sprachen konnten nicht sicher erkannt werden – versuche German Dub trotzdem: {episode_url}")
 
             log(f"[CHECK] German Dub verfügbar – starte Download: {episode_url}")
 
@@ -777,7 +810,12 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                         "episode": ep["episode"],
                         "language": used_language,
                     })
+                elif result == "skipped":
+                    status["progress"]["skipped_episodes"] += 1
 
+                # DB-Position aktualisieren (analog zu Default-Modus):
+                # Fehlgeschlagene und sprachlose Episoden NICHT als erledigt markieren.
+                if result not in ("no_language", "failed"):
                     if season == 0:
                         db.update_anime(data_folder, anime["id"], last_film=ep["episode"])
                     else:
@@ -785,8 +823,6 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                             data_folder, anime["id"],
                             last_season=season, last_episode=ep["episode"],
                         )
-                elif result == "skipped":
-                    status["progress"]["skipped_episodes"] += 1
                 elif result == "failed":
                     had_failures = True
                     status["progress"]["failed_episodes"] += 1
@@ -893,6 +929,7 @@ def _run_check(cfg: dict, data_folder: str) -> None:
                 existing = episode_already_downloaded(
                     cfg, anime["url"], anime.get("folder_name"),
                     season, ep["episode"],
+                    title_hint=anime.get("title"),
                 )
 
                 if existing and check_file_integrity(existing):
@@ -902,6 +939,13 @@ def _run_check(cfg: dict, data_folder: str) -> None:
 
                 if existing:
                     log(f"[CHECK] Defekte Datei: {existing.name} – lade erneut herunter")
+                    try:
+                        existing.unlink()
+                    except Exception as e:
+                        log(f"[WARN] Defekte Datei konnte nicht gelöscht werden: {e}")
+                        status["progress"]["failed_episodes"] += 1
+                        status["completed_episodes_overall"] += 1
+                        continue
 
                 result = _download_episode(cfg, data_folder, anime, season, ep)
                 status["completed_episodes_overall"] += 1

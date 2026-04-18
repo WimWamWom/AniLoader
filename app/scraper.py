@@ -776,6 +776,23 @@ def _extract_sto_episode_languages(soup: BeautifulSoup) -> List[str]:
     langs = []
     seen = set()
 
+    def _add_lang(lang: Optional[str]) -> None:
+        if lang and lang not in seen:
+            seen.add(lang)
+            langs.append(lang)
+
+    def _map_text_to_lang(text: str) -> Optional[str]:
+        t = (text or "").lower()
+        if "german sub" in t or "deutsch sub" in t or "untertitel" in t:
+            return "German Sub"
+        if "english sub" in t:
+            return "English Sub"
+        if "german" in t or "deutsch" in t:
+            return "German Dub"
+        if "english" in t:
+            return "English Dub"
+        return None
+
     # Methode 1: Hosters-Bereich .hoster-item mit SVG-Icons
     for hoster_div in soup.find_all("div", class_="hoster-item"):
         # S.to hat .language-badge mit Icons
@@ -812,27 +829,36 @@ def _extract_sto_episode_languages(soup: BeautifulSoup) -> List[str]:
                 else:
                     lang = "English Dub"
             
-            if lang and lang not in seen:
-                seen.add(lang)
-                langs.append(lang)
+            _add_lang(lang)
+
+    # Methode 1b: Generischer Fallback auf "language"-Container in aktueller S.to-Struktur
+    if not langs:
+        for node in soup.find_all(class_=re.compile(r"language|audio|dub|sub", re.IGNORECASE)):
+            lang = _map_text_to_lang(node.get_text(" ", strip=True))
+            _add_lang(lang)
     
     # Methode 2: Fallback über Flag-Images (ältere S.to-Struktur)
     if not langs:
         for img in soup.find_all("img", class_="flag"):
             src = img.get("src", "") or img.get("data-src", "")
             lang = None
-            if "german" in src:
-                lang = "German Dub"
-            elif "german-sub" in src or "deutsch-sub" in src:
+            src_lower = src.lower()
+            if "german-sub" in src_lower or "deutsch-sub" in src_lower:
                 lang = "German Sub"
-            elif "english-sub" in src:
+            elif "english-sub" in src_lower:
                 lang = "English Sub"
-            elif "english" in src:
+            elif "german" in src_lower or "deutsch" in src_lower:
+                lang = "German Dub"
+            elif "english" in src_lower:
                 lang = "English Dub"
-            
-            if lang and lang not in seen:
-                seen.add(lang)
-                langs.append(lang)
+
+            _add_lang(lang)
+
+    # Methode 3: Letzter Fallback über Seiten-Text
+    if not langs:
+        page_text = soup.get_text(" ", strip=True)
+        text_lang = _map_text_to_lang(page_text)
+        _add_lang(text_lang)
 
     return langs
 
