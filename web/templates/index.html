@@ -28,6 +28,7 @@
     <button class="tab-btn" data-tab="tab-add">➕ <span class="tab-label">Hinzufügen</span></button>
     <button class="tab-btn" data-tab="tab-db">📂 <span class="tab-label">Datenbank</span></button>
     <button class="tab-btn" data-tab="tab-logs">📜 <span class="tab-label">Logs</span></button>
+    <button class="tab-btn" data-tab="tab-automation">🕖 <span class="tab-label">Automation</span></button>
     <button class="tab-btn" data-tab="tab-settings">⚙️ <span class="tab-label">Einstellungen</span></button>
   </div>
 </nav>
@@ -272,6 +273,267 @@
   </div>
 </div>
 
+<!-- ═══════════════════════ Automation Tab ═══════════════════════ -->
+<div id="tab-automation" class="tab-content">
+  <div class="card">
+    <h3>Globale Automation</h3>
+    <div class="setting-row">
+      <label>Automation aktivieren</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="cfg-automation-enabled">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <span class="setting-hint">Wenn deaktiviert, werden keine geplanten Läufe gestartet.</span>
+  </div>
+
+  <div class="automation-grid">
+    <div class="card automation-mode-card">
+      <h3>🇩🇪 German</h3>
+      <div class="setting-row automation-inline-row">
+        <label>Modus aktiv</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-german-enabled">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row automation-stack-row">
+        <label>Zeitplan</label>
+        <div class="schedule-type-toggle">
+          <button type="button" class="schedule-type-btn active" data-type="cron" id="auto-german-type-cron" onclick="toggleAutomationScheduleType('german', 'cron')">Cron</button>
+          <button type="button" class="schedule-type-btn" data-type="interval" id="auto-german-type-interval" onclick="toggleAutomationScheduleType('german', 'interval')">Intervall</button>
+        </div>
+      </div>
+      <div id="auto-german-cron-wrap" class="setting-row automation-stack-row">
+        <label>Cron-Ausdruck</label>
+        <input type="text" id="auto-german-schedule" placeholder="0 3 * * 0">
+      </div>
+      <div id="auto-german-interval-wrap" class="setting-row automation-stack-row" style="display:none;">
+        <label>Intervall (Min.)</label>
+        <input type="number" id="auto-german-interval" min="0" step="1" value="0">
+      </div>
+      <span class="setting-hint">Cron-Format: Minute Stunde Tag Monat Wochentag</span>
+      <div class="automation-next-run">Nächste Ausführung: <strong id="auto-german-next">–</strong></div>
+      <div class="automation-action-row"><button class="btn btn-primary btn-sm" onclick="triggerAutomation('german')">Jetzt ausführen</button></div>
+
+      <div class="setting-divider"></div>
+      <div class="setting-row automation-stack-row">
+        <label>Discord Webhook</label>
+        <input type="text" id="auto-german-webhook" placeholder="https://discord.com/api/webhooks/..." />
+      </div>
+      <div class="setting-row automation-inline-row">
+        <label>Auch bei leerem Ergebnis</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-german-notify-empty">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row automation-stack-row">
+        <label>Filterliste</label>
+        <div class="automation-filter-toggle">
+          <button type="button" class="automation-filter-btn active" id="auto-german-whitelist-btn" onclick="toggleAutomationFilterList('german', 'whitelist')">Whitelist</button>
+          <button type="button" class="automation-filter-btn" id="auto-german-blacklist-btn" onclick="toggleAutomationFilterList('german', 'blacklist')">Blacklist</button>
+          <button type="button" class="automation-filter-btn" id="auto-german-off-btn" onclick="toggleAutomationFilterList('german', 'off')">Aus</button>
+        </div>
+      </div>
+      <span class="setting-hint">Whitelist leer = alle Serien. Blacklist hat immer Vorrang. Mit "Aus" werden beide Filter komplett deaktiviert.</span>
+      <div class="automation-filter-panel active" id="auto-german-whitelist-panel">
+        <div class="automation-filter-header">
+          <label>Whitelist</label>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openSeriesSelector('german', 'whitelist')">+ Hinzufügen</button>
+        </div>
+        <div id="auto-german-whitelist-tiles" class="automation-filter-tiles"></div>
+      </div>
+      <div class="automation-filter-panel" id="auto-german-blacklist-panel" style="display:none;">
+        <div class="automation-filter-header">
+          <label>Blacklist</label>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openSeriesSelector('german', 'blacklist')">+ Hinzufügen</button>
+        </div>
+        <div id="auto-german-blacklist-tiles" class="automation-filter-tiles"></div>
+      </div>
+    </div>
+
+    <div class="card automation-mode-card">
+      <h3>📺 Neue Episoden</h3>
+      <div class="setting-row automation-inline-row">
+        <label>Modus aktiv</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-new-enabled">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row automation-stack-row">
+        <label>Zeitplan</label>
+        <div class="schedule-type-toggle">
+          <button type="button" class="schedule-type-btn active" data-type="cron" id="auto-new-type-cron" onclick="toggleAutomationScheduleType('new', 'cron')">Cron</button>
+          <button type="button" class="schedule-type-btn" data-type="interval" id="auto-new-type-interval" onclick="toggleAutomationScheduleType('new', 'interval')">Intervall</button>
+        </div>
+      </div>
+      <div id="auto-new-cron-wrap" class="setting-row automation-stack-row">
+        <label>Cron-Ausdruck</label>
+        <input type="text" id="auto-new-schedule" placeholder="0 */6 * * *">
+      </div>
+      <div id="auto-new-interval-wrap" class="setting-row automation-stack-row" style="display:none;">
+        <label>Intervall (Min.)</label>
+        <input type="number" id="auto-new-interval" min="0" step="1" value="0">
+      </div>
+      <span class="setting-hint">Cron-Format: Minute Stunde Tag Monat Wochentag</span>
+      <div class="automation-next-run">Nächste Ausführung: <strong id="auto-new-next">–</strong></div>
+      <div class="automation-action-row"><button class="btn btn-primary btn-sm" onclick="triggerAutomation('new')">Jetzt ausführen</button></div>
+
+      <div class="setting-divider"></div>
+      <div class="setting-row automation-stack-row">
+        <label>Discord Webhook</label>
+        <input type="text" id="auto-new-webhook" placeholder="https://discord.com/api/webhooks/..." />
+      </div>
+      <div class="setting-row automation-inline-row">
+        <label>Auch bei leerem Ergebnis</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-new-notify-empty">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row automation-stack-row">
+        <label>Filterliste</label>
+        <div class="automation-filter-toggle">
+          <button type="button" class="automation-filter-btn active" id="auto-new-whitelist-btn" onclick="toggleAutomationFilterList('new', 'whitelist')">Whitelist</button>
+          <button type="button" class="automation-filter-btn" id="auto-new-blacklist-btn" onclick="toggleAutomationFilterList('new', 'blacklist')">Blacklist</button>
+          <button type="button" class="automation-filter-btn" id="auto-new-off-btn" onclick="toggleAutomationFilterList('new', 'off')">Aus</button>
+        </div>
+      </div>
+      <span class="setting-hint">Whitelist leer = alle Serien. Blacklist hat immer Vorrang. Mit "Aus" werden beide Filter komplett deaktiviert.</span>
+      <div class="automation-filter-panel active" id="auto-new-whitelist-panel">
+        <div class="automation-filter-header">
+          <label>Whitelist</label>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openSeriesSelector('new', 'whitelist')">+ Hinzufügen</button>
+        </div>
+        <div id="auto-new-whitelist-tiles" class="automation-filter-tiles"></div>
+      </div>
+      <div class="automation-filter-panel" id="auto-new-blacklist-panel" style="display:none;">
+        <div class="automation-filter-header">
+          <label>Blacklist</label>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openSeriesSelector('new', 'blacklist')">+ Hinzufügen</button>
+        </div>
+        <div id="auto-new-blacklist-tiles" class="automation-filter-tiles"></div>
+      </div>
+    </div>
+
+    <div class="card automation-mode-card">
+      <h3>🇩🇪+📺 German &amp; Neu</h3>
+      <div class="setting-row automation-inline-row">
+        <label>Modus aktiv</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-german_new-enabled">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row automation-stack-row">
+        <label>Zeitplan</label>
+        <div class="schedule-type-toggle">
+          <button type="button" class="schedule-type-btn active" data-type="cron" id="auto-german_new-type-cron" onclick="toggleAutomationScheduleType('german_new', 'cron')">Cron</button>
+          <button type="button" class="schedule-type-btn" data-type="interval" id="auto-german_new-type-interval" onclick="toggleAutomationScheduleType('german_new', 'interval')">Intervall</button>
+        </div>
+      </div>
+      <div id="auto-german_new-cron-wrap" class="setting-row automation-stack-row">
+        <label>Cron-Ausdruck</label>
+        <input type="text" id="auto-german_new-schedule" placeholder="0 3 * * 0">
+      </div>
+      <div id="auto-german_new-interval-wrap" class="setting-row automation-stack-row" style="display:none;">
+        <label>Intervall (Min.)</label>
+        <input type="number" id="auto-german_new-interval" min="0" step="1" value="0">
+      </div>
+      <span class="setting-hint">Cron-Format: Minute Stunde Tag Monat Wochentag</span>
+      <div class="automation-next-run">Nächste Ausführung: <strong id="auto-german_new-next">–</strong></div>
+      <div class="automation-action-row"><button class="btn btn-primary btn-sm" onclick="triggerAutomation('german_new')">Jetzt ausführen</button></div>
+
+      <div class="setting-divider"></div>
+      <div class="setting-row automation-stack-row">
+        <label>Discord Webhook</label>
+        <input type="text" id="auto-german_new-webhook" placeholder="https://discord.com/api/webhooks/..." />
+      </div>
+      <div class="setting-row automation-inline-row">
+        <label>Auch bei leerem Ergebnis</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-german_new-notify-empty">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="setting-row automation-stack-row">
+        <label>Filterliste</label>
+        <div class="automation-filter-toggle">
+          <button type="button" class="automation-filter-btn active" id="auto-german_new-whitelist-btn" onclick="toggleAutomationFilterList('german_new', 'whitelist')">Whitelist</button>
+          <button type="button" class="automation-filter-btn" id="auto-german_new-blacklist-btn" onclick="toggleAutomationFilterList('german_new', 'blacklist')">Blacklist</button>
+          <button type="button" class="automation-filter-btn" id="auto-german_new-off-btn" onclick="toggleAutomationFilterList('german_new', 'off')">Aus</button>
+        </div>
+      </div>
+      <span class="setting-hint">Whitelist leer = alle Serien. Blacklist hat immer Vorrang. Mit "Aus" werden beide Filter komplett deaktiviert.</span>
+      <div class="automation-filter-panel active" id="auto-german_new-whitelist-panel">
+        <div class="automation-filter-header">
+          <label>Whitelist</label>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openSeriesSelector('german_new', 'whitelist')">+ Hinzufügen</button>
+        </div>
+        <div id="auto-german_new-whitelist-tiles" class="automation-filter-tiles"></div>
+      </div>
+      <div class="automation-filter-panel" id="auto-german_new-blacklist-panel" style="display:none;">
+        <div class="automation-filter-header">
+          <label>Blacklist</label>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="openSeriesSelector('german_new', 'blacklist')">+ Hinzufügen</button>
+        </div>
+        <div id="auto-german_new-blacklist-tiles" class="automation-filter-tiles"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Automation-Verlauf</h3>
+    <div class="db-table-wrap">
+      <table class="db-table automation-history-table">
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Modus</th>
+            <th>Quelle</th>
+            <th>Downloads</th>
+            <th>Fehlgeschlagen</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="automation-history-body">
+          <tr><td colspan="6" class="db-empty">Lade...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:16px; display:flex; gap:10px; align-items:center;">
+    <button class="btn btn-primary" onclick="saveAutomationSettings()">💾 Automation speichern</button>
+    <small id="automation-msg" style="display:none; margin-left:12px;" class="toast-msg"></small>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Serien-Auswahl Modal ═══════════════════════ -->
+<div id="series-selector-modal" class="modal" style="display:none;">
+  <div class="modal-overlay" onclick="closeSeriesSelector()"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Serien aus Datenbank</h2>
+      <button class="modal-close" onclick="closeSeriesSelector()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="series-search-wrap">
+        <input type="text" id="series-search" placeholder="Serien durchsuchen..." onkeyup="filterSeriesList()">
+      </div>
+      <div class="series-list" id="series-list">
+        <div class="series-loading">Lade Serien...</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeSeriesSelector()">Abbrechen</button>
+      <button class="btn btn-primary" onclick="addSelectedSeriesToFilter()">Hinzufügen</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════ Einstellungen Tab ═══════════════════════ -->
 <div id="tab-settings" class="tab-content">
 
@@ -375,6 +637,7 @@
           <option value="default">Standard</option>
           <option value="german">German</option>
           <option value="new">Neue Episoden</option>
+          <option value="german_new">German &amp; Neu</option>
           <option value="check">Check</option>
         </select>
       </div>
@@ -421,8 +684,8 @@
 </div>
 
 <!-- Folder Picker Modal -->
-<div id="folder-picker-overlay" class="modal-overlay" style="display:none;">
-  <div class="modal">
+<div id="folder-picker-overlay" class="folder-modal-overlay" style="display:none;">
+  <div class="folder-modal">
     <div class="modal-header">
       <h3>📁 Ordner wählen</h3>
       <button class="modal-close" onclick="closeFolderPicker()">&times;</button>

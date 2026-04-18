@@ -8,6 +8,7 @@ const INTERVAL_STATUS_RUNNING =  2000;  // ms – Status-Polling beim Download
 const INTERVAL_LOG_MINI       =  3000;  // ms – Mini-Log im Download-Tab
 const INTERVAL_LOG_FULL       =  500;  // ms – Vollständiger Log im Logs-Tab
 const INTERVAL_DISK           = 60000;  // ms – Speicherplatz-Anzeige
+const INTERVAL_AUTOMATION     = 30000;  // ms – Automation-Status
 
 // ──────────────────────── Hilfsfunktionen ────────────────────────
 
@@ -44,6 +45,11 @@ function initTabs() {
           // Tab-spezifisches Laden
           if (btn.dataset.tab === 'tab-db') loadDatabase();
           if (btn.dataset.tab === 'tab-settings') loadSettings();
+          if (btn.dataset.tab === 'tab-automation') {
+            loadSettings();
+            loadAutomationStatus();
+            loadAutomationHistory();
+          }
           if (btn.dataset.tab === 'tab-logs') {
             refreshFullLog();
             loadArchivedLogs();
@@ -62,6 +68,61 @@ function initTabs() {
 
 let statusInterval = null;
 let _statusPollActive = false;  // adaptive polling state
+let miniLogInterval = null;
+let diskInfoInterval = null;
+let automationStatusInterval = null;
+let automationHistoryInterval = null;
+
+function stopBackgroundPolling() {
+  clearInterval(statusInterval);
+  statusInterval = null;
+  clearInterval(miniLogInterval);
+  miniLogInterval = null;
+  clearInterval(logAutoRefreshInterval);
+  logAutoRefreshInterval = null;
+  clearInterval(diskInfoInterval);
+  diskInfoInterval = null;
+  clearInterval(automationStatusInterval);
+  automationStatusInterval = null;
+  clearInterval(automationHistoryInterval);
+  automationHistoryInterval = null;
+}
+
+function startBackgroundPolling() {
+  if (!statusInterval) {
+    refreshStatus();
+    statusInterval = setInterval(refreshStatus, INTERVAL_STATUS_IDLE);
+  }
+
+  if (!miniLogInterval) {
+    refreshLog();
+    miniLogInterval = setInterval(refreshLog, INTERVAL_LOG_MINI);
+  }
+
+  if (!logAutoRefreshInterval) {
+    // Nur aktualisieren wenn der Logs-Tab aktiv ist.
+    logAutoRefreshInterval = setInterval(() => {
+      if ($('#tab-logs')?.classList.contains('active')) refreshFullLog();
+    }, INTERVAL_LOG_FULL);
+  }
+
+  if (!diskInfoInterval) {
+    refreshDiskInfo();
+    diskInfoInterval = setInterval(refreshDiskInfo, INTERVAL_DISK);
+  }
+
+  if (!automationStatusInterval) {
+    loadAutomationStatus();
+    automationStatusInterval = setInterval(loadAutomationStatus, INTERVAL_AUTOMATION);
+  }
+
+  if (!automationHistoryInterval) {
+    loadAutomationHistory();
+    automationHistoryInterval = setInterval(() => {
+      if ($('#tab-automation')?.classList.contains('active')) loadAutomationHistory();
+    }, INTERVAL_AUTOMATION);
+  }
+}
 
 async function refreshStatus() {
   try {
@@ -843,6 +904,9 @@ function renderSettings(cfg) {
 
   // Languages (sortable)
   renderLanguages(cfg.languages || []);
+
+  // Automation
+  renderAutomationSettings(cfg.automation || {});
 }
 
 function toggleStoragePaths() {
@@ -885,8 +949,8 @@ function renderLanguages(langs) {
   });
 }
 
-async function saveSettings() {
-  const cfg = {
+function buildConfigFromForm() {
+  return {
     server: {
       port: parseInt($('#cfg-port').value) || 5050,
     },
@@ -908,7 +972,13 @@ async function saveSettings() {
       refresh_titles: $('#cfg-refresh-titles').checked,
     },
     data: currentConfig.data || {},
+    logging: currentConfig.logging || { log_retention_days: 7 },
+    automation: collectAutomationSettings(),
   };
+}
+
+async function saveSettings() {
+  const cfg = buildConfigFromForm();
 
   try {
     const res = await api('/config', {
@@ -924,6 +994,375 @@ async function saveSettings() {
   } catch (e) {
     showMsg('#settings-msg', 'Speichern fehlgeschlagen', 'danger');
   }
+}
+
+// ──────────────────────── Automation Tab ────────────────────────
+
+function automationModes() {
+  return ['german', 'new', 'german_new'];
+}
+
+function getSelectedScheduleType(mode) {
+  const cronBtn = $(`#auto-${mode}-type-cron`);
+  return cronBtn?.classList.contains('active') ? 'cron' : 'interval';
+}
+
+function setScheduleType(mode, type) {
+  const cronBtn = $(`#auto-${mode}-type-cron`);
+  const intervalBtn = $(`#auto-${mode}-type-interval`);
+  if (type === 'interval') {
+    if (cronBtn) cronBtn.classList.remove('active');
+    if (intervalBtn) intervalBtn.classList.add('active');
+  } else {
+    if (cronBtn) cronBtn.classList.add('active');
+    if (intervalBtn) intervalBtn.classList.remove('active');
+  }
+  toggleAutomationScheduleType(mode);
+}
+
+function toggleAutomationScheduleType(mode, selectedType = null) {
+  const isInterval = selectedType
+    ? selectedType === 'interval'
+    : getSelectedScheduleType(mode) === 'interval';
+  const cronBtn = $(`#auto-${mode}-type-cron`);
+  const intervalBtn = $(`#auto-${mode}-type-interval`);
+  const cronWrap = $(`#auto-${mode}-cron-wrap`);
+  const intervalWrap = $(`#auto-${mode}-interval-wrap`);
+  
+  if (cronBtn) cronBtn.classList.toggle('active', !isInterval);
+  if (intervalBtn) intervalBtn.classList.toggle('active', isInterval);
+  if (cronWrap) cronWrap.style.display = isInterval ? 'none' : '';
+  if (intervalWrap) intervalWrap.style.display = isInterval ? '' : 'none';
+}
+
+function toggleAutomationFilterList(mode, listType) {
+  const showWhitelist = listType === 'whitelist';
+  const showBlacklist = listType === 'blacklist';
+  const filterMode = listType === 'off' ? 'off' : (showBlacklist ? 'blacklist' : 'whitelist');
+  const whitelistPanel = $(`#auto-${mode}-whitelist-panel`);
+  const blacklistPanel = $(`#auto-${mode}-blacklist-panel`);
+  const whitelistBtn = $(`#auto-${mode}-whitelist-btn`);
+  const blacklistBtn = $(`#auto-${mode}-blacklist-btn`);
+  const offBtn = $(`#auto-${mode}-off-btn`);
+
+  if (whitelistPanel) whitelistPanel.style.display = showWhitelist ? '' : 'none';
+  if (blacklistPanel) blacklistPanel.style.display = showBlacklist ? '' : 'none';
+  if (whitelistBtn) whitelistBtn.classList.toggle('active', showWhitelist);
+  if (blacklistBtn) blacklistBtn.classList.toggle('active', showBlacklist);
+  if (offBtn) offBtn.classList.toggle('active', filterMode === 'off');
+
+  const toggle = $(`#auto-${mode}-whitelist-btn`)?.closest('.automation-filter-toggle');
+  if (toggle) toggle.dataset.filterMode = filterMode;
+}
+
+function getSelectedFilterMode(mode) {
+  const toggle = $(`#auto-${mode}-whitelist-btn`)?.closest('.automation-filter-toggle');
+  const modeValue = (toggle?.dataset?.filterMode || 'whitelist').toLowerCase();
+  return ['whitelist', 'blacklist', 'off'].includes(modeValue) ? modeValue : 'whitelist';
+}
+
+const automationFilterSelections = {
+  german: { whitelist: [], blacklist: [] },
+  new: { whitelist: [], blacklist: [] },
+  german_new: { whitelist: [], blacklist: [] },
+};
+
+function normalizeSeriesList(list) {
+  if (!Array.isArray(list)) return [];
+  const unique = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const value = String(raw || '').trim();
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(value);
+  }
+  return unique.sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }));
+}
+
+function ensureAutomationFilterState(mode) {
+  if (!automationFilterSelections[mode]) {
+    automationFilterSelections[mode] = { whitelist: [], blacklist: [] };
+  }
+  return automationFilterSelections[mode];
+}
+
+function setAutomationFilterList(mode, type, list) {
+  const state = ensureAutomationFilterState(mode);
+  state[type] = normalizeSeriesList(list);
+  renderAutomationFilterTiles(mode, type);
+}
+
+function addAutomationFilterItems(mode, type, items) {
+  const state = ensureAutomationFilterState(mode);
+  const current = state[type] || [];
+  const merged = normalizeSeriesList([...current, ...items]);
+  const addedCount = Math.max(0, merged.length - current.length);
+  state[type] = merged;
+  renderAutomationFilterTiles(mode, type);
+  return addedCount;
+}
+
+function removeAutomationFilterItem(mode, type, title) {
+  const state = ensureAutomationFilterState(mode);
+  const key = String(title || '').trim().toLowerCase();
+  state[type] = (state[type] || []).filter(item => item.toLowerCase() !== key);
+  renderAutomationFilterTiles(mode, type);
+}
+
+function renderAutomationFilterTiles(mode, type) {
+  const wrap = $(`#auto-${mode}-${type}-tiles`);
+  if (!wrap) return;
+
+  const state = ensureAutomationFilterState(mode);
+  const list = normalizeSeriesList(state[type] || []);
+  state[type] = list;
+
+  if (!list.length) {
+    wrap.innerHTML = '<div class="automation-filter-empty">Keine Serien ausgewählt</div>';
+    return;
+  }
+
+  wrap.innerHTML = list.map(item => `
+    <span class="automation-filter-tile">
+      <span class="automation-filter-tile-label" title="${esc(item)}">${esc(item)}</span>
+      <button type="button" class="automation-filter-remove" data-mode="${esc(mode)}" data-type="${esc(type)}" data-title="${esc(item)}" aria-label="${esc(item)} entfernen">×</button>
+    </span>
+  `).join('');
+}
+
+function renderAutomationSettings(automationCfg) {
+  const autoCfg = automationCfg || {};
+  const globalEnabled = !!autoCfg.enabled;
+  if ($('#cfg-automation-enabled')) {
+    $('#cfg-automation-enabled').checked = globalEnabled;
+  }
+
+  automationModes().forEach(mode => {
+    const modeCfg = autoCfg[mode] || {};
+    const enabled = !!modeCfg.enabled;
+    const schedule = modeCfg.schedule || '';
+    const interval = Number(modeCfg.interval_minutes || 0);
+    const webhook = modeCfg.discord_webhook || '';
+    const notifyEmpty = !!modeCfg.notify_on_empty;
+    const whitelist = modeCfg.whitelist || [];
+    const blacklist = modeCfg.blacklist || [];
+
+    if ($(`#auto-${mode}-enabled`)) $(`#auto-${mode}-enabled`).checked = enabled;
+    if ($(`#auto-${mode}-schedule`)) $(`#auto-${mode}-schedule`).value = schedule;
+    if ($(`#auto-${mode}-interval`)) $(`#auto-${mode}-interval`).value = interval;
+    if ($(`#auto-${mode}-webhook`)) $(`#auto-${mode}-webhook`).value = webhook;
+    if ($(`#auto-${mode}-notify-empty`)) $(`#auto-${mode}-notify-empty`).checked = notifyEmpty;
+
+    setAutomationFilterList(mode, 'whitelist', whitelist);
+    setAutomationFilterList(mode, 'blacklist', blacklist);
+
+    setScheduleType(mode, interval > 0 ? 'interval' : 'cron');
+    const filterMode = (modeCfg.filter_mode || 'whitelist').toLowerCase();
+    toggleAutomationFilterList(mode, ['whitelist', 'blacklist', 'off'].includes(filterMode) ? filterMode : 'whitelist');
+  });
+}
+
+function collectAutomationSettings() {
+  const automation = {
+    enabled: !!$('#cfg-automation-enabled')?.checked,
+  };
+
+  automationModes().forEach(mode => {
+    const scheduleType = getSelectedScheduleType(mode);
+    const rawSchedule = ($(`#auto-${mode}-schedule`)?.value || '').trim();
+    const rawInterval = parseInt($(`#auto-${mode}-interval`)?.value || '0', 10);
+    const state = ensureAutomationFilterState(mode);
+
+    automation[mode] = {
+      enabled: !!$(`#auto-${mode}-enabled`)?.checked,
+      schedule: scheduleType === 'cron' ? rawSchedule : '',
+      interval_minutes: scheduleType === 'interval' && Number.isFinite(rawInterval) && rawInterval > 0 ? rawInterval : 0,
+      discord_webhook: ($(`#auto-${mode}-webhook`)?.value || '').trim(),
+      notify_on_empty: !!$(`#auto-${mode}-notify-empty`)?.checked,
+      filter_mode: getSelectedFilterMode(mode),
+      whitelist: normalizeSeriesList(state.whitelist || []),
+      blacklist: normalizeSeriesList(state.blacklist || []),
+    };
+  });
+
+  return automation;
+}
+
+async function saveAutomationSettings() {
+  const cfg = buildConfigFromForm();
+  try {
+    const res = await api('/config', {
+      method: 'POST',
+      body: JSON.stringify(cfg),
+    });
+    if (res.status === 'ok') {
+      showMsg('#automation-msg', 'Automation gespeichert', 'success');
+      currentConfig = cfg;
+      await loadAutomationStatus();
+      await loadAutomationHistory();
+    } else {
+      showMsg('#automation-msg', `Fehler: ${(res.errors||[]).join(', ')}`, 'danger');
+    }
+  } catch (e) {
+    showMsg('#automation-msg', 'Speichern fehlgeschlagen', 'danger');
+  }
+}
+
+function setAutomationNextRun(mode, value) {
+  const el = $(`#auto-${mode}-next`);
+  if (!el) return;
+  el.textContent = value ? formatTimestamp(value) : '–';
+}
+
+async function loadAutomationStatus() {
+  try {
+    const data = await api('/automation/status');
+    const jobs = data.jobs || {};
+    automationModes().forEach(mode => {
+      const job = jobs[mode] || {};
+      setAutomationNextRun(mode, job.next_run || null);
+    });
+  } catch (e) {
+    console.error('Automation status error:', e);
+  }
+}
+
+async function loadAutomationHistory() {
+  try {
+    const data = await api('/automation/history?limit=30');
+    const history = data.history || [];
+    const tbody = $('#automation-history-body');
+    if (!tbody) return;
+
+    if (!history.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="db-empty">Noch keine Automation-Läufe vorhanden</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = history.map(item => `
+      <tr>
+        <td>${esc(item.timestamp || '–')}</td>
+        <td>${esc(item.mode || '–')}</td>
+        <td>${esc(item.source || '–')}</td>
+        <td>${esc(String(item.downloaded_count ?? 0))}</td>
+        <td>${esc(String(item.failed_count ?? 0))}</td>
+        <td>${esc(item.status || '–')}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error('Automation history error:', e);
+  }
+}
+
+async function triggerAutomation(mode) {
+  if (!confirm(`Automation-Lauf für '${mode}' jetzt starten?`)) return;
+
+  try {
+    const res = await api(`/automation/trigger/${encodeURIComponent(mode)}`, { method: 'POST' });
+    if (res.status === 'ok') {
+      showMsg('#automation-msg', `Lauf gestartet (${mode})`, 'success');
+      loadAutomationStatus();
+      setTimeout(loadAutomationHistory, 1500);
+    } else {
+      showMsg('#automation-msg', res.message || 'Start fehlgeschlagen', 'danger');
+    }
+  } catch (e) {
+    showMsg('#automation-msg', 'Start fehlgeschlagen', 'danger');
+  }
+}
+
+// ──────────────────────── Serien-Auswahl Modal ────────────────────────
+
+let currentSeriesMode = null;
+let currentSeriesType = null;
+let allSeries = [];
+
+async function openSeriesSelector(mode, type) {
+  currentSeriesMode = mode;
+  currentSeriesType = type;
+  const modal = $('#series-selector-modal');
+  if (modal) {
+    // Move modal under body so fixed positioning is always viewport-based.
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+    modal.style.display = 'flex';
+    await loadSeriesList();
+    const searchInput = $('#series-search');
+    if (searchInput) {
+      searchInput.value = '';
+      searchInput.focus();
+    }
+  }
+}
+
+function closeSeriesSelector() {
+  const modal = $('#series-selector-modal');
+  if (modal) modal.style.display = 'none';
+  currentSeriesMode = null;
+  currentSeriesType = null;
+}
+
+async function loadSeriesList(query = '') {
+  const seriesList = $('#series-list');
+  if (!seriesList) return;
+
+  seriesList.innerHTML = '<div class="series-loading">Lade Serien...</div>';
+
+  try {
+    const url = query ? `/series?q=${encodeURIComponent(query)}` : '/series';
+    const res = await api(url);
+    allSeries = normalizeSeriesList((res.series || []).map(s => s?.title || ''));
+
+    if (allSeries.length === 0) {
+      seriesList.innerHTML = '<div class="series-empty">Keine Serien gefunden</div>';
+      return;
+    }
+
+    const state = ensureAutomationFilterState(currentSeriesMode || '');
+    const selectedList = state[currentSeriesType || 'whitelist'] || [];
+    const selectedSet = new Set(selectedList.map(v => String(v || '').trim().toLowerCase()));
+
+    seriesList.innerHTML = allSeries.map((title, idx) => {
+      const isChecked = selectedSet.has(String(title).toLowerCase());
+      return `
+        <div class="series-item">
+          <input type="checkbox" id="series-${idx}" data-title="${esc(title)}" ${isChecked ? 'checked' : ''}>
+          <label for="series-${idx}">${esc(title)}</label>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error('Series loading error:', e);
+    seriesList.innerHTML = '<div class="series-empty">Fehler beim Laden</div>';
+  }
+}
+
+function filterSeriesList() {
+  const query = $('#series-search')?.value || '';
+  loadSeriesList(query);
+}
+
+function addSelectedSeriesToFilter() {
+  if (!currentSeriesMode || !currentSeriesType) {
+    alert('Fehler: Modus oder Typ nicht gesetzt');
+    return;
+  }
+
+  const checkboxes = $$('#series-list input[type="checkbox"]:checked');
+  if (checkboxes.length === 0) {
+    alert('Keine Serien ausgewählt');
+    return;
+  }
+
+  const selectedTitles = Array.from(checkboxes).map(cb => cb.dataset.title).filter(Boolean);
+  const addedCount = addAutomationFilterItems(currentSeriesMode, currentSeriesType, selectedTitles);
+
+  closeSeriesSelector();
+  showMsg('#automation-msg', `${addedCount} Serie(n) hinzugefügt`, 'success');
 }
 
 // ──────────────────────── Hilfsfunktionen ────────────────────────
@@ -1102,19 +1541,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initUpload();
   initSettingsPills();
 
-  // Status-Polling
-  refreshStatus();
-  statusInterval = setInterval(refreshStatus, INTERVAL_STATUS_IDLE);
-
-  // Mini-Log Polling
-  refreshLog();
-  setInterval(refreshLog, INTERVAL_LOG_MINI);
-
-  // Log-Auto-Refresh (Logs-Tab) – nur aktualisieren wenn Tab aktiv
-  logAutoRefreshInterval = setInterval(() => {
-    if ($('#tab-logs')?.classList.contains('active')) refreshFullLog();
-  }, INTERVAL_LOG_FULL);
-
   // Auto-Scroll deaktivieren wenn User manuell nach oben scrollt
   const logContainer = $('#log-output-full');
   if (logContainer) {
@@ -1133,18 +1559,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Disk Info – periodisch aktualisieren (alle 60s)
-  function refreshDiskInfo() {
-    api('/disk').then(d => {
-      const el = $('#disk-info');
-      if (!el || d.free_gb === undefined) return;
-      const gb = parseFloat(d.free_gb);
-      el.textContent = `💾 ${d.free_gb} GB frei`;
-      el.style.color = gb < 5 ? 'var(--danger)' : gb < 20 ? 'var(--warning)' : '';
-    }).catch(() => {});
-  }
-  refreshDiskInfo();
-  setInterval(refreshDiskInfo, INTERVAL_DISK);
+  startBackgroundPolling();
+
+  // Polling pausieren, wenn die Seite nicht aktiv ist.
+  // Das verhindert Request-Stürme während Server-Shutdown.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      stopBackgroundPolling();
+    } else {
+      startBackgroundPolling();
+    }
+  });
+  window.addEventListener('blur', () => {
+    if (!document.hasFocus()) stopBackgroundPolling();
+  });
+  window.addEventListener('focus', () => {
+    startBackgroundPolling();
+  });
+  window.addEventListener('beforeunload', () => {
+    stopBackgroundPolling();
+  });
 
   // Enter-Key für Suche (alle Ergebnisse)
   $('#search-query')?.addEventListener('keydown', e => {
@@ -1155,7 +1589,30 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#add-url')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') addLink();
   });
+
+  document.addEventListener('click', e => {
+    const removeBtn = e.target.closest('.automation-filter-remove');
+    if (!removeBtn) return;
+
+    const mode = removeBtn.dataset.mode || '';
+    const type = removeBtn.dataset.type || '';
+    const title = removeBtn.dataset.title || '';
+    if (!mode || !type || !title) return;
+
+    removeAutomationFilterItem(mode, type, title);
+  });
 });
+
+// Disk Info – periodisch aktualisieren (alle 60s)
+function refreshDiskInfo() {
+  api('/disk').then(d => {
+    const el = $('#disk-info');
+    if (!el || d.free_gb === undefined) return;
+    const gb = parseFloat(d.free_gb);
+    el.textContent = `💾 ${d.free_gb} GB frei`;
+    el.style.color = gb < 5 ? 'var(--danger)' : gb < 20 ? 'var(--warning)' : '';
+  }).catch(() => {});
+}
 
 // ──────────────────────── Export-Funktionen ────────────────────────
 

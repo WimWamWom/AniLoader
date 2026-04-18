@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from .. import database as db
-from .. import downloader, scraper
+from .. import automation, downloader, scraper
 from ..config import (
     get_data_folder,
     get_download_path,
@@ -62,6 +62,57 @@ async def health():
 async def get_status():
     """Aktueller Download-Status."""
     return downloader.get_status()
+
+
+@router.get("/automation/status")
+async def get_automation_status():
+    """Status des Automation-Schedulers inkl. nächster Ausführungen."""
+    return automation.get_scheduler_status()
+
+
+@router.post("/automation/trigger/{mode}")
+async def trigger_automation(mode: str):
+    """Startet einen manuellen Automation-Lauf für den Modus."""
+    if mode not in ("german", "new", "german_new"):
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Ungültiger Modus"},
+        )
+
+    if downloader.is_running():
+        return JSONResponse(
+            status_code=409,
+            content={"status": "error", "message": "Download läuft bereits"},
+        )
+
+    ok, info = automation.trigger_mode(mode)
+    if ok:
+        return {"status": "ok", "mode": mode, "run_id": info}
+
+    return JSONResponse(
+        status_code=409,
+        content={"status": "error", "message": info},
+    )
+
+
+@router.get("/automation/history")
+async def get_automation_history(limit: int = Query(20, ge=1, le=200)):
+    """Gibt die letzten Automation-Läufe zurück."""
+    return {"history": automation.get_history(limit=limit)}
+
+
+@router.get("/series")
+async def get_all_series(q: Optional[str] = None):
+    """Gibt alle Serien aus der Datenbank zurück für die Filterlisten-Auswahl."""
+    data_folder = _data_folder()
+    series = db.get_all_anime(
+        data_folder,
+        include_deleted=False,
+        search=q,
+        sort_by="title",
+        sort_dir="ASC"
+    )
+    return {"series": [{"title": s["title"], "url": s["url"]} for s in series]}
 
 
 # ──────────────────────── Download-Steuerung ────────────────────────

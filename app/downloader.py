@@ -17,8 +17,9 @@ import shutil
 import subprocess
 import threading
 import time
+from copy import deepcopy
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import random
 from . import database as db
 from . import scraper
@@ -64,6 +65,12 @@ status: Dict = {
 _download_lock = threading.Lock()
 _status_lock = threading.Lock()
 _download_thread: Optional[threading.Thread] = None
+_last_result_lock = threading.Lock()
+_last_run_result: Dict[str, Any] = {
+    "mode": None,
+    "finished_at": None,
+    "result": {"downloaded": [], "failed": []},
+}
 
 _CDN_403_MAX_RETRIES = 2   # max. Anzahl Wiederholungen bei 403
 _CDN_403_RETRY_DELAY = 15  # Sekunden Pause vor 403-Retry
@@ -93,6 +100,12 @@ def get_status() -> Dict:
     """Gibt den aktuellen Download-Status zurück."""
     with _status_lock:
         return status.copy()
+
+
+def get_last_run_result() -> Dict[str, Any]:
+    """Gibt das strukturierte Ergebnis des zuletzt beendeten Laufs zurück."""
+    with _last_result_lock:
+        return deepcopy(_last_run_result)
 
 
 def is_running() -> bool:
@@ -239,13 +252,20 @@ def _download_episode(
     anime: Dict,
     season: int,
     episode_info: Dict,
-) -> str:
+    detailed: bool = False,
+) -> Any:
     """
     Lädt eine einzelne Episode herunter.
 
     Returns:
-        "downloaded" | "skipped" | "failed" | "no_german"
+        Standard: "downloaded" | "skipped" | "failed" | "no_german" | "no_language"
+        Detailed: {"status": str, "language": Optional[str]}
     """
+    def _result(result_status: str, language: Optional[str] = None) -> Any:
+        if detailed:
+            return {"status": result_status, "language": language}
+        return result_status
+
     episode_num = episode_info["episode"]
     episode_url = episode_info["url"]
     is_film = season == 0
@@ -264,7 +284,7 @@ def _download_episode(
     free_gb = get_free_space_gb(output_path)
     if free_gb < min_free:
         log(f"[WARN] Nur {free_gb:.1f} GB frei (Minimum: {min_free} GB) – überspringe")
-        return "failed"
+        return _result("failed")
 
     # Bereits heruntergeladen?
     existing = episode_already_downloaded(
@@ -273,7 +293,7 @@ def _download_episode(
     )
     if existing:
         log(f"[SKIP] Bereits vorhanden: S{season:02d}E{episode_num:03d}")
-        return "skipped"
+        return _result("skipped")
 
     # Sprachen IMMER von der Episoden-Seite holen (vor dem Download)
     ep_langs = episode_info.get("languages", [])
@@ -289,12 +309,12 @@ def _download_episode(
     if scraper.is_aniworld(episode_url) and not ep_langs:
         if not scraper.is_episode_available(episode_url):
             log(f"[SKIP] S{season:02d}E{episode_num:03d} – keine Streams verfügbar (Ankündigung)")
-            return "no_language"
+            return _result("no_language")
 
     # S.to: Keine Sprache gefunden → Episode nicht verfügbar, überspringen
     if scraper.is_sto(episode_url) and not ep_langs:
         log(f"[SKIP] S{season:02d}E{episode_num:03d} – keine Sprache → nicht verfügbar")
-        return "no_language"
+        return _result("no_language")
 
     # Sprachen zur Kaskade vorbereiten
     cascading_languages = []
@@ -336,7 +356,7 @@ def _download_episode(
 
     if not downloaded:
         log(f"[FAIL] S{season:02d}E{episode_num:03d} – kein Download möglich")
-        return "failed"
+        return _result("failed")
 
     # Folder-Name erkennen und speichern
     if not anime.get("folder_name"):
@@ -355,9 +375,9 @@ def _download_episode(
 
     # Fehlende deutsche Episoden tracken
     if used_language and used_language != "German Dub":
-        return "no_german"
+        return _result("no_german", used_language)
 
-    return "downloaded"
+    return _result("downloaded", used_language)
 
 
 # ──────────────────────── Modi ────────────────────────
@@ -480,11 +500,12 @@ def _run_default(cfg: dict, data_folder: str) -> None:
         status["progress"]["completed_series"] += 1
 
 
-def _run_german(cfg: dict, data_folder: str) -> None:
+def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
     """
     German Mode: Prüft fehlende deutsche Episoden und lädt diese nach.
     """
     log("[MODE] German – Deutsche Episoden nachladen")
+    run_result: Dict[str, List[Dict[str, Any]]] = {"downloaded": [], "failed": []}
     anime_list = db.get_active_anime(data_folder)
     status["progress"]["total_series"] = len(anime_list)
 
@@ -517,7 +538,7 @@ def _run_german(cfg: dict, data_folder: str) -> None:
 
         for episode_url in missing:
             if _check_stop():
-                return
+                return run_result
 
             log(f"[DL] Versuche German Dub für {episode_url}")
             parsed = _parse_season_episode_from_url(episode_url)
@@ -528,10 +549,24 @@ def _run_german(cfg: dict, data_folder: str) -> None:
                 if _run_aniworld_download(episode_url, "German Dub", output_path, timeout):
                     log(f"[OK] German Dub erfolgreich: {episode_url}")
                     status["progress"]["downloaded_episodes"] += 1
+                    run_result["downloaded"].append({
+                        "title": anime["title"],
+                        "url": episode_url,
+                        "season": -1,
+                        "episode": -1,
+                        "language": "German Dub",
+                    })
                 else:
                     log(f"[SKIP] German Dub noch nicht verfügbar: {episode_url}")
                     still_missing.append(episode_url)
                     status["progress"]["skipped_episodes"] += 1
+                    run_result["failed"].append({
+                        "title": anime["title"],
+                        "url": episode_url,
+                        "season": -1,
+                        "episode": -1,
+                        "language": "German Dub",
+                    })
                 status["completed_episodes_overall"] += 1
                 continue
 
@@ -552,6 +587,13 @@ def _run_german(cfg: dict, data_folder: str) -> None:
                 if repaired:
                     log(f"[OK] Bestehende Datei repariert: {episode_url}")
                     status["progress"]["downloaded_episodes"] += 1
+                    run_result["downloaded"].append({
+                        "title": anime["title"],
+                        "url": episode_url,
+                        "season": season,
+                        "episode": episode_num,
+                        "language": "German Dub",
+                    })
                     if season == 0:
                         db.update_anime(data_folder, anime["id"], last_film=episode_num)
                     else:
@@ -574,11 +616,20 @@ def _run_german(cfg: dict, data_folder: str) -> None:
             }
 
             # Für robustes Renaming/Moving den Standardpfad nutzen.
-            result = _download_episode(german_cfg, data_folder, anime, season, episode_info)
+            detailed_result = _download_episode(german_cfg, data_folder, anime, season, episode_info, detailed=True)
+            result = detailed_result.get("status")
+            used_language = detailed_result.get("language") or "German Dub"
 
             if result == "downloaded":
                 log(f"[OK] German Dub erfolgreich: {episode_url}")
                 status["progress"]["downloaded_episodes"] += 1
+                run_result["downloaded"].append({
+                    "title": anime["title"],
+                    "url": episode_url,
+                    "season": season,
+                    "episode": episode_num,
+                    "language": used_language,
+                })
                 if season == 0:
                     db.update_anime(data_folder, anime["id"], last_film=episode_num)
                 else:
@@ -592,6 +643,13 @@ def _run_german(cfg: dict, data_folder: str) -> None:
                 log(f"[SKIP] German Dub noch nicht verfügbar: {episode_url}")
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
+                run_result["failed"].append({
+                    "title": anime["title"],
+                    "url": episode_url,
+                    "season": season,
+                    "episode": episode_num,
+                    "language": "German Dub",
+                })
             else:
                 # skipped/no_german: nicht als erfolgreich aus missing entfernen,
                 # damit potentielle Altlasten erneut geprüft werden können.
@@ -607,12 +665,15 @@ def _run_german(cfg: dict, data_folder: str) -> None:
 
         status["progress"]["completed_series"] += 1
 
+    return run_result
 
-def _run_new(cfg: dict, data_folder: str) -> None:
+
+def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
     """
     New Mode: Prüft alle Serien auf neue Episoden seit dem letzten Download.
     """
     log("[MODE] New – Neue Episoden prüfen")
+    run_result: Dict[str, List[Dict[str, Any]]] = {"downloaded": [], "failed": []}
     anime_list = db.get_active_anime(data_folder)
     status["progress"]["total_series"] = len(anime_list)
 
@@ -650,7 +711,7 @@ def _run_new(cfg: dict, data_folder: str) -> None:
 
         for season in seasons:
             if _check_stop():
-                return
+                return run_result
 
             episodes = all_eps_by_season.get(season, [])
             status["total_episodes_in_season"] = len(episodes)
@@ -661,7 +722,7 @@ def _run_new(cfg: dict, data_folder: str) -> None:
 
             for ep in episodes:
                 if _check_stop():
-                    return
+                    return run_result
 
                 # Nur neue Episoden (nach dem letzten bekannten Stand)
                 if season == 0:
@@ -675,11 +736,20 @@ def _run_new(cfg: dict, data_folder: str) -> None:
                     status["completed_episodes_overall"] += 1
                     continue
 
-                result = _download_episode(cfg, data_folder, anime, season, ep)
+                detailed_result = _download_episode(cfg, data_folder, anime, season, ep, detailed=True)
+                result = detailed_result.get("status")
+                used_language = detailed_result.get("language") or "Unknown"
                 status["completed_episodes_overall"] += 1
                 if result in ("downloaded", "no_german"):
                     has_new = True
                     status["progress"]["downloaded_episodes"] += 1
+                    run_result["downloaded"].append({
+                        "title": anime["title"],
+                        "url": ep["url"],
+                        "season": season,
+                        "episode": ep["episode"],
+                        "language": used_language,
+                    })
 
                     if season == 0:
                         db.update_anime(data_folder, anime["id"], last_film=ep["episode"])
@@ -693,6 +763,13 @@ def _run_new(cfg: dict, data_folder: str) -> None:
                 elif result == "failed":
                     had_failures = True
                     status["progress"]["failed_episodes"] += 1
+                    run_result["failed"].append({
+                        "title": anime["title"],
+                        "url": ep["url"],
+                        "season": season,
+                        "episode": ep["episode"],
+                        "language": used_language,
+                    })
                 elif result == "no_language":
                     had_no_language = True
                     status["progress"]["skipped_episodes"] += 1
@@ -709,6 +786,30 @@ def _run_new(cfg: dict, data_folder: str) -> None:
             log(f"[DONE] {anime['title']} als komplett markiert (letzte Folgen noch nicht verfügbar)")
 
         status["progress"]["completed_series"] += 1
+
+    return run_result
+
+
+def _run_german_new(cfg: dict, data_folder: str) -> Dict[str, Any]:
+    """Kombinierter Modus: erst German, dann New im selben Lauf."""
+    log("[MODE] German+New – kombinierten Lauf starten")
+    german_result = _run_german(cfg, data_folder)
+
+    if _check_stop():
+        return {
+            "german": german_result,
+            "new": {"downloaded": [], "failed": []},
+            "downloaded": german_result.get("downloaded", []),
+            "failed": german_result.get("failed", []),
+        }
+
+    new_result = _run_new(cfg, data_folder)
+    return {
+        "german": german_result,
+        "new": new_result,
+        "downloaded": german_result.get("downloaded", []) + new_result.get("downloaded", []),
+        "failed": german_result.get("failed", []) + new_result.get("failed", []),
+    }
 
 
 def _run_check(cfg: dict, data_folder: str) -> None:
@@ -791,6 +892,7 @@ MODE_RUNNERS = {
     "default": _run_default,
     "german": _run_german,
     "new": _run_new,
+    "german_new": _run_german_new,
     "check": _run_check,
 }
 
@@ -810,8 +912,11 @@ def _download_worker(mode: str) -> None:
             status["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
         runner = MODE_RUNNERS.get(mode)
+        run_result: Dict[str, Any] = {"downloaded": [], "failed": []}
         if runner:
-            runner(cfg, data_folder)
+            runner_result = runner(cfg, data_folder)
+            if isinstance(runner_result, dict):
+                run_result = runner_result
         else:
             log(f"[ERROR] Unbekannter Modus: {mode}")
 
@@ -824,6 +929,11 @@ def _download_worker(mode: str) -> None:
 
         with _status_lock:
             status["status"] = "finished"
+
+        with _last_result_lock:
+            _last_run_result["mode"] = mode
+            _last_run_result["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _last_run_result["result"] = deepcopy(run_result)
 
     except Exception as e:
         log(f"[FATAL] Download-Thread-Fehler: {e}")

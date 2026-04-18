@@ -12,6 +12,11 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+try:
+    from croniter import croniter
+except Exception:  # pragma: no cover - fallback if optional dependency is missing
+    croniter = None
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = BASE_DIR / "data"
 DEFAULT_DOWNLOAD_DIR = BASE_DIR / "Downloads"
@@ -38,9 +43,42 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "download": {
         "min_free_gb": 2.0,
-        "autostart_mode": None,  # null | default | german | new | check
+        "autostart_mode": None,  # null | default | german | new | check | german_new
         "timeout_seconds": 900,
         "refresh_titles": False,
+    },
+    "automation": {
+        "enabled": False,
+        "german": {
+            "enabled": False,
+            "schedule": "0 3 * * 0",
+            "interval_minutes": 0,
+            "discord_webhook": "",
+            "notify_on_empty": False,
+            "filter_mode": "whitelist",
+            "whitelist": [],
+            "blacklist": [],
+        },
+        "new": {
+            "enabled": False,
+            "schedule": "0 */6 * * *",
+            "interval_minutes": 0,
+            "discord_webhook": "",
+            "notify_on_empty": False,
+            "filter_mode": "whitelist",
+            "whitelist": [],
+            "blacklist": [],
+        },
+        "german_new": {
+            "enabled": False,
+            "schedule": "",
+            "interval_minutes": 0,
+            "discord_webhook": "",
+            "notify_on_empty": False,
+            "filter_mode": "whitelist",
+            "whitelist": [],
+            "blacklist": [],
+        },
     },
     "data": {
         "folder": str(DEFAULT_DATA_DIR),
@@ -51,8 +89,21 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 VALID_LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
-VALID_MODES = [None, "default", "german", "new", "check"]
+VALID_MODES = [None, "default", "german", "new", "check", "german_new"]
 VALID_STORAGE_MODES = ["standard", "separate"]
+AUTOMATION_MODES = ["german", "new", "german_new"]
+
+
+def _is_valid_webhook_url(url: str) -> bool:
+    if not url:
+        return True
+    if not isinstance(url, str):
+        return False
+    return url.startswith("https://") or url.startswith("http://")
+
+
+def _validate_string_list(values: Any) -> bool:
+    return isinstance(values, list) and all(isinstance(v, str) for v in values)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -134,6 +185,57 @@ def validate_config(cfg: dict) -> List[str]:
     autostart = dl.get("autostart_mode")
     if autostart is not None and autostart not in VALID_MODES:
         errors.append(f"download.autostart_mode ungültig: '{autostart}'")
+
+    # Automation
+    automation = cfg.get("automation", {})
+    if not isinstance(automation.get("enabled", False), bool):
+        errors.append("automation.enabled muss true oder false sein")
+
+    for mode in AUTOMATION_MODES:
+        mode_cfg = automation.get(mode, {})
+        if not isinstance(mode_cfg, dict):
+            errors.append(f"automation.{mode} muss ein Objekt sein")
+            continue
+
+        enabled = mode_cfg.get("enabled", False)
+        if not isinstance(enabled, bool):
+            errors.append(f"automation.{mode}.enabled muss true oder false sein")
+
+        schedule = mode_cfg.get("schedule", "")
+        if schedule and not isinstance(schedule, str):
+            errors.append(f"automation.{mode}.schedule muss ein String sein")
+        elif schedule:
+            if croniter is None:
+                errors.append(f"automation.{mode}.schedule kann nicht geprüft werden (croniter fehlt)")
+            elif not croniter.is_valid(schedule):
+                errors.append(f"automation.{mode}.schedule ist kein gültiger Cron-Ausdruck: '{schedule}'")
+
+        interval_minutes = mode_cfg.get("interval_minutes", 0)
+        if not isinstance(interval_minutes, int) or interval_minutes < 0:
+            errors.append(f"automation.{mode}.interval_minutes muss eine ganze Zahl >= 0 sein")
+
+        if enabled and not schedule and interval_minutes == 0:
+            errors.append(f"automation.{mode}: Bei aktiviertem Modus muss schedule oder interval_minutes gesetzt sein")
+
+        webhook = mode_cfg.get("discord_webhook", "")
+        if not _is_valid_webhook_url(webhook):
+            errors.append(f"automation.{mode}.discord_webhook muss mit http:// oder https:// beginnen")
+
+        notify_on_empty = mode_cfg.get("notify_on_empty", False)
+        if not isinstance(notify_on_empty, bool):
+            errors.append(f"automation.{mode}.notify_on_empty muss true oder false sein")
+
+        filter_mode = str(mode_cfg.get("filter_mode", "whitelist") or "whitelist").lower()
+        if filter_mode not in ("whitelist", "blacklist", "off"):
+            errors.append(f"automation.{mode}.filter_mode muss whitelist, blacklist oder off sein")
+
+        whitelist = mode_cfg.get("whitelist", [])
+        if not _validate_string_list(whitelist):
+            errors.append(f"automation.{mode}.whitelist muss eine Liste von Strings sein")
+
+        blacklist = mode_cfg.get("blacklist", [])
+        if not _validate_string_list(blacklist):
+            errors.append(f"automation.{mode}.blacklist muss eine Liste von Strings sein")
 
     return errors
 

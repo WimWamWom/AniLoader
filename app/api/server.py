@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from ..automation import start_scheduler, stop_scheduler
 from ..config import get_data_folder, load_config
 from ..database import init_db, import_aniloader_txt, refresh_titles
 from ..file_manager import ensure_aniloader_txt
@@ -61,14 +62,26 @@ async def lifespan(app: FastAPI):
 
     # Autostart prüfen
     autostart = cfg.get("download", {}).get("autostart_mode")
-    if autostart and autostart in ("default", "german", "new", "check"):
+    if autostart and autostart in ("default", "german", "new", "check", "german_new"):
         from ..downloader import start_download
         log(f"[AUTOSTART] Starte Modus: {autostart}")
         start_download(autostart)
 
+    # Automation Scheduler starten
+    try:
+        start_scheduler()
+    except Exception as e:
+        log(f"[SERVER-ERROR] Automation-Scheduler Start fehlgeschlagen: {e}")
+
     yield
 
-    log("[SERVER] AniLoader wird beendet")
+    # Automation Scheduler stoppen
+    try:
+        stop_scheduler()
+    except Exception as e:
+        log(f"[SERVER-ERROR] Automation-Scheduler Stop fehlgeschlagen: {e}")
+
+    log("[SERVER] AniLoader beendet")
 
 
 def create_app() -> FastAPI:
