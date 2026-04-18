@@ -935,6 +935,9 @@ def _run_check(cfg: dict, data_folder: str) -> None:
         status["total_episodes_overall"] = sum(len(v) for v in all_eps_by_season.values())
         status["completed_episodes_overall"] = 0
 
+        missing_german: List[str] = db.get_missing_german_episodes(data_folder, anime["id"])
+        new_missing_german: List[str] = []
+
         for season in seasons:
             if _check_stop():
                 return
@@ -975,8 +978,18 @@ def _run_check(cfg: dict, data_folder: str) -> None:
                 status["completed_episodes_overall"] += 1
                 if result in ("downloaded", "no_german"):
                     status["progress"]["downloaded_episodes"] += 1
+                    if result == "no_german":
+                        new_missing_german.append(ep["url"])
                 elif result == "failed":
                     status["progress"]["failed_episodes"] += 1
+
+        # Missing-German in DB speichern (analog zu Default-Modus)
+        all_missing = missing_german + new_missing_german
+        if all_missing:
+            db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
+            db.update_anime(data_folder, anime["id"], deutsch_komplett=0)
+        elif not missing_german:
+            db.update_anime(data_folder, anime["id"], deutsch_komplett=1)
 
         status["progress"]["completed_series"] += 1
 
