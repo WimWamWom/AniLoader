@@ -26,10 +26,13 @@ from . import scraper
 from .config import get_data_folder, get_download_path, load_config
 from .file_manager import (
     check_file_integrity,
-    detect_folder_name,
+    clear_tmp,
     episode_already_downloaded,
     find_downloaded_file,
     get_free_space_gb,
+    get_storage_path,
+    get_tmp_path,
+    move_tmp_to_final,
     rename_episode_file,
 )
 from .logger import log, start_new_run
@@ -336,20 +339,23 @@ def _download_episode(
         if _removed:
             log(f"[LANG] s.to: Nicht unterstützte Sprachen aus Kaskade entfernt: {_removed}")
 
-    # Download: Sprachen-Kaskade (nur mit verfügbaren Sprachen)
+    # Download: Sprachen-Kaskade in TMP-Verzeichnis
+    # Jeder Download landet zuerst in <output_path>/tmp/, damit die Dateisuche
+    # nicht von dynamischen Serienordnernamen abhängt.
+    tmp_path = get_tmp_path(output_path)
+
     downloaded = False
     used_language = None
     found = None
 
     for lang in cascading_languages:
-        log(f"[DL] S{season:02d}E{episode_num:03d} [{lang}]")
-        if _run_aniworld_download(episode_url, lang, output_path, timeout):
-            found = find_downloaded_file(
-                output_path, season, episode_num,
-                folder_name=anime.get("folder_name"),
-                title_hint=anime.get("title"),
-            )
+        log(f"[DL] S{season:02d}E{episode_num:03d} [{lang}] → TMP: {tmp_path}")
+        # TMP vor jedem Versuch leeren, damit keine Altlasten die Dateisuche stören
+        clear_tmp(tmp_path)
+        if _run_aniworld_download(episode_url, lang, str(tmp_path), timeout):
+            found = find_downloaded_file(str(tmp_path), season, episode_num)
             if found:
+                log(f"[TMP] Gefundene Datei: {found.name}")
                 downloaded = True
                 used_language = lang
                 break
@@ -358,18 +364,46 @@ def _download_episode(
         log(f"[FAIL] S{season:02d}E{episode_num:03d} – kein Download möglich")
         return _result("failed")
 
-    # Folder-Name erkennen und speichern
-    if not anime.get("folder_name"):
-        folder = detect_folder_name(output_path, season, episode_num, title_hint=anime.get("title"))
-        if folder:
-            db.update_anime(data_folder, anime["id"], folder_name=folder)
-            anime["folder_name"] = folder
-            log(f"[DB] Ordnername gespeichert: {folder}")
-
-    # Episode umbenennen (Titel + Sprach-Suffix einbauen)
+    # Ordnernamen aus TMP-Pfad bestimmen (zuverlässig, kein Raten nötig)
     if found:
+        try:
+            rel = found.relative_to(tmp_path)
+            parts = rel.parts
+            detected_folder = parts[0] if len(parts) >= 2 else None
+        except ValueError:
+            detected_folder = None
+
+        existing_folder = anime.get("folder_name")
+
+        # DB-Ordnername initial speichern, wenn noch nicht bekannt
+        if not existing_folder and detected_folder:
+            db.update_anime(data_folder, anime["id"], folder_name=detected_folder)
+            anime["folder_name"] = detected_folder
+            log(f"[DB] Ordnername gespeichert: {detected_folder}")
+
+        # Finaler Zielordner: DB-Ordnername hat Vorrang vor erkanntem (verhindert Ordner-Drift)
+        final_folder = existing_folder or detected_folder
+        target_dir = get_storage_path(
+            cfg,
+            anime["url"],
+            folder_name=final_folder,
+            season=season,
+            is_film=is_film,
+        )
+        log(f"[TMP] Zielpfad: {target_dir}")
+
         ep_title = episode_info.get("title_de") or episode_info.get("title_en") or ""
-        rename_episode_file(found, season, episode_num, ep_title, used_language or "")
+        final_path = move_tmp_to_final(
+            found, target_dir, season, episode_num, ep_title, used_language or ""
+        )
+
+        if final_path:
+            log(f"[OK] S{season:02d}E{episode_num:03d} [{used_language}] → {final_path.name}")
+        else:
+            log(f"[WARN] S{season:02d}E{episode_num:03d} – Verschieben aus TMP fehlgeschlagen")
+
+        # TMP nach Abschluss aufräumen
+        clear_tmp(tmp_path)
 
     log(f"[OK] S{season:02d}E{episode_num:03d} [{used_language}]")
 
@@ -516,7 +550,7 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
 
     for idx, anime in enumerate(anime_list):
         if _check_stop():
-            return
+            return run_result
 
         missing = db.get_missing_german_episodes(data_folder, anime["id"])
         if not missing:
@@ -679,7 +713,7 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
 
     for idx, anime in enumerate(anime_list):
         if _check_stop():
-            return
+            return run_result
 
         status["current_title"] = anime["title"]
         status["current_id"] = anime["id"]

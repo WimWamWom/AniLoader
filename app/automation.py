@@ -254,9 +254,41 @@ class AutomationManager:
                 )
                 return
 
+            # Der Download-Thread startet asynchron. Ohne diese Wartephase kann
+            # der Automation-Lauf fälschlich sofort als "finished" mit 0/0 enden.
+            baseline_finished_at = None
+            last_baseline = downloader.get_last_run_result()
+            if isinstance(last_baseline, dict):
+                baseline_finished_at = last_baseline.get("finished_at")
+
+            for _ in range(20):
+                if self._stop_event.is_set():
+                    self._set_run_status(mode, "cancelled")
+                    return
+
+                if downloader.is_running():
+                    break
+
+                current_last = downloader.get_last_run_result()
+                current_finished_at = current_last.get("finished_at") if isinstance(current_last, dict) else None
+                if current_finished_at and current_finished_at != baseline_finished_at:
+                    break
+
+                time.sleep(0.25)
+
             self._set_run_status(mode, "running")
             while downloader.is_running() and not self._stop_event.is_set():
                 time.sleep(2)
+
+            # Warten bis der Worker das Ergebnis sicher in _last_run_result geschrieben hat.
+            for _ in range(20):
+                if self._stop_event.is_set():
+                    break
+                current_last = downloader.get_last_run_result()
+                current_finished_at = current_last.get("finished_at") if isinstance(current_last, dict) else None
+                if current_finished_at and current_finished_at != baseline_finished_at:
+                    break
+                time.sleep(0.25)
 
             last = downloader.get_last_run_result()
             result = last.get("result") if isinstance(last, dict) else None

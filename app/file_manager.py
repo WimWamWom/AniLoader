@@ -17,6 +17,57 @@ from .logger import log
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _extract_imdb_id(folder_name: Optional[str]) -> Optional[str]:
+    """Extrahiert tt1234567 aus einem Ordnernamen wie [...][imdbid-tt1234567]."""
+    text = str(folder_name or "")
+    m = re.search(r"\[imdbid-(tt\d+)\]", text, re.IGNORECASE)
+    return m.group(1).lower() if m else None
+
+
+def _resolve_series_dirs(
+    base_path: Path,
+    folder_name: Optional[str] = None,
+    title_hint: Optional[str] = None,
+) -> list[Path]:
+    """Bestimmt sinnvolle Serien-Ordnerkandidaten (exakt, imdbid, Titel-Fallback)."""
+    if not base_path.exists():
+        return []
+
+    candidates: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(path: Path) -> None:
+        key = str(path).lower()
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(path)
+
+    if folder_name:
+        _add(base_path / folder_name)
+
+        # Fallback bei geänderter Jahresangabe im Namen:
+        # Suche alle Ordner mit gleicher imdbid.
+        imdb_id = _extract_imdb_id(folder_name)
+        if imdb_id:
+            marker = f"[imdbid-{imdb_id}]"
+            for d in base_path.iterdir():
+                if d.is_dir() and marker in d.name.lower():
+                    _add(d)
+
+    if title_hint:
+        title_sanitized = re.sub(r'[<>:"/\\|?*]', '', title_hint)
+        title_lower = title_sanitized.lower()[:15]
+        for d in base_path.iterdir():
+            if d.is_dir() and title_lower in d.name.lower():
+                _add(d)
+
+    if not candidates:
+        _add(base_path)
+
+    return candidates
+
+
 # ──────────────────────── Initialisierungsfunktionen ────────────────────────
 
 
@@ -104,21 +155,9 @@ def episode_already_downloaded(
         patterns = [f"*S{season:02d}E{episode:03d}*"]
         subdir = f"Season {season:02d}"
 
-    # Mögliche Suchpfade bestimmen
-    if folder_name:
-        search_dirs = [base_path / folder_name / subdir]
-    elif title_hint:
-        title_sanitized = re.sub(r'[<>:"/\\|?*]', '', title_hint)
-        title_lower = title_sanitized.lower()[:15]
-        search_dirs = [
-            d / subdir
-            for d in base_path.iterdir()
-            if d.is_dir() and title_lower in d.name.lower()
-        ]
-        if not search_dirs:
-            search_dirs = [base_path / subdir]
-    else:
-        search_dirs = [base_path / subdir]
+    # Mögliche Suchpfade bestimmen (inkl. imdbid-Fallback bei geändertem Jahr im Ordnernamen)
+    series_dirs = _resolve_series_dirs(base_path, folder_name=folder_name, title_hint=title_hint)
+    search_dirs = [d / subdir for d in series_dirs]
 
     for search_dir in search_dirs:
         if not search_dir.exists():
@@ -160,22 +199,8 @@ def find_downloaded_file(
     else:
         pattern = f"*S{season:02d}E{episode:03d}*"
 
-    # Suchbereich einschränken
-    if folder_name:
-        # Exakter Ordner bekannt (aus DB) → nur dort suchen
-        search_roots = [base / folder_name]
-    elif title_hint:
-        # Titel bekannt → Unterordner filtern die den Titel-Anfang enthalten
-        title_sanitized = re.sub(r'[<>:"/\\|?*]', '', title_hint)
-        title_lower = title_sanitized.lower()[:15]
-        search_roots = [
-            d for d in base.iterdir()
-            if d.is_dir() and title_lower in d.name.lower()
-        ]
-        if not search_roots:
-            search_roots = [base]  # Fallback
-    else:
-        search_roots = [base]
+    # Suchbereich einschränken (inkl. imdbid-Fallback bei geändertem Jahr im Ordnernamen)
+    search_roots = _resolve_series_dirs(base, folder_name=folder_name, title_hint=title_hint)
 
     for search_root in search_roots:
         for ext in (".mkv", ".mp4"):
@@ -383,3 +408,112 @@ def count_episodes_on_disk(
         "films": films,
         "total_size_mb": round(total_size / (1024 ** 2), 1),
     }
+
+
+# ──────────────────────── TMP-Download-Hilfsfunktionen ────────────────────────
+
+
+def get_tmp_path(base_download_path) -> Path:
+    """
+    Gibt das TMP-Verzeichnis für Staged-Downloads zurück.
+
+    Downloads landen zuerst hier, bevor sie in den finalen Pfad verschoben werden.
+    Das verhindert, dass die Dateisuche von dynamischen Serienordnernamen abhängt.
+
+    Returns:
+        <base_download_path>/tmp/
+    """
+    return Path(base_download_path) / "tmp"
+
+
+def clear_tmp(tmp_path: Path) -> None:
+    """
+    Leert das TMP-Verzeichnis vor einem neuen Download.
+
+    Löscht alle Inhalte (Dateien und Unterordner), erstellt den Ordner neu.
+    Fehler werden geloggt aber nicht weitergegeben, damit der Download fortgesetzt
+    werden kann.
+    """
+    if tmp_path.exists():
+        for item in tmp_path.iterdir():
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+            except Exception as e:
+                log(f"[WARN] TMP-Cleanup fehlgeschlagen für {item.name}: {e}")
+    try:
+        tmp_path.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        log(f"[WARN] TMP-Verzeichnis konnte nicht erstellt werden: {e}")
+
+
+def move_tmp_to_final(
+    tmp_file: Path,
+    target_dir: Path,
+    season: int,
+    episode: int,
+    title: str,
+    language: str,
+) -> Optional[Path]:
+    """
+    Verschiebt eine Datei aus dem TMP-Verzeichnis in den finalen Zielordner
+    und benennt sie dabei in das Zielformat um.
+
+    Zielformat: S{ss}E{eee} - {episode_title} {lang_suffix}{ext}
+    Filme:      Film{ff} - {film_title} {lang_suffix}{ext}
+
+    Args:
+        tmp_file:   Quelldatei im TMP-Verzeichnis
+        target_dir: Finaler Zielordner (wird angelegt falls nicht vorhanden)
+        season:     Staffelnummer (0 = Film)
+        episode:    Episoden-/Filmnummer
+        title:      Episodentitel (kann leer sein)
+        language:   Sprache für Suffix-Bestimmung
+
+    Returns:
+        Neuer Dateipfad bei Erfolg, None bei Fehler
+    """
+    lang_suffix = {
+        "German Dub": "",
+        "German Sub": "[Sub]",
+        "English Dub": "[English Dub]",
+        "English Sub": "[English Sub]",
+    }.get(language, "")
+
+    if season == 0:
+        ep_code = f"Film{episode:02d}"
+    else:
+        ep_code = f"S{season:02d}E{episode:03d}"
+
+    ext = tmp_file.suffix
+    safe_title = sanitize_filename(title) if title else ""
+
+    new_name = ep_code
+    if safe_title:
+        new_name += f" - {safe_title}"
+    if lang_suffix:
+        new_name += f" {lang_suffix}"
+    new_name += ext
+
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        log(f"[ERROR] Zielordner konnte nicht erstellt werden ({target_dir}): {e}")
+        return None
+
+    target_path = target_dir / new_name
+
+    # Kollision: Datei existiert bereits im Ziel
+    if target_path.exists():
+        log(f"[WARN] Zieldatei existiert bereits, überspringe Verschieben: {new_name}")
+        return target_path
+
+    try:
+        shutil.move(str(tmp_file), str(target_path))
+        log(f"[MOVE] TMP → Final: {new_name}")
+        return target_path
+    except Exception as e:
+        log(f"[ERROR] Verschieben aus TMP fehlgeschlagen: {e}")
+        return None
