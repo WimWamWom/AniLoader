@@ -598,6 +598,26 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
 
         log(f"\n[GERMAN] {anime['title']} – {len(missing)} fehlende deutsche Episoden")
 
+        # ── Staffelseiten einmalig scrapen, vollständige Episode-Infos cachen ──
+        # Wie in _run_default/_run_new/_run_check: get_episodes_for_season einmal
+        # pro Staffel aufrufen → alle Episoden inkl. Titel und Sprachen aus der
+        # Staffel-Tabelle (row-genau) im Cache speichern.
+        base_url = scraper.get_base_url(anime["url"])
+        seasons_needed: set = set()
+        for ep_url in missing:
+            parsed_pre = _parse_season_episode_from_url(ep_url)
+            if parsed_pre:
+                seasons_needed.add(parsed_pre[0])
+
+        ep_info_cache: Dict[str, Dict] = {}  # episode_url → vollständiges episode_info-Dict
+        for s_num in sorted(seasons_needed):
+            log(f"[SCAN] Lade Staffelseite {s_num} …")
+            season_eps = scraper.get_episodes_for_season(base_url, s_num) or []
+            for ep in season_eps:
+                ep_info_cache[ep["url"]] = ep
+            log(f"[SCAN] Staffel {s_num}: {len(season_eps)} Episoden gescrapt")
+        # ─────────────────────────────────────────────────────────────────────
+
         still_missing: List[str] = []
         status["total_episodes_overall"] = len(missing)
         status["completed_episodes_overall"] = 0
@@ -639,18 +659,24 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
             season, episode_num = parsed
             output_path = get_download_path(german_cfg, anime["url"], season == 0)
 
-            # Scraper-Check: Ist German Dub auf der Seite verfügbar?
+            # Episode-Info aus Staffelseiten-Cache (enthält korrekte Sprachen + Titel)
             log(f"[CHECK] Prüfe Sprachverfügbarkeit für {episode_url}")
-            available_langs = _normalize_language_list(scraper.get_episode_languages(episode_url))
+            cached_ep = ep_info_cache.get(episode_url)
+            if cached_ep is not None:
+                available_langs = _normalize_language_list(cached_ep.get("languages", []))
+            else:
+                # Nicht im Cache (z.B. URL-Format weicht ab) → Fallback auf Episodenseite
+                log(f"[CHECK] Nicht im Staffel-Cache – Fallback auf Episodenseite")
+                available_langs = _normalize_language_list(scraper.get_episode_languages(episode_url))
+
             if available_langs and "German Dub" not in available_langs:
-                log(f"[SKIP] German Dub nicht verfügbar (Scraper): {episode_url} – verfügbar: {available_langs}")
+                log(f"[SKIP] German Dub nicht verfügbar (Staffel-Scan): {episode_url} – verfügbar: {available_langs}")
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
                 status["completed_episodes_overall"] += 1
                 continue
 
             if not available_langs and scraper.is_sto(episode_url):
-                # s.to ändert HTML-Strukturen häufiger; bei leerem Ergebnis lieber Download versuchen.
                 log(f"[WARN] s.to-Sprachen konnten nicht sicher erkannt werden – versuche German Dub trotzdem: {episode_url}")
 
             log(f"[CHECK] German Dub verfügbar – starte Download: {episode_url}")
@@ -664,12 +690,14 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                 title_hint=anime.get("title"),
             )
 
-            episode_info = {
+            # Vollständiges episode_info aus dem Cache verwenden (wie in anderen Modi),
+            # damit Titel und Sprachen direkt von der Staffelseite stammen.
+            episode_info = cached_ep if cached_ep is not None else {
                 "episode": episode_num,
                 "url": episode_url,
                 "title_de": "",
                 "title_en": "",
-                "languages": ["German Dub"],
+                "languages": available_langs,
             }
 
             # Download in TMP; erst nach Erfolg alte Datei ersetzen.

@@ -710,12 +710,21 @@ def get_episode_languages(episode_url: str) -> List[str]:
 def _extract_aniworld_episode_languages(soup: BeautifulSoup) -> List[str]:
     """Extrahiert verfügbare Sprachen von einer AniWorld-Episodenseite.
 
-    Nutzt dieselbe Flag-Image-Logik wie die Staffelseite.
+    Sucht NUR in der changeLanguageBox (Sprachauswahl des aktuellen Players),
+    NICHT auf der gesamten Seite – die Seite enthält auch die Staffeltabelle mit
+    Sprach-Flags anderer Episoden, die sonst fälschlicherweise als verfügbar erkannt werden.
     """
     langs = []
     seen = set()
 
-    for img in soup.find_all("img", class_="flag"):
+    # Eingrenzen auf die Sprachauswahl-Box des aktuellen Players
+    lang_box = soup.find("div", class_="changeLanguageBox")
+    search_root = lang_box if lang_box else soup
+
+    if lang_box is None:
+        log("[SCRAPER] changeLanguageBox nicht gefunden – durchsuche gesamte Seite (Fallback)")
+
+    for img in search_root.find_all("img", class_="flag"):
         src = (img.get("src", "") or "").lower()
         lang = _map_aniworld_flag(src)
         if lang and lang not in seen:
