@@ -487,39 +487,37 @@ def _parse_aniworld_season(
 
 
 def _extract_aniworld_languages(element) -> List[str]:
-    """Extrahiert Sprachen aus AniWorld Flag-Images."""
+    """Extrahiert Sprachen aus AniWorld Flag-Images.
+
+    Mapping (src-Endung → Sprache):
+        german.svg           → German Dub
+        japanese-german.svg  → German Sub
+        japanese-english.svg → English Sub
+    """
     langs = []
     seen = set()
 
     for img in element.find_all("img", class_="flag"):
-        src = img.get("src", "")
-        title = img.get("title", "").lower()
-
-        lang = None
-        # WICHTIG: Genauere Checks zuerst (specifische Dateien)
-        if src.endswith("japanese-german.svg"):
-            lang = "German Sub"
-        elif src.endswith("japanese-english.svg"):
-            lang = "English Sub"
-        elif src.endswith("german.svg"):
-            lang = "German Dub"
-        elif src.endswith("english.svg"):
-            lang = "English Dub"
-        # Fallback: Title-Attribute
-        elif "deutschem untertitel" in title:
-            lang = "German Sub"
-        elif "englische untertitel" in title or "englischen untertitel" in title:
-            lang = "English Sub"
-        elif "deutsch/german" in title or "deutsch" in title:
-            lang = "German Dub"
-        elif "english" in title:
-            lang = "English Dub"
-
+        src = (img.get("src", "") or "").lower()
+        lang = _map_aniworld_flag(src)
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
 
     return langs
+
+
+def _map_aniworld_flag(src: str) -> Optional[str]:
+    """Mapped eine AniWorld-Flag-Image-URL auf einen Sprachnamen."""
+    if "japanese-german" in src:
+        return "German Sub"
+    if "japanese-english" in src:
+        return "English Sub"
+    if "german" in src:
+        return "German Dub"
+    if "english" in src:
+        return "English Dub"
+    return None
 
 
 def _parse_sto_season(
@@ -609,53 +607,35 @@ def _parse_sto_season(
 
 
 def _extract_sto_languages(element) -> List[str]:
-    """Extrahiert Sprachen aus S.to SVG-Icons oder Flag-Images."""
+    """Extrahiert Sprachen aus S.to SVG-Icons (<use href='#icon-flag-*'>).
+
+    Mapping:
+        #icon-flag-german         → German Dub
+        #icon-flag-english-german → German Sub
+        #icon-flag-english        → English Dub
+    """
     langs = []
     seen = set()
 
-    # Methode 1: SVG-Icons mit watch-language Klasse (moderne S.to-Struktur)
-    for svg in element.find_all("svg", class_="watch-language"):
-        svg_classes = " ".join(svg.get("class", []))
-        use = svg.find("use")
-        href = str(use.get("href") or use.get("xlink:href") or "") if use else ""
-        combined = (href + " " + svg_classes).lower()
-
-        lang = None
-        # Auf s.to: german-flag = German Dub, english-flag = English Dub
-        # Sub-Varianten haben explizit '-sub' im Icon-Namen/Klasse
-        if "german-sub" in combined or "deutsch-sub" in combined:
-            lang = "German Sub"
-        elif "english-sub" in combined:
-            lang = "English Sub"
-        elif "german" in combined:
-            lang = "German Dub"
-        elif "english" in combined:
-            lang = "English Dub"
-
+    for use in element.find_all("use"):
+        href = str(use.get("href") or use.get("xlink:href") or "").lower()
+        lang = _map_sto_icon(href)
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
 
-    # Methode 2: Fallback für Flag-Images (ältere S.to-Struktur)
-    if not langs:
-        for img in element.find_all("img", class_="flag"):
-            src = img.get("src", "") or img.get("data-src", "")
-            
-            lang = None
-            if src.endswith("german-sub.svg") or src.endswith("deutsch-sub.svg"):
-                lang = "German Sub"
-            elif src.endswith("english-sub.svg"):
-                lang = "English Sub"
-            elif src.endswith("german.svg"):
-                lang = "German Dub"
-            elif src.endswith("english.svg"):
-                lang = "English Dub"
-            
-            if lang and lang not in seen:
-                seen.add(lang)
-                langs.append(lang)
-
     return langs
+
+
+def _map_sto_icon(href: str) -> Optional[str]:
+    """Mapped eine S.to SVG-Icon-href auf einen Sprachnamen."""
+    if "icon-flag-english-german" in href:
+        return "German Sub"
+    if "icon-flag-german" in href:
+        return "German Dub"
+    if "icon-flag-english" in href:
+        return "English Dub"
+    return None
 
 
 # ──────────────────────── Stream-Verfügbarkeit ────────────────────────
@@ -728,125 +708,37 @@ def get_episode_languages(episode_url: str) -> List[str]:
 
 
 def _extract_aniworld_episode_languages(soup: BeautifulSoup) -> List[str]:
-    """Extrahiert verfügbare Sprachen von einer AniWorld-Episodenseite."""
+    """Extrahiert verfügbare Sprachen von einer AniWorld-Episodenseite.
+
+    Nutzt dieselbe Flag-Image-Logik wie die Staffelseite.
+    """
     langs = []
     seen = set()
 
-    # Methode 1: Hoster-Liste mit Flag-Images
-    for div in soup.find_all("div", class_="hosterSiteDirectNav"):
-        for img in div.find_all("img", class_="flag"):
-            src = img.get("src", "")
-            title = img.get("title", "").lower()
-            
-            lang = None
-            if "german.svg" in src or "deutsch" in title:
-                lang = "German Dub"
-            elif "deutschem untertitel" in title or "german-sub" in src:
-                lang = "German Sub"
-            elif "english-sub" in src or "englische untertitel" in title:
-                lang = "English Sub"
-            elif "english.svg" in src:
-                lang = "English Dub"
-            
-            if lang and lang not in seen:
-                seen.add(lang)
-                langs.append(lang)
-    
-    # Methode 2: Voice-Buttons im Player-Bereich
-    if not langs:
-        for btn in soup.find_all("button", class_=re.compile(r"voice|language")):
-            text = btn.get_text(strip=True).lower()
-            lang = None
-            if "german dub" in text or "deutsch dub" in text:
-                lang = "German Dub"
-            elif "german sub" in text or "deutsch sub" in text:
-                lang = "German Sub"
-            elif "english sub" in text:
-                lang = "English Sub"
-            
-            if lang and lang not in seen:
-                seen.add(lang)
-                langs.append(lang)
+    for img in soup.find_all("img", class_="flag"):
+        src = (img.get("src", "") or "").lower()
+        lang = _map_aniworld_flag(src)
+        if lang and lang not in seen:
+            seen.add(lang)
+            langs.append(lang)
 
     return langs
 
 
 def _extract_sto_episode_languages(soup: BeautifulSoup) -> List[str]:
-    """Extrahiert verfügbare Sprachen von einer S.to-Episodenseite."""
+    """Extrahiert verfügbare Sprachen von einer S.to-Episodenseite.
+
+    Nutzt dieselbe <use href='#icon-flag-*'>-Logik wie die Staffelseite.
+    """
     langs = []
     seen = set()
 
-    def _add_lang(lang: Optional[str]) -> None:
+    for use in soup.find_all("use"):
+        href = str(use.get("href") or use.get("xlink:href") or "").lower()
+        lang = _map_sto_icon(href)
         if lang and lang not in seen:
             seen.add(lang)
             langs.append(lang)
-
-    def _map_text_to_lang(text: str) -> Optional[str]:
-        t = (text or "").lower()
-        if "german sub" in t or "deutsch sub" in t or "untertitel" in t:
-            return "German Sub"
-        if "english sub" in t:
-            return "English Sub"
-        if "german" in t or "deutsch" in t:
-            return "German Dub"
-        if "english" in t:
-            return "English Dub"
-        return None
-
-    # Methode 1: Hosters-Bereich .hoster-item mit SVG-Icons
-    for hoster_div in soup.find_all("div", class_="hoster-item"):
-        # S.to hat .language-badge mit Icons
-        for lang_badge in hoster_div.find_all(class_="language-badge"):
-            svg = lang_badge.find("svg")
-            if not svg:
-                lang_text = lang_badge.get_text(strip=True).lower()
-            else:
-                # SVG-Icon parsen
-                use = svg.find("use")
-                if not use:
-                    continue
-                icon_href = str(use.get("href") or use.get("xlink:href") or "")
-                if "german" in icon_href:
-                    lang_text = "german"
-                elif "english" in icon_href:
-                    lang_text = "english"
-                else:
-                    continue
-                
-            # Bestimme Sprache und Typ (Dub/Sub)
-            lang = None
-            if "german" in lang_text:
-                # German Dub vs German Sub unterscheiden
-                parent_text = hoster_div.get_text(strip=True).lower()
-                if "untertitel" in parent_text or "sub" in parent_text:
-                    lang = "German Sub"
-                else:
-                    lang = "German Dub"
-            elif "english" in lang_text:
-                parent_text = hoster_div.get_text(strip=True).lower()
-                if "untertitel" in parent_text or "sub" in parent_text:
-                    lang = "English Sub"
-                else:
-                    lang = "English Dub"
-            
-            _add_lang(lang)
-
-    # Methode 2: Fallback über Flag-Images (ältere S.to-Struktur)
-    if not langs:
-        for img in soup.find_all("img", class_="flag"):
-            src = img.get("src", "") or img.get("data-src", "")
-            lang = None
-            src_lower = src.lower()
-            if "german-sub" in src_lower or "deutsch-sub" in src_lower:
-                lang = "German Sub"
-            elif "english-sub" in src_lower:
-                lang = "English Sub"
-            elif "german" in src_lower or "deutsch" in src_lower:
-                lang = "German Dub"
-            elif "english" in src_lower:
-                lang = "English Dub"
-
-            _add_lang(lang)
 
     return langs
 
