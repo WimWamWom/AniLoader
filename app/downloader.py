@@ -33,7 +33,7 @@ from .file_manager import (
     get_storage_path,
     get_tmp_path,
     move_tmp_to_final,
-    rename_episode_file,
+
 )
 from .logger import log, start_new_run
 
@@ -607,8 +607,19 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
             season, episode_num = parsed
             output_path = get_download_path(german_cfg, anime["url"], season == 0)
 
-            # Altlasten-Reparatur: rohe SxxExxx/S00Exxx-Datei aus früheren Läufen
-            # ohne erneuten Download in das Zielformat überführen.
+            # Scraper-Check: Ist German Dub auf der Seite verfügbar?
+            log(f"[CHECK] Prüfe Sprachverfügbarkeit für {episode_url}")
+            available_langs = scraper.get_episode_languages(episode_url)
+            if "German Dub" not in available_langs:
+                log(f"[SKIP] German Dub nicht verfügbar (Scraper): {episode_url} – verfügbar: {available_langs}")
+                still_missing.append(episode_url)
+                status["progress"]["skipped_episodes"] += 1
+                status["completed_episodes_overall"] += 1
+                continue
+
+            log(f"[CHECK] German Dub verfügbar – starte Download: {episode_url}")
+
+            # Vorhandene Datei für diese Episode merken (zum späteren Ersetzen)
             found_existing = find_downloaded_file(
                 output_path,
                 season,
@@ -616,45 +627,29 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                 folder_name=anime.get("folder_name"),
                 title_hint=anime.get("title"),
             )
-            if found_existing:
-                repaired = rename_episode_file(found_existing, season, episode_num, "", "German Dub")
-                if repaired:
-                    log(f"[OK] Bestehende Datei repariert: {episode_url}")
-                    status["progress"]["downloaded_episodes"] += 1
-                    run_result["downloaded"].append({
-                        "title": anime["title"],
-                        "url": episode_url,
-                        "season": season,
-                        "episode": episode_num,
-                        "language": "German Dub",
-                    })
-                    if season == 0:
-                        db.update_anime(data_folder, anime["id"], last_film=episode_num)
-                    else:
-                        db.update_anime(
-                            data_folder,
-                            anime["id"],
-                            last_season=season,
-                            last_episode=episode_num,
-                        )
-                    status["completed_episodes_overall"] += 1
-                    continue
 
             episode_info = {
                 "episode": episode_num,
                 "url": episode_url,
-                # Titel optional aus Seite holen; Pipeline nutzt fallbacks falls leer.
                 "title_de": "",
                 "title_en": "",
                 "languages": ["German Dub"],
             }
 
-            # Für robustes Renaming/Moving den Standardpfad nutzen.
+            # Download in TMP; erst nach Erfolg alte Datei ersetzen.
             detailed_result = _download_episode(german_cfg, data_folder, anime, season, episode_info, detailed=True)
             result = detailed_result.get("status")
             used_language = detailed_result.get("language") or "German Dub"
 
             if result == "downloaded":
+                # Alte Nicht-German-Dub-Datei erst jetzt entfernen (Download war erfolgreich)
+                if found_existing:
+                    try:
+                        found_existing.unlink()
+                        log(f"[REPLACE] Alte Datei gelöscht: {found_existing.name}")
+                    except Exception as e:
+                        log(f"[WARN] Alte Datei konnte nicht gelöscht werden: {e}")
+
                 log(f"[OK] German Dub erfolgreich: {episode_url}")
                 status["progress"]["downloaded_episodes"] += 1
                 run_result["downloaded"].append({
@@ -674,7 +669,7 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                         last_episode=episode_num,
                     )
             elif result == "failed" or result == "no_language":
-                log(f"[SKIP] German Dub noch nicht verfügbar: {episode_url}")
+                log(f"[SKIP] German Dub Download fehlgeschlagen: {episode_url}")
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
                 run_result["failed"].append({
@@ -685,8 +680,6 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                     "language": "German Dub",
                 })
             else:
-                # skipped/no_german: nicht als erfolgreich aus missing entfernen,
-                # damit potentielle Altlasten erneut geprüft werden können.
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
 
