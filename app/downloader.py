@@ -501,6 +501,9 @@ def _run_default(cfg: dict, data_folder: str) -> None:
 
         for season in seasons_ordered:
             if _check_stop():
+                all_missing = missing_german + new_missing_german
+                if all_missing:
+                    db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
                 return
 
             # Überspringe bereits heruntergeladene Staffeln
@@ -516,6 +519,9 @@ def _run_default(cfg: dict, data_folder: str) -> None:
 
             for ep in episodes:
                 if _check_stop():
+                    all_missing = missing_german + new_missing_german
+                    if all_missing:
+                        db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
                     return
 
                 result = _download_episode(cfg, data_folder, anime, season, ep)
@@ -624,6 +630,7 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
 
         for episode_url in missing:
             if _check_stop():
+                db.set_missing_german_episodes(data_folder, anime["id"], still_missing)
                 return run_result
 
             log(f"[DL] Versuche German Dub für {episode_url}")
@@ -812,6 +819,9 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
 
         for season in seasons:
             if _check_stop():
+                all_missing = missing_german + new_missing_german
+                if all_missing:
+                    db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
                 return run_result
 
             episodes = all_eps_by_season.get(season, [])
@@ -823,6 +833,9 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
 
             for ep in episodes:
                 if _check_stop():
+                    all_missing = missing_german + new_missing_german
+                    if all_missing:
+                        db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
                     return run_result
 
                 # Nur neue Episoden (nach dem letzten bekannten Stand)
@@ -968,6 +981,9 @@ def _run_check(cfg: dict, data_folder: str) -> None:
 
         for season in seasons:
             if _check_stop():
+                all_missing = missing_german + new_missing_german
+                if all_missing:
+                    db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
                 return
 
             episodes = all_eps_by_season.get(season, [])
@@ -979,6 +995,9 @@ def _run_check(cfg: dict, data_folder: str) -> None:
 
             for ep in episodes:
                 if _check_stop():
+                    all_missing = missing_german + new_missing_german
+                    if all_missing:
+                        db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
                     return
 
                 existing = episode_already_downloaded(
