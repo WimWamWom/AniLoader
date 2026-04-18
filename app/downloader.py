@@ -437,8 +437,6 @@ def _download_episode(
         # TMP nach Abschluss aufräumen
         clear_tmp(tmp_path)
 
-    log(f"[OK] S{season:02d}E{episode_num:03d} [{used_language}]")
-
     # Fehlende deutsche Episoden tracken
     if used_language and used_language != "German Dub":
         return _result("no_german", used_language)
