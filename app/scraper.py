@@ -831,12 +831,6 @@ def _extract_sto_episode_languages(soup: BeautifulSoup) -> List[str]:
             
             _add_lang(lang)
 
-    # Methode 1b: Generischer Fallback auf "language"-Container in aktueller S.to-Struktur
-    if not langs:
-        for node in soup.find_all(class_=re.compile(r"language|audio|dub|sub", re.IGNORECASE)):
-            lang = _map_text_to_lang(node.get_text(" ", strip=True))
-            _add_lang(lang)
-    
     # Methode 2: Fallback über Flag-Images (ältere S.to-Struktur)
     if not langs:
         for img in soup.find_all("img", class_="flag"):
@@ -853,12 +847,6 @@ def _extract_sto_episode_languages(soup: BeautifulSoup) -> List[str]:
                 lang = "English Dub"
 
             _add_lang(lang)
-
-    # Methode 3: Letzter Fallback über Seiten-Text
-    if not langs:
-        page_text = soup.get_text(" ", strip=True)
-        text_lang = _map_text_to_lang(page_text)
-        _add_lang(text_lang)
 
     return langs
 

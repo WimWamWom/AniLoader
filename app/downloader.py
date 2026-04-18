@@ -285,6 +285,7 @@ def _download_episode(
     season: int,
     episode_info: Dict,
     detailed: bool = False,
+    ignore_existing: bool = False,
 ) -> Any:
     """
     Lädt eine einzelne Episode herunter.
@@ -319,13 +320,14 @@ def _download_episode(
         return _result("failed")
 
     # Bereits heruntergeladen?
-    existing = episode_already_downloaded(
-        cfg, anime["url"], anime.get("folder_name"), season, episode_num,
-        title_hint=anime.get("title"),
-    )
-    if existing:
-        log(f"[SKIP] Bereits vorhanden: S{season:02d}E{episode_num:03d}")
-        return _result("skipped")
+    if not ignore_existing:
+        existing = episode_already_downloaded(
+            cfg, anime["url"], anime.get("folder_name"), season, episode_num,
+            title_hint=anime.get("title"),
+        )
+        if existing:
+            log(f"[SKIP] Bereits vorhanden: S{season:02d}E{episode_num:03d}")
+            return _result("skipped")
 
     # Sprachen IMMER von der Episoden-Seite holen (vor dem Download)
     ep_langs = _normalize_language_list(episode_info.get("languages", []))
@@ -369,9 +371,10 @@ def _download_episode(
             log(f"[LANG] s.to: Nicht unterstützte Sprachen aus Kaskade entfernt: {_removed}")
 
     # Download: Sprachen-Kaskade in TMP-Verzeichnis
-    # Jeder Download landet zuerst in <output_path>/tmp/, damit die Dateisuche
-    # nicht von dynamischen Serienordnernamen abhängt.
-    tmp_path = get_tmp_path(output_path)
+    # TMP immer unter dem konfigurierten download_path (nicht output_path),
+    # damit bei separate-Storage kein /app/Serien/tmp entsteht.
+    dl_base = cfg.get("storage", {}).get("download_path", output_path)
+    tmp_path = get_tmp_path(dl_base)
 
     downloaded = False
     used_language = None
@@ -670,7 +673,15 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
             }
 
             # Download in TMP; erst nach Erfolg alte Datei ersetzen.
-            detailed_result = _download_episode(german_cfg, data_folder, anime, season, episode_info, detailed=True)
+            detailed_result = _download_episode(
+                german_cfg,
+                data_folder,
+                anime,
+                season,
+                episode_info,
+                detailed=True,
+                ignore_existing=True,
+            )
             result = detailed_result.get("status")
             used_language = detailed_result.get("language") or "German Dub"
 
