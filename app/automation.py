@@ -424,49 +424,46 @@ class AutomationManager:
             log(f"[AUTOMATION-WARN] Discord Webhook fuer {mode} fehlgeschlagen: {exc}")
 
     def _build_discord_payload(self, mode: str, downloaded: List[Dict[str, Any]], failed: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        footer_ts = now.strftime("%d.%m.%Y %H:%M")
 
         color_map = {
-            "german": 0x4A90E2,
-            "new": 0x2ECC71,
-            "german_new": 0x4A90E2,
+            "german": 0xDD2B2B,
+            "new": 0x3498DB,
+            "german_new": 0xDD2B2B,
         }
         title_map = {
-            "german": "🇩🇪 Neue Deutsche Episoden",
-            "new": "📺 Neue Episoden",
-            "german_new": "🇩🇪 + 📺 German & Neu",
+            "german": "AniLoader - LastRun Auswertung",
+            "new": "AniLoader - Neue Episoden Check",
+            "german_new": "AniLoader - German & Neue Episoden",
         }
 
         if mode == "german_new":
-            return self._build_discord_payload_german_new(downloaded, failed, now, color_map[mode], title_map[mode])
+            return self._build_discord_payload_german_new(downloaded, failed, footer_ts, color_map[mode], title_map[mode])
 
         grouped = self._group_episodes_by_series(downloaded)
         fields = []
         for series, episodes in grouped.items():
-            lines = [
-                f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d} ({ep.get('language', 'Unknown')})"
-                for ep in episodes
-            ]
-            fields.append({"name": series[:256], "value": "\n".join(lines)[:1024], "inline": False})
+            count = len(episodes)
+            field_name = f"{series} ({count} x)" if count > 1 else series
+            lines = [f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d}" for ep in episodes]
+            fields.append({"name": field_name[:256], "value": "\n".join(lines)[:1024], "inline": False})
 
-        if not fields:
-            fields.append({"name": "Ergebnis", "value": "Keine neuen Downloads in diesem Lauf.", "inline": False})
+        series_count = len(grouped)
 
-        fields.append(
-            {
-                "name": "Zusammenfassung",
-                "value": f"Downloads: {len(downloaded)} | Fehlgeschlagen: {len(failed)}",
-                "inline": False,
-            }
-        )
+        if mode == "german":
+            description = f"✅ {len(downloaded)} neue deutsche Episode(n) gefunden!"
+        else:
+            description = f"✅ {len(downloaded)} neue Episode(n) heruntergeladen!\n🏆 {series_count} Serie(n) aktualisiert"
 
         return {
             "embeds": [
                 {
-                    "title": title_map.get(mode, "Automation-Lauf"),
-                    "color": color_map.get(mode, 0x4A90E2),
+                    "title": title_map.get(mode, "AniLoader - Automation"),
+                    "description": description,
+                    "color": color_map.get(mode, 0x3498DB),
                     "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "footer": {"text": f"AniLoader Automation • {now}"},
+                    "footer": {"text": f"AniLoader • {footer_ts}"},
                     "fields": fields[:25],
                 }
             ]
@@ -476,52 +473,45 @@ class AutomationManager:
         self,
         downloaded: List[Dict[str, Any]],
         failed: List[Dict[str, Any]],
-        now: str,
+        footer_ts: str,
         color: int,
         title: str,
     ) -> Dict[str, Any]:
         german_items = [ep for ep in downloaded if str(ep.get("language", "")).lower() == "german dub"]
         new_items = [ep for ep in downloaded if str(ep.get("language", "")).lower() != "german dub"]
 
-        fields: List[Dict[str, Any]] = [
-            {
-                "name": "Sektionen",
-                "value": f"German: {len(german_items)} | New/Fallback: {len(new_items)}",
-                "inline": False,
-            }
-        ]
+        fields: List[Dict[str, Any]] = []
 
         german_grouped = self._group_episodes_by_series(german_items)
         for series, episodes in german_grouped.items():
+            count = len(episodes)
+            field_name = f"🇩🇪 {series} ({count} x)" if count > 1 else f"🇩🇪 {series}"
             lines = [f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d}" for ep in episodes]
-            fields.append({"name": f"DE • {series}"[:256], "value": "\n".join(lines)[:1024], "inline": False})
+            fields.append({"name": field_name[:256], "value": "\n".join(lines)[:1024], "inline": False})
 
         new_grouped = self._group_episodes_by_series(new_items)
         for series, episodes in new_grouped.items():
-            lines = [
-                f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d} ({ep.get('language', 'Unknown')})"
-                for ep in episodes
-            ]
-            fields.append({"name": f"NEW • {series}"[:256], "value": "\n".join(lines)[:1024], "inline": False})
+            count = len(episodes)
+            field_name = f"📺 {series} ({count} x)" if count > 1 else f"📺 {series}"
+            lines = [f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d}" for ep in episodes]
+            fields.append({"name": field_name[:256], "value": "\n".join(lines)[:1024], "inline": False})
 
-        if len(fields) == 1:
-            fields.append({"name": "Ergebnis", "value": "Keine neuen Downloads in diesem Lauf.", "inline": False})
-
-        fields.append(
-            {
-                "name": "Zusammenfassung",
-                "value": f"Downloads: {len(downloaded)} | Fehlgeschlagen: {len(failed)}",
-                "inline": False,
-            }
+        german_series = len(german_grouped)
+        new_series = len(new_grouped)
+        description = (
+            f"🇩🇪 {len(german_items)} neue deutsche Episode(n) gefunden!\n"
+            f"✅ {len(new_items)} neue Episode(n) heruntergeladen!\n"
+            f"🏆 {german_series + new_series} Serie(n) aktualisiert"
         )
 
         return {
             "embeds": [
                 {
                     "title": title,
+                    "description": description,
                     "color": color,
                     "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "footer": {"text": f"AniLoader Automation • {now}"},
+                    "footer": {"text": f"AniLoader • {footer_ts}"},
                     "fields": fields[:25],
                 }
             ]
