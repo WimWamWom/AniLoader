@@ -203,9 +203,13 @@ def _run_aniworld_download(
     is_windows = platform.system() == "Windows"
 
     # TERM=xterm nötig damit curses/ncurses in aniworld sich initialisieren kann,
-    # auch wenn kein echtes Terminal vorhanden ist (z.B. Docker ohne TTY)
+    # auch wenn kein echtes Terminal vorhanden ist (z.B. Docker ohne TTY).
+    # DISPLAY=:99 explizit setzen als Fallback, falls der Prozess die Variable
+    # nicht aus dem entrypoint geerbt hat (z.B. nach Xvfb-Neustart durch Watchdog).
     subprocess_env = os.environ.copy()
     subprocess_env.setdefault("TERM", "xterm")
+    if platform.system() != "Windows":
+        subprocess_env.setdefault("DISPLAY", ":99")
     cli_url = _normalize_aniworld_cli_url(episode_url)
 
     if cli_url != episode_url:
