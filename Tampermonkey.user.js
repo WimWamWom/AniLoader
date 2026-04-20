@@ -110,6 +110,14 @@
             m = href.match(/https:\/\/s\.to\/serie\/([^\/]+)/);
             return m ? `https://s.to/serie/${m[1]}` : null;
         }
+        if (href.includes('serienstream.to')) {
+            m = href.match(/https:\/\/serienstream\.to\/serie\/([^\/]+)/);
+            return m ? `https://serienstream.to/serie/${m[1]}` : null;
+        }
+        if (href.includes('186.2.175.5')) {
+            m = href.match(/http:\/\/186\.2\.175\.5\/serie\/([^\/]+)/);
+            return m ? `http://186.2.175.5/serie/${m[1]}` : null;
+        }
         return null;
     }
 
@@ -120,8 +128,8 @@
 
     let anchor = null;
 
-    // Für s.to neue HTML-Struktur
-    if (url.includes('s.to')) {
+    // Für s.to / serienstream.to / 186.2.175.5 neue HTML-Struktur
+    if (url.includes('s.to') || url.includes('serienstream.to') || url.includes('186.2.175.5')) {
         anchor = document.querySelector('nav.mb-3#episode-nav') ||
                 document.querySelector('.d-md-none.mb-2');
     }
