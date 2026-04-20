@@ -121,15 +121,20 @@
         return null;
     }
 
-    const url = seriesUrl();
-    if (!url) return; // kein Stream-URL → Skript ignorieren
+    const rawUrl = seriesUrl();
+    if (!rawUrl) return; // kein Stream-URL → Skript ignorieren
+
+    // Immer s.to-URL an die API schicken
+    const url = rawUrl
+        .replace(/^https?:\/\/serienstream\.to\/serie\//, 'https://s.to/serie/')
+        .replace(/^http:\/\/186\.2\.175\.5\/serie\//, 'https://s.to/serie/');
 
     // ── Container finden ──
 
     let anchor = null;
 
     // Für s.to / serienstream.to / 186.2.175.5 neue HTML-Struktur
-    if (url.includes('s.to') || url.includes('serienstream.to') || url.includes('186.2.175.5')) {
+    if (rawUrl.includes('s.to') || rawUrl.includes('serienstream.to') || rawUrl.includes('186.2.175.5')) {
         anchor = document.querySelector('nav.mb-3#episode-nav') ||
                 document.querySelector('.d-md-none.mb-2');
     }
