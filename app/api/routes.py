@@ -47,7 +47,7 @@ def _data_folder() -> str:
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Haupt-Webinterface."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 # ──────────────────────── Health / Status ────────────────────────
