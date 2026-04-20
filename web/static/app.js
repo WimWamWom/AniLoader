@@ -139,6 +139,18 @@ async function refreshStatus() {
 
     updateText('#dl-mode', s.mode || '–');
     updateText('#dl-title', s.current_title || '–');
+    const dlUrlEl = $('#dl-url');
+    const dlTitleItem = $('#dl-title-item');
+    if (dlUrlEl) dlUrlEl.textContent = s.current_url || '';
+    if (dlTitleItem) {
+      if (s.current_url) {
+        dlTitleItem.style.cursor = 'pointer';
+        dlTitleItem.onclick = () => window.open(s.current_url, '_blank', 'noopener');
+      } else {
+        dlTitleItem.style.cursor = 'default';
+        dlTitleItem.onclick = null;
+      }
+    }
     updateText('#dl-season', s.current_season != null ? `S${String(s.current_season).padStart(2,'0')}` : '–');
     updateText('#dl-episode', s.current_episode != null ? `E${String(s.current_episode).padStart(3,'0')}` : '–');
 
@@ -155,7 +167,7 @@ async function refreshStatus() {
       const eCur  = `E${String(curEp).padStart(3, '0')}`;
       const sMax  = `S${String(totalSeasons).padStart(2, '0')}`;
       const eMax  = totalEps > 0 ? `E${String(totalEps).padStart(3, '0')}` : '–––';
-      updateText('#dl-ep-total', `${sCur}${eCur} von ${sMax}${eMax}`);
+      updateText('#dl-ep-total', `von ${sMax}${eMax}`);
       if (epWrap) epWrap.style.display = '';
       if (epBar && totalOverall > 0)
         epBar.style.width = (completedOverall / totalOverall * 100).toFixed(1) + '%';

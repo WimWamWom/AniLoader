@@ -1071,6 +1071,19 @@ input::placeholder { color: var(--text-muted); }
   border-color: rgba(108, 138, 255, 0.12);
 }
 
+.dl-url-label {
+  font-size: 0.65em;
+  color: var(--text-muted);
+  margin-top: 4px;
+  word-break: break-all;
+  opacity: 0.7;
+}
+
+#dl-title-item[style*="pointer"]:hover {
+  background: rgba(108, 138, 255, 0.06);
+  border-color: rgba(108, 138, 255, 0.25);
+}
+
 .progress-item .value {
   font-size: 1.8em;
   font-weight: 800;
