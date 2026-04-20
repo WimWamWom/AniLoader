@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniLoader Export-Button
 // @namespace    AniLoader
-// @version      2.0
+// @version      2.1
 // @icon         https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png
 // @description  Fügt einen Download-Button auf aniworld.to / s.to ein, der Serien an den AniLoader-Server sendet.
 // @author       WimWamWom
@@ -9,6 +9,8 @@
 // @updateURL    https://github.com/WimWamWom/AniLoader/raw/refs/heads/main/Tampermonkey.user.js
 // @match        https://aniworld.to/*
 // @match        https://s.to/*
+// @match        https://serienstream.to/*
+// @match        http://186.2.175.5/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM.xmlHttpRequest
 // @connect      aniloader.example.com
