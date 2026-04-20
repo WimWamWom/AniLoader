@@ -32,6 +32,7 @@ docker compose up -d
   - [API](#api)
   - [Tampermonkey](#tampermonkey)
 - [Konfiguration](#konfiguration)
+- [Automation](#automation)
 - [Volumes & Pfade](#volumes--pfade)
 - [Datei-Struktur](#datei-struktur)
   - [Standard-Modus](#standard-modus)
@@ -44,7 +45,8 @@ docker compose up -d
 
 - **🐋 Docker-Ready:** Multi-Arch Images (amd64/arm64) mit Health-Checks
 - **🌐 Web-Interface:** Moderne Dark-Theme Oberfläche mit Live-Status  
-- **📥 4 Download-Modi:** Standard, German, New Episode Check, Integrity Check
+- **📥 5 Download-Modi:** Default, German, New Episode Check, German+New, Integrity Check
+- **🤖 Automation:** Geplante Läufe per Cron-Schedule oder Intervall mit Discord-Benachrichtigungen
 - **🔍 Suche + Poster:** Durchsuche Aniworld und SerieStream
 - **🇩🇪 Sprach-Priorität:** German Dub → Sub → English (automatischer Fallback)
 - **📁 Jellyfin-Ready:** `Title (Year) [IMDB]/Season/Episode.mkv`
@@ -53,6 +55,7 @@ docker compose up -d
 - **💾 Export-Funktionen:** Datenbank + Links als Download exportieren
 - **🔓 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
 - **⚡ Autostart:** Optional bei Container-Start Download-Modus starten
+- **📂 Separate Filmpfade:** Anime-Filme und Serien-Filme in eigene Ordner
 
 ---
 
@@ -78,6 +81,8 @@ docker run -d \
   -v ./Downloads:/app/Downloads \
   -v ./Anime:/app/Anime \
   -v ./Serien:/app/Serien \
+  -v ./Anime-Filme:/app/Anime-Filme \
+  -v ./Serien-Filme:/app/Serien-Filme \
   -e TZ=Europe/Berlin \
   --dns 8.8.8.8 \
   --restart unless-stopped \
@@ -144,6 +149,8 @@ docker compose logs -f
 | `/app/Downloads` | `/mnt/user/data/Downloads` | Standard-Downloads |
 | `/app/Anime` | `/mnt/user/data/Anime` | Anime (separate mode) |
 | `/app/Serien` | `/mnt/user/data/Serien` | Serien (separate mode) |
+| `/app/Anime-Filme` | `/mnt/user/data/Anime-Filme` | Anime-Filme (separate mode) |
+| `/app/Serien-Filme` | `/mnt/user/data/Serien-Filme` | Serien-Filme (separate mode) |
 
 **Environment Variables:**
 - `TZ=Europe/Berlin`
@@ -159,7 +166,7 @@ docker compose logs -f
 **URL:** `http://localhost:5050`
 
 **📥 Download-Tab**
-- Download-Modi starten/stoppen (default, german, new, check)
+- Download-Modi starten/stoppen (default, german, new, german_new, check)
 - Live-Status mit aktueller Serie/Episode/Fortschritt  
 - Echtzeit-Logs des laufenden Downloads
 
@@ -179,8 +186,16 @@ docker compose logs -f
 - Archivierte Logs nach Datum durchsuchen  
 - Automatische Bereinigung nach konfigurierbaren Tagen
 
+**🤖 Automation-Tab**
+- Cron-Schedules oder Intervall-basierte Läufe konfigurieren
+- Modi: `german`, `new`, `german_new`
+- Discord-Webhook für Benachrichtigungen pro Modus
+- Whitelist/Blacklist-Filter pro Modus
+- Lauf-Historie einsehen und Läufe manuell triggern
+
 **⚙️ Einstellungen-Tab**
-- Storage-Mode (Standard vs Separate)
+- Storage-Mode (Standard vs Separate) mit Ordner-Browser
+- Separate Filmpfade für Anime-Filme und Serien-Filme
 - Sprachpriorität per Drag & Drop
 - Autostart, Titel-Refresh, System-Settings
 
@@ -197,10 +212,12 @@ curl http://localhost:5050/status  # Download-Status
 # Downloads steuern
 curl -X POST http://localhost:5050/start_download \
   -H "Content-Type: application/json" \
-  -d '{"mode": "default"}'
+  -d '{"mode": "default"}'  # default | german | new | check | german_new
+
+curl -X POST http://localhost:5050/stop_download
 
 # URLs hinzufügen
-curl -X POST http://localhost:5050/export \
+curl -X POST http://localhost:5050/add_link \
   -H "Content-Type: application/json" \
   -d '{"url": "https://aniworld.to/anime/stream/naruto"}'
 
@@ -209,9 +226,23 @@ curl -X POST http://localhost:5050/search \
   -H "Content-Type: application/json" \
   -d '{"query": "demon slayer", "platform": "both"}'
 
+# Datenbank
+curl http://localhost:5050/database?q=naruto
+curl http://localhost:5050/database/stats
+
 # Export-Funktionen
 curl http://localhost:5050/export/database  # SQLite-DB Download
 curl http://localhost:5050/export/links     # AniLoader.txt Download
+
+# Automation
+curl http://localhost:5050/automation/status
+curl -X POST http://localhost:5050/automation/trigger/german
+curl -X POST http://localhost:5050/automation/trigger/new
+curl -X POST http://localhost:5050/automation/trigger/german_new
+curl http://localhost:5050/automation/history
+
+# Speicherplatz
+curl http://localhost:5050/disk
 ```
 
 ### Tampermonkey
@@ -253,10 +284,13 @@ storage:
   serien_separate_movies: false
 
 download:
-  autostart_mode: null       # null, default, german, new, check  
+  autostart_mode: null       # null, default, german, new, check, german_new
   refresh_titles: false      # Titel beim Start aktualisieren
-  min_free_gb: 2.0          # Mindest-Speicherplatz
-  timeout_seconds: 900       # Download-Timeout pro Episode
+  min_free_gb: 2.0           # Mindest-Speicherplatz in GB
+  timeout_seconds: 900       # Download-Timeout pro Episode in Sekunden
+
+logging:
+  log_retention_days: 7      # Logs nach X Tagen automatisch löschen
 
 data:
   folder: /app/data          # Config, DB, Logs (gemounted!)
@@ -267,7 +301,49 @@ data:
 - **default:** Alle unvollständigen Serien beim Container-Start  
 - **german:** Fehlende deutsche Episoden
 - **new:** Neue Episoden-Check
+- **german_new:** German + New in einem Lauf
 - **check:** Integritätsprüfung
+
+---
+
+## Automation
+
+Geplante Download-Läufe per Cron-Schedule oder Intervall.
+
+```yaml
+automation:
+  enabled: true
+
+  german:
+    enabled: true
+    schedule: "0 3 * * 0"    # Cron: jeden Sonntag um 3 Uhr
+    interval_minutes: 0       # Alternativ: Intervall in Minuten (0 = cron)
+    discord_webhook: ""       # Optional: Discord-Webhook URL
+    notify_on_empty: false    # Benachrichtigen wenn keine neuen Episoden
+    filter_mode: whitelist    # whitelist | blacklist
+    whitelist: []             # Nur diese Serien prüfen (leer = alle)
+    blacklist: []             # Diese Serien überspringen
+
+  new:
+    enabled: true
+    schedule: "0 */6 * * *"   # Alle 6 Stunden
+    interval_minutes: 0
+    discord_webhook: ""
+    notify_on_empty: false
+    filter_mode: whitelist
+    whitelist: []
+    blacklist: []
+
+  german_new:
+    enabled: false
+    schedule: ""
+    interval_minutes: 0
+    discord_webhook: ""
+    notify_on_empty: false
+    filter_mode: whitelist
+    whitelist: []
+    blacklist: []
+```
 
 ---
 
@@ -371,6 +447,12 @@ A: `data/` Volume gemounted? Ohne Volume wird config.yaml nicht gespeichert!
 **Q: Autostart aktivieren bei Docker-Start**  
 A: `data/config.yaml` → `autostart_mode: default` oder Web-UI → Einstellungen → System
 
+**Q: Was ist `german_new` als Autostart-Modus?**  
+A: Kombiniert `german` (fehlende deutsche Episoden) und `new` (neue Episoden prüfen) in einem einzigen Lauf.
+
+**Q: Wie richte ich Automation ein?**  
+A: Web-UI → Automation-Tab → gewünschten Modus aktivieren, Cron-Schedule eintragen, optional Discord-Webhook hinzufügen.
+
 **Q: Container nutzt zu viel CPU/RAM**  
 A: Download-Modi sind CPU-intensiv (Video-Processing). Normal während aktiver Downloads
 
@@ -385,6 +467,9 @@ A: `wimwamwom/aniloader:latest` unterstützt automatisch amd64 + arm64
 
 **Q: Reverse Proxy (nginx/Traefik)**  
 A: Container-Port 5050, externe URL im Tampermonkey-Skript anpassen
+
+**Q: Separate Filmpfade einrichten?**  
+A: Im Separate-Modus: `anime_separate_movies: true` und/oder `serien_separate_movies: true` in `config.yaml` setzen. Die Volumes `./Anime-Filme:/app/Anime-Filme` und `./Serien-Filme:/app/Serien-Filme` einbinden.
 
 ---
 
