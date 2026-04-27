@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Prüft, ob Titel und Ordnername in der AniLoader-Datenbank zusammenpassen.
+Prueft, ob Titel und Ordnername in der AniLoader-Datenbank zusammenpassen.
 
-Ignoriert typische Ordner-Zusätze wie:
+Ignoriert typische Ordner-Zusaetze wie:
 - (1983)
 - [imdbid-tt0175863]
 """
@@ -16,7 +16,8 @@ import sys
 import unicodedata
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from app import database as db
 from app.config import get_data_folder, load_config
@@ -34,7 +35,7 @@ def get_data_folder_path() -> str:
         cfg = load_config()
         return get_data_folder(cfg)
     except Exception:
-        return str(Path(__file__).resolve().parent / "data")
+        return str(PROJECT_ROOT / "data")
 
 
 def strip_known_suffixes(folder_name: str) -> str:
@@ -141,7 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--include-deleted",
         action="store_true",
-        help="Auch gelöschte Einträge prüfen.",
+        help="Auch geloeschte Eintraege pruefen.",
     )
     return parser
 
@@ -175,16 +176,16 @@ def main() -> int:
     mismatches = iter_mismatches(data_folder, include_deleted=args.include_deleted)
 
     if not mismatches:
-        print("Alle geprüften Titel passen zu den Ordnernamen.")
+        print("Alle geprueften Titel passen zu den Ordnernamen.")
         return 0
 
     missing_folder = [entry for entry in mismatches if not entry["folder_name"]]
     differing_folder = [entry for entry in mismatches if entry["folder_name"]]
 
     print(format_separator())
-    print("Prüfung Titel <-> Ordnername")
+    print("Pruefung Titel <-> Ordnername")
     print(format_separator())
-    print(f"Geprüfte Abweichungen : {len(mismatches)}")
+    print(f"Gepruefte Abweichungen : {len(mismatches)}")
     print(f"Fehlender Ordnername  : {len(missing_folder)}")
     print(f"Abweichender Ordner   : {len(differing_folder)}")
 

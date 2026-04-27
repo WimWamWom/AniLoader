@@ -9,7 +9,7 @@ Funktionsgleiche Varianten sind jeweils als `.sh` und `.ps1` vorhanden.
 - Fehlende deutsche Folgen prüfen: `check-german.sh` oder `check-german.ps1`
 - Letzten Lauf auswerten: `last_run_summary.sh` oder `last_run_summary.ps1`
 - Einzelnen DB-Eintrag ändern: `db_edit.py`
-- Titel/Ordnernamen prüfen: `fodlder_name_check.py`
+- Titel/Ordnernamen prüfen: `folder_name_check.py`
 
 ## Übersicht nach Aufgabe
 
@@ -19,7 +19,7 @@ Funktionsgleiche Varianten sind jeweils als `.sh` und `.ps1` vorhanden.
 | Fehlende deutsche Episoden prüfen und benachrichtigen | `check-german.sh` + `check-german.ps1` | Startet Modus `german`, wertet nur German-Dub-Downloads aus |
 | Letzten Lauf zusammenfassen | `last_run_summary.sh` + `last_run_summary.ps1` | Liest `last_run`, erkennt Modus automatisch und sendet optional Discord |
 | Datenbankeintrag gezielt bearbeiten | `db_edit.py` | Ändert einzelne Felder eines DB-Eintrags per ID mit Bestätigung |
-| Titel gegen Ordnername prüfen | `fodlder_name_check.py` | Findet DB-Einträge, bei denen `title` und `folder_name` nicht zusammenpassen |
+| Titel gegen Ordnername prüfen | `folder_name_check.py` | Findet DB-Einträge, bei denen `title` und `folder_name` nicht zusammenpassen |
 
 ## Detailliert pro Skript
 
@@ -90,9 +90,9 @@ Funktionsgleiche Varianten sind jeweils als `.sh` und `.ps1` vorhanden.
 
 ---
 
-### 5) fodlder_name_check.py
+### 5) folder_name_check.py
 
-**Datei:** `fodlder_name_check.py`
+**Datei:** `folder_name_check.py`
 
 **Was es macht:**
 1. Liest alle AniLoader-Einträge aus der Datenbank.
@@ -139,8 +139,8 @@ powershell -ExecutionPolicy Bypass -File .\last_run_summary.ps1
 
 ```bash
 python ./db_edit.py
-python ./fodlder_name_check.py
-python ./fodlder_name_check.py --include-deleted
+python ./folder_name_check.py
+python ./folder_name_check.py --include-deleted
 ```
 
 ## Hinweise
