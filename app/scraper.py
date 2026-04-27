@@ -118,15 +118,51 @@ def _post(url: str, **kwargs):
 # ──────────────────────── URL-Hilfsfunktionen ────────────────────────
 
 
+def normalize_series_url(url: str) -> str:
+    """Normalisiert bekannte Serien-URL-Varianten auf eine kanonische Form."""
+    value = str(url or "").strip()
+
+    m = re.match(r"^https?://aniworld\.to/anime/stream/([^/?#]+)", value, re.IGNORECASE)
+    if m:
+        return f"https://aniworld.to/anime/stream/{m.group(1)}"
+
+    m = re.match(
+        r"^https?://(?:s\.to|serienstream\.to|186\.2\.175\.5)/serie/(?:stream/)?([^/?#]+)",
+        value,
+        re.IGNORECASE,
+    )
+    if m:
+        return f"https://s.to/serie/{m.group(1)}"
+
+    return value
+
+
+def get_series_key(url: str) -> Optional[str]:
+    """Gibt einen stabilen Key pro Serie zurück (plattform:slug)."""
+    normalized = normalize_series_url(url)
+
+    m = re.match(r"^https://aniworld\.to/anime/stream/([^/?#]+)", normalized, re.IGNORECASE)
+    if m:
+        return f"aniworld:{m.group(1).lower()}"
+
+    m = re.match(r"^https://s\.to/serie/([^/?#]+)", normalized, re.IGNORECASE)
+    if m:
+        return f"s.to:{m.group(1).lower()}"
+
+    return None
+
+
 def get_base_url(url: str) -> str:
     """Extrahiert die Serien-Basis-URL (ohne Staffel/Episode)."""
-    if "aniworld.to" in url:
-        m = re.match(r"(https://aniworld\.to/anime/stream/[^/]+)", url)
-        return m.group(1) if m else url
-    if "s.to" in url:
-        m = re.match(r"(https://s\.to/serie/stream/[^/]+)", url)
-        return m.group(1) if m else url
-    return url
+    normalized = normalize_series_url(url)
+
+    if "aniworld.to" in normalized:
+        m = re.match(r"(https://aniworld\.to/anime/stream/[^/]+)", normalized)
+        return m.group(1) if m else normalized
+    if "s.to" in normalized:
+        m = re.match(r"(https://s\.to/serie/[^/]+)", normalized)
+        return m.group(1) if m else normalized
+    return normalized
 
 
 def is_aniworld(url: str) -> bool:

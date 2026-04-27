@@ -77,24 +77,47 @@ def init_db(data_folder: str) -> None:
 # ────────────────────────── CRUD ──────────────────────────
 
 
+def _find_existing_id_by_series_key(cursor: sqlite3.Cursor, url: str) -> Optional[int]:
+    """Findet einen bestehenden Eintrag über den normalisierten Serien-Key."""
+    sc = _get_scraper()
+    series_key = sc.get_series_key(url)
+    if not series_key:
+        return None
+
+    cursor.execute("SELECT id, url FROM anime")
+    for row in cursor.fetchall():
+        existing_key = sc.get_series_key(row["url"])
+        if existing_key and existing_key == series_key:
+            return int(row["id"])
+    return None
+
+
 def add_anime(data_folder: str, url: str, title: Optional[str] = None) -> Optional[int]:
     """Fügt eine Serie/Anime hinzu. Gibt die ID zurück oder None bei Duplikat."""
+    sc = _get_scraper()
+    normalized_url = sc.normalize_series_url(url)
+
     conn = _connect(data_folder)
     try:
         c = conn.cursor()
+
+        existing_id = _find_existing_id_by_series_key(c, normalized_url)
+        if existing_id is not None:
+            return existing_id
+
         c.execute(
             "INSERT OR IGNORE INTO anime (url, title) VALUES (?, ?)",
-            (url, title or url),
+            (normalized_url, title or normalized_url),
         )
         conn.commit()
         if c.rowcount > 0:
-            log(f"[DB] Hinzugefügt: {title or url}")
+            log(f"[DB] Hinzugefügt: {title or normalized_url}")
             # Backup-Datei aktualisieren
-            _update_aniloader_backup(data_folder, url)
+            _update_aniloader_backup(data_folder, normalized_url)
             return c.lastrowid
         else:
             # Already exists – return existing ID
-            c.execute("SELECT id FROM anime WHERE url = ?", (url,))
+            c.execute("SELECT id FROM anime WHERE url = ?", (normalized_url,))
             row = c.fetchone()
             return row["id"] if row else None
     finally:

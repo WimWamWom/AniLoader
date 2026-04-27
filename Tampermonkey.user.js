@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniLoader Export-Button
 // @namespace    AniLoader
-// @version      2.1
+// @version      2.2
 // @icon         https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png
 // @description  Fügt einen Download-Button auf aniworld.to / s.to ein, der Serien an den AniLoader-Server sendet.
 // @author       WimWamWom
@@ -107,27 +107,43 @@
             return m ? `https://aniworld.to/anime/stream/${m[1]}` : null;
         }
         if (href.includes('s.to')) {
-            m = href.match(/https:\/\/s\.to\/serie\/([^\/]+)/);
+            m = href.match(/https:\/\/s\.to\/serie\/(?:stream\/)?([^\/?#]+)/);
             return m ? `https://s.to/serie/${m[1]}` : null;
         }
         if (href.includes('serienstream.to')) {
-            m = href.match(/https:\/\/serienstream\.to\/serie\/([^\/]+)/);
+            m = href.match(/https:\/\/serienstream\.to\/serie\/(?:stream\/)?([^\/?#]+)/);
             return m ? `https://serienstream.to/serie/${m[1]}` : null;
         }
         if (href.includes('186.2.175.5')) {
-            m = href.match(/http:\/\/186\.2\.175\.5\/serie\/([^\/]+)/);
+            m = href.match(/http:\/\/186\.2\.175\.5\/serie\/(?:stream\/)?([^\/?#]+)/);
             return m ? `http://186.2.175.5/serie/${m[1]}` : null;
         }
+        return null;
+    }
+
+    function normalizeSeriesUrl(value) {
+        if (!value) return value;
+        return value
+            .replace(/^https?:\/\/serienstream\.to\/serie\/(?:stream\/)?/i, 'https://s.to/serie/')
+            .replace(/^http:\/\/186\.2\.175\.5\/serie\/(?:stream\/)?/i, 'https://s.to/serie/')
+            .replace(/^https?:\/\/s\.to\/serie\/stream\//i, 'https://s.to/serie/');
+    }
+
+    function seriesKey(value) {
+        const url = normalizeSeriesUrl(value || '');
+        let m = url.match(/^https:\/\/aniworld\.to\/anime\/stream\/([^\/?#]+)/i);
+        if (m) return `aniworld:${m[1].toLowerCase()}`;
+        m = url.match(/^https:\/\/s\.to\/serie\/([^\/?#]+)/i);
+        if (m) return `s.to:${m[1].toLowerCase()}`;
         return null;
     }
 
     const rawUrl = seriesUrl();
     if (!rawUrl) return; // kein Stream-URL → Skript ignorieren
 
-    // Immer s.to-URL an die API schicken
-    const url = rawUrl
-        .replace(/^https?:\/\/serienstream\.to\/serie\//, 'https://s.to/serie/')
-        .replace(/^http:\/\/186\.2\.175\.5\/serie\//, 'https://s.to/serie/');
+    // Immer kanonische URL an die API schicken
+    const url = normalizeSeriesUrl(rawUrl);
+    const currentKey = seriesKey(url);
 
     // ── Container finden ──
 
@@ -181,8 +197,11 @@
     async function refreshBtn() {
         let entry = null;
         try {
-            const db = await apiGet(`/database?q=${encodeURIComponent(url)}`);
-            entry = Array.isArray(db) ? db.find(r => r.url === url) : null;
+            const searchToken = currentKey ? currentKey.split(':', 2)[1] : url;
+            const db = await apiGet(`/database?q=${encodeURIComponent(searchToken)}`);
+            entry = Array.isArray(db)
+                ? db.find(r => seriesKey(r.url) === currentKey)
+                : null;
         } catch { /* ignore */ }
 
         let status = null;
@@ -207,8 +226,11 @@
         if (btn.disabled) return;
         try {
             // In DB einfügen oder wiederherstellen
-            const db = await apiGet(`/database?q=${encodeURIComponent(url)}`);
-            const entry = Array.isArray(db) ? db.find(r => r.url === url) : null;
+            const searchToken = currentKey ? currentKey.split(':', 2)[1] : url;
+            const db = await apiGet(`/database?q=${encodeURIComponent(searchToken)}`);
+            const entry = Array.isArray(db)
+                ? db.find(r => seriesKey(r.url) === currentKey)
+                : null;
             if (!entry || entry.deleted) {
                 const res = await apiPost('/export', { url });
                 if (!res || res.status !== 'ok') throw new Error('Export fehlgeschlagen');

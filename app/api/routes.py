@@ -202,8 +202,8 @@ async def export_anime(request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"status": "error"})
 
-    url = body.get("url", "").strip()
-    if not url or ("aniworld.to" not in url and "s.to" not in url):
+    url = scraper.normalize_series_url(body.get("url", "").strip())
+    if not url or (not scraper.is_aniworld(url) and not scraper.is_sto(url)):
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Ungültige URL"},
@@ -228,8 +228,8 @@ async def add_link(request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"status": "error"})
 
-    url = body.get("url", "").strip()
-    if not url or ("aniworld.to" not in url and "s.to" not in url):
+    url = scraper.normalize_series_url(body.get("url", "").strip())
+    if not url or (not scraper.is_aniworld(url) and not scraper.is_sto(url)):
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Ungültige URL (nur aniworld.to und s.to)"},
