@@ -935,7 +935,26 @@ input::placeholder { color: var(--text-muted); }
 }
 
 .db-table tbody tr.db-row-deleted td {
-  opacity: 0.45;
+  opacity: 0.6;
+}
+
+.db-table tbody tr.db-row-deleted {
+  border-left: 3px solid rgba(248,81,73,0.5);
+  background: rgba(248,81,73,0.04);
+}
+
+.db-deleted-badge {
+  display: inline-block;
+  font-size: 0.7em;
+  font-weight: 600;
+  background: rgba(248,81,73,0.15);
+  color: #f85149;
+  border: 1px solid rgba(248,81,73,0.35);
+  border-radius: 3px;
+  padding: 1px 5px;
+  vertical-align: middle;
+  margin-right: 4px;
+  white-space: nowrap;
 }
 
 /* Spaltenbreiten */
@@ -946,7 +965,7 @@ input::placeholder { color: var(--text-muted); }
 .db-col-missing-de { width: 100px; text-align: center !important; }
 .db-col-se     { width: 80px; white-space: nowrap; }
 .db-col-film   { width: 56px; text-align: center !important; }
-.db-col-action { width: 160px; }
+.db-col-action { width: 200px; }
 
 .db-nr    { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .db-url-link { color: var(--primary); font-size: 0.8em; word-break: break-all; }
@@ -987,6 +1006,14 @@ input::placeholder { color: var(--text-muted); }
   color: #34d058;
 }
 .db-btn-restore:hover { background: rgba(52,208,88,0.22); }
+
+.db-btn-hard-del {
+  background: rgba(248,81,73,0.18);
+  border-color: rgba(248,81,73,0.5);
+  color: #f85149;
+  font-weight: 600;
+}
+.db-btn-hard-del:hover { background: rgba(248,81,73,0.32); }
 
 .db-empty {
   text-align: center;

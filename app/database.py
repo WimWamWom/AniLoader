@@ -243,10 +243,21 @@ def delete_anime(data_folder: str, anime_id: int, hard: bool = False) -> bool:
 
 
 def restore_anime(data_folder: str, anime_id: int) -> bool:
-    """Stellt einen gelöschten Eintrag wieder her."""
+    """Stellt einen gelöschten Eintrag wieder her und setzt alle Werte auf Standardwerte zurück."""
     conn = _connect(data_folder)
     try:
-        conn.execute("UPDATE anime SET deleted = 0 WHERE id = ?", (anime_id,))
+        conn.execute(
+            """UPDATE anime SET
+                deleted = 0,
+                complete = 0,
+                deutsch_komplett = 0,
+                fehlende_deutsch_folgen = '[]',
+                last_film = 0,
+                last_episode = 0,
+                last_season = 0
+               WHERE id = ?""",
+            (anime_id,),
+        )
         conn.commit()
         return True
     finally:

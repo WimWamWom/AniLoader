@@ -768,7 +768,8 @@ async function loadDatabase() {
   const sort_by  = $('#db-sort')?.value     || dbSortCol;
 
   try {
-    let url = `/database?q=${encodeURIComponent(search)}&sort=${sort_by}&dir=${dbSortDir}`;
+    // Immer gelöschte Einträge mitsenden, außer wenn nach einem Status gefiltert wird
+    let url = `/database?q=${encodeURIComponent(search)}&sort=${sort_by}&dir=${dbSortDir}&include_deleted=true`;
     if (complete !== '') url += `&complete=${complete}`;
     if (deutsch  !== '') url += `&deutsch=${deutsch}`;
     const data = await api(url);
@@ -817,14 +818,18 @@ function renderDatabase(entries) {
       fehlendeDE = '–';
     }
 
+    const deletedBadge = isDeleted
+      ? `<span class="db-deleted-badge">&#128465; Gelöscht</span> `
+      : '';
+
     const actionBtns = isDeleted
-      ? `<button class="db-btn db-btn-restore" onclick="restoreAnime(${e.id})">&#8635; Erneut laden</button>
-         <button class="db-btn db-btn-del" onclick="deleteAnime(${e.id})">&#10005; Löschen</button>`
-      : `<button class="db-btn db-btn-del" onclick="deleteAnime(${e.id})">&#10005; Löschen</button>`;
+      ? `<button class="db-btn db-btn-restore" onclick="restoreAnime(${e.id})" title="Wiederherstellen und Status zurücksetzen">&#8635; Wiederherstellen</button>
+         <button class="db-btn db-btn-hard-del" onclick="hardDeleteAnime(${e.id})" title="Endgültig aus der Datenbank löschen">&#128465; Endgültig löschen</button>`
+      : `<button class="db-btn db-btn-del" onclick="deleteAnime(${e.id})" title="Als gelöscht markieren (kann wiederhergestellt werden)">&#10005; Löschen</button>`;
 
     return `<tr class="${isDeleted ? 'db-row-deleted' : ''}">
       <td class="db-nr">${e.id}</td>
-      <td>${esc(e.title || '–')}</td>
+      <td>${deletedBadge}${esc(e.title || '–')}</td>
       <td><a class="db-url-link" href="${e.url}" target="_blank" rel="noreferrer" title="${e.url}">${esc(displayUrl)}</a></td>
       <td style="text-align:center">${komplett}</td>
       <td style="text-align:center">${deKomp}</td>
@@ -854,9 +859,14 @@ function queueAdd(id) {
 }
 
 async function deleteAnime(id) {
-  if (!confirm('Eintrag wirklich löschen?')) return;
-  if (!confirm('Sicher? Dieser Schritt kann nicht rückgängig gemacht werden.')) return;
+  if (!confirm('Eintrag als gelöscht markieren?\nDer Eintrag bleibt sichtbar und kann jederzeit wiederhergestellt werden.')) return;
   await api(`/anime/${id}`, { method: 'DELETE' });
+  loadDatabase();
+}
+
+async function hardDeleteAnime(id) {
+  if (!confirm('Eintrag endgültig aus der Datenbank entfernen?\nDiese Aktion kann NICHT rückgängig gemacht werden!')) return;
+  await api(`/anime/${id}?hard=true`, { method: 'DELETE' });
   loadDatabase();
 }
 
