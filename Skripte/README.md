@@ -10,6 +10,8 @@ Funktionsgleiche Varianten sind jeweils als `.sh` und `.ps1` vorhanden.
 - Letzten Lauf auswerten: `last_run_summary.sh` oder `last_run_summary.ps1`
 - Einzelnen DB-Eintrag ändern: `db_edit.py`
 - Titel/Ordnernamen prüfen: `folder_name_check.py`
+- [Sub]-Inkonsistenzen zwischen Dateisystem und DB finden: `find_sub_db_inconsistencies.sh`
+- [Sub]-Inkonsistenzen in DB eintragen (Fix): `fix_sub_db_inconsistencies.py`
 
 ## Übersicht nach Aufgabe
 
@@ -20,6 +22,8 @@ Funktionsgleiche Varianten sind jeweils als `.sh` und `.ps1` vorhanden.
 | Letzten Lauf zusammenfassen | `last_run_summary.sh` + `last_run_summary.ps1` | Liest `last_run`, erkennt Modus automatisch und sendet optional Discord |
 | Datenbankeintrag gezielt bearbeiten | `db_edit.py` | Ändert einzelne Felder eines DB-Eintrags per ID mit Bestätigung |
 | Titel gegen Ordnername prüfen | `folder_name_check.py` | Findet DB-Einträge, bei denen `title` und `folder_name` nicht zusammenpassen |
+| [Sub]-Inkonsistenzen analysieren | `find_sub_db_inconsistencies.sh` | Findet lokal vorhandene [Sub]-Dateien, die nicht mehr in `fehlende_deutsch_folgen` stehen |
+| [Sub]-Inkonsistenzen in DB eintragen | `fix_sub_db_inconsistencies.py` | Trägt die vom Bash-Skript gefundenen Inkonsistenzen in die DB ein |
 
 ## Detailliert pro Skript
 
@@ -108,6 +112,60 @@ Funktionsgleiche Varianten sind jeweils als `.sh` und `.ps1` vorhanden.
 
 **Typischer Einsatz:** Qualitätscheck der Datenbank vor/ nach größeren Importen.
 
+---
+
+### 6) find_sub_db_inconsistencies (.sh)
+
+**Datei:** `find_sub_db_inconsistencies.sh`
+
+**Was es macht:**
+1. Liest Medienpfade und DB-Pfad aus der `config.yaml`.
+2. Mappt Container-Pfade (`/app/...`) automatisch auf Host-Pfade via `docker inspect`.
+3. Durchsucht alle Serien-Ordner nach Dateien mit `[Sub]` im Namen.
+4. Vergleicht gefundene Episoden mit `fehlende_deutsch_folgen` in der DB.
+5. Gibt alle Episoden aus, die lokal als `[Sub]` vorliegen, aber nicht mehr als fehlende deutsche Version in der DB geführt werden.
+6. Schreibt einen detaillierten Report als Textdatei.
+
+**Optionen:**
+- Argument 1: Pfad zur `config.yaml` (Standard: `data/config.yaml`)
+- Argument 2: Pfad zur Report-Ausgabedatei (Standard: `data/sub_db_inconsistencies_<timestamp>.txt`)
+- Umgebungsvariable `ANILOADER_CONTAINER`: Name des Docker-Containers (Standard: `AniLoader`)
+
+**Typischer Einsatz:** einmalig oder nach größeren Änderungen am Dateibestand.
+
+**Ausführung:**
+```bash
+bash find_sub_db_inconsistencies.sh /mnt/user/Docker/AniLoader/data/config.yaml
+```
+
+---
+
+### 7) fix_sub_db_inconsistencies (.py)
+
+**Datei:** `fix_sub_db_inconsistencies.py`
+
+**Was es macht:**
+1. Liest den Report von `find_sub_db_inconsistencies.sh` ein.
+2. Rekonstruiert die fehlenden Episoden-URLs (analog zu `app/scraper.py`).
+3. Ergänzt diese URLs in `fehlende_deutsch_folgen` der betroffenen DB-Einträge.
+4. Setzt `deutsch_komplett = 0` für alle betroffenen Serien.
+5. Gibt eine Übersicht aller Änderungen aus (mit `--dry-run` ohne zu schreiben).
+
+**Optionen:**
+- `--db <pfad>`: DB-Pfad manuell angeben (wird sonst aus Report-Header gelesen)
+- `--dry-run`: Zeigt nur was geändert würde, ohne die DB zu schreiben
+
+**Typischer Einsatz:** direkt nach `find_sub_db_inconsistencies.sh` ausführen, danach AniLoader im German-Modus starten um die fehlenden Dubs nachzuladen.
+
+**Ausführung:**
+```bash
+# Erst Dry-run zur Kontrolle
+python fix_sub_db_inconsistencies.py data/sub_db_inconsistencies_<timestamp>.txt --dry-run
+
+# Dann schreiben
+python fix_sub_db_inconsistencies.py data/sub_db_inconsistencies_<timestamp>.txt --db data/AniLoader.db
+```
+
 ## Konfiguration der API/Discord-Skripte
 
 In allen drei Automations-Skriptpaaren werden oben dieselben Werte gesetzt:
@@ -141,6 +199,8 @@ powershell -ExecutionPolicy Bypass -File .\last_run_summary.ps1
 python ./db_edit.py
 python ./folder_name_check.py
 python ./folder_name_check.py --include-deleted
+python ./fix_sub_db_inconsistencies.py data/sub_db_inconsistencies_20260429_095126.txt
+python ./fix_sub_db_inconsistencies.py data/sub_db_inconsistencies_20260429_095126.txt --dry-run
 ```
 
 ## Hinweise
