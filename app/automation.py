@@ -22,6 +22,7 @@ from .logger import log
 
 AUTOMATION_MODES = ("german", "new", "german_new")
 MAX_HISTORY_ITEMS = 200
+DISCORD_EMBED_COLOR = 0x7472CB
 
 
 class AutomationManager:
@@ -428,39 +429,40 @@ class AutomationManager:
         footer_ts = now.strftime("%d.%m.%Y %H:%M")
 
         color_map = {
-            "german": 0xDD2B2B,
-            "new": 0x3498DB,
-            "german_new": 0xDD2B2B,
+            "german": DISCORD_EMBED_COLOR,
+            "new": DISCORD_EMBED_COLOR,
+            "german_new": DISCORD_EMBED_COLOR,
         }
         title_map = {
-            "german": "AniLoader - LastRun Auswertung",
-            "new": "AniLoader - Neue Episoden Check",
-            "german_new": "AniLoader - German & Neue Episoden",
+            "german": "🇩🇪 AniLoader - Deutsche Episoden Check",
+            "new": "📺 AniLoader - Neue Episoden Check",
+            "german_new": "✨ AniLoader - Deutsche & Neue Episoden",
         }
 
         if mode == "german_new":
             return self._build_discord_payload_german_new(downloaded, failed, footer_ts, color_map[mode], title_map[mode])
 
         grouped = self._group_episodes_by_series(downloaded)
-        fields = []
-        for series, episodes in grouped.items():
-            count = len(episodes)
-            field_name = f"{series} ({count} x)" if count > 1 else series
-            lines = [f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d}" for ep in episodes]
-            fields.append({"name": field_name[:256], "value": "\n".join(lines)[:1024], "inline": False})
-
-        series_count = len(grouped)
+        failed_grouped = self._group_episodes_by_series(failed)
 
         if mode == "german":
-            description = f"✅ {len(downloaded)} neue deutsche Episode(n) gefunden!"
+            empty_success_text = "Keine neuen deutschen Episoden gefunden."
+            failed_header = "⚠️ Fehlgeschlagene Checks"
         else:
-            description = f"✅ {len(downloaded)} neue Episode(n) heruntergeladen!\n🏆 {series_count} Serie(n) aktualisiert"
+            empty_success_text = "Keine neuen Episoden heruntergeladen."
+            failed_header = "⚠️ Fehlgeschlagene Downloads"
+
+        fields = self._build_embed_sections(
+            sections=[
+                ("", grouped, empty_success_text, mode != "german"),
+                (failed_header, failed_grouped, "Keine fehlgeschlagenen Episoden oder Checks.", mode != "german"),
+            ],
+        )
 
         return {
             "embeds": [
                 {
                     "title": title_map.get(mode, "AniLoader - Automation"),
-                    "description": description,
                     "color": color_map.get(mode, 0x3498DB),
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                     "footer": {"text": f"AniLoader • {footer_ts}"},
@@ -480,35 +482,23 @@ class AutomationManager:
         german_items = [ep for ep in downloaded if str(ep.get("language", "")).lower() == "german dub"]
         new_items = [ep for ep in downloaded if str(ep.get("language", "")).lower() != "german dub"]
 
-        fields: List[Dict[str, Any]] = []
-
         german_grouped = self._group_episodes_by_series(german_items)
-        for series, episodes in german_grouped.items():
-            count = len(episodes)
-            field_name = f"🇩🇪 {series} ({count} x)" if count > 1 else f"🇩🇪 {series}"
-            lines = [f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d}" for ep in episodes]
-            fields.append({"name": field_name[:256], "value": "\n".join(lines)[:1024], "inline": False})
-
         new_grouped = self._group_episodes_by_series(new_items)
-        for series, episodes in new_grouped.items():
-            count = len(episodes)
-            field_name = f"📺 {series} ({count} x)" if count > 1 else f"📺 {series}"
-            lines = [f"S{int(ep.get('season', 0)):02d}E{int(ep.get('episode', 0)):03d}" for ep in episodes]
-            fields.append({"name": field_name[:256], "value": "\n".join(lines)[:1024], "inline": False})
+        failed_grouped = self._group_episodes_by_series(failed)
 
-        german_series = len(german_grouped)
-        new_series = len(new_grouped)
-        description = (
-            f"🇩🇪 {len(german_items)} neue deutsche Episode(n) gefunden!\n"
-            f"✅ {len(new_items)} neue Episode(n) heruntergeladen!\n"
-            f"🏆 {german_series + new_series} Serie(n) aktualisiert"
+        fields = self._build_embed_sections(
+            sections=[
+                ("🇩🇪 Neue deutsche Episoden", german_grouped, "Keine neuen deutschen Episoden gefunden.", False),
+                ("📺 Neue Episoden", new_grouped, "Keine neuen Episoden heruntergeladen.", True),
+                ("⚠️ Fehlgeschlagene Checks", failed_grouped, "Keine fehlgeschlagenen Episoden oder Checks.", True),
+            ],
+            separators_after={0, 1},  # Add separator after each section
         )
 
         return {
             "embeds": [
                 {
                     "title": title,
-                    "description": description,
                     "color": color,
                     "timestamp": datetime.utcnow().isoformat() + "Z",
                     "footer": {"text": f"AniLoader • {footer_ts}"},
@@ -516,6 +506,85 @@ class AutomationManager:
                 }
             ]
         }
+
+    def _build_embed_sections(
+        self,
+        sections: List[Tuple[str, Dict[str, List[Dict[str, Any]]], str, bool]],
+        separators_after: set = None,
+    ) -> List[Dict[str, Any]]:
+        fields: List[Dict[str, Any]] = []
+        separators_after = separators_after or set()
+
+        for section_idx, (header, grouped, empty_text, include_language) in enumerate(sections):
+            if len(fields) >= 25:
+                break
+
+            total_episodes = sum(len(items) for items in grouped.values())
+            
+            # Nur einen Header-Feld hinzufügen wenn Header nicht leer ist
+            if header:
+                fields.append(
+                    {
+                        "name": header[:256],
+                        "value": (
+                            empty_text
+                            if not grouped
+                            else (
+                                f"{total_episodes} {self._count_label(total_episodes, 'Episode', 'Episoden')} "
+                                f"in {len(grouped)} {self._count_label(len(grouped), 'Serie', 'Serien')}"
+                            )
+                        )[:1024],
+                        "inline": False,
+                    }
+                )
+
+            for series, episodes in grouped.items():
+                if len(fields) >= 25:
+                    break
+
+                count = len(episodes)
+                field_name = (
+                    f"{series} ({count} {self._count_label(count, 'Episode', 'Episoden')})"
+                    if count > 1 else series
+                )
+                lines = [self._format_episode_label(ep, include_language=include_language) for ep in episodes]
+                fields.append({"name": field_name[:256], "value": "\n".join(lines)[:1024], "inline": False})
+
+            # Add separator after specified sections
+            if section_idx in separators_after and len(fields) < 25:
+                fields.append({
+                    "name": "\u200b",
+                    "value": "\u200b",
+                    "inline": False,
+                })
+
+        return fields[:25]
+
+    def _format_episode_label(self, episode: Dict[str, Any], include_language: bool = True) -> str:
+        season = int(episode.get("season", 0) or 0)
+        episode_number = int(episode.get("episode", 0) or 0)
+        language = self._format_language_label(str(episode.get("language", "") or "").strip())
+
+        if season < 0 or episode_number < 0:
+            label = "Unbekannte Episode"
+        elif season == 0:
+            label = f"Film {episode_number:03d}"
+        else:
+            label = f"S{season:02d}E{episode_number:03d}"
+
+        return f"{label} • {language}" if include_language and language else label
+
+    def _format_language_label(self, language: str) -> str:
+        language_map = {
+            "German Dub": "Deutsch",
+            "German Sub": "Deutsche Sub",
+            "English Dub": "Englisch",
+            "English Sub": "Englisch Sub",
+        }
+        return language_map.get(language, language)
+
+    def _count_label(self, count: int, singular: str, plural: str) -> str:
+        return singular if count == 1 else plural
 
     def _group_episodes_by_series(self, episodes: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
         grouped: Dict[str, List[Dict[str, Any]]] = {}
