@@ -661,6 +661,7 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                         "season": -1,
                         "episode": -1,
                         "language": "German Dub",
+                        "reason": "language_unavailable",
                     })
                 status["completed_episodes_overall"] += 1
                 continue
@@ -749,7 +750,7 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                         last_season=season,
                         last_episode=episode_num,
                     )
-            elif result == "failed" or result == "no_language":
+            elif result == "failed":
                 log(f"[SKIP] German Dub Download fehlgeschlagen: {episode_url}")
                 still_missing.append(episode_url)
                 status["progress"]["skipped_episodes"] += 1
@@ -759,6 +760,19 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                     "season": season,
                     "episode": episode_num,
                     "language": "German Dub",
+                    "reason": "download_failed",
+                })
+            elif result == "no_language":
+                log(f"[SKIP] German Dub nicht verfügbar (Download-Check): {episode_url}")
+                still_missing.append(episode_url)
+                status["progress"]["skipped_episodes"] += 1
+                run_result["failed"].append({
+                    "title": anime["title"],
+                    "url": episode_url,
+                    "season": season,
+                    "episode": episode_num,
+                    "language": "German Dub",
+                    "reason": "language_unavailable",
                 })
             else:
                 still_missing.append(episode_url)
@@ -890,6 +904,7 @@ def _run_new(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                         "season": season,
                         "episode": ep["episode"],
                         "language": used_language,
+                        "reason": "download_failed",
                     })
                 elif result == "no_language":
                     had_no_language = True

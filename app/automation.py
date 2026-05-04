@@ -407,7 +407,8 @@ class AutomationManager:
             return
 
         downloaded = result.get("downloaded", []) if isinstance(result.get("downloaded"), list) else []
-        failed = result.get("failed", []) if isinstance(result.get("failed"), list) else []
+        failed_raw = result.get("failed", []) if isinstance(result.get("failed"), list) else []
+        failed = self._filter_true_download_failures(failed_raw)
         notify_on_empty = bool(mode_cfg.get("notify_on_empty", False))
 
         if not downloaded and not notify_on_empty:
@@ -423,6 +424,17 @@ class AutomationManager:
                 log(f"[AUTOMATION-WARN] Discord Webhook fuer {mode} antwortete mit HTTP {resp.status_code}")
         except Exception as exc:
             log(f"[AUTOMATION-WARN] Discord Webhook fuer {mode} fehlgeschlagen: {exc}")
+
+    def _filter_true_download_failures(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """For embeds, show only episodes that truly failed during download."""
+        filtered: List[Dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            reason = str(item.get("reason", "") or "").strip().lower()
+            if reason == "download_failed" or reason == "failed":
+                filtered.append(item)
+        return filtered
 
     def _build_discord_payload(self, mode: str, downloaded: List[Dict[str, Any]], failed: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         now = datetime.now()
