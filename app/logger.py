@@ -90,6 +90,28 @@ def get_last_run_log() -> str:
     return "Kein Log vorhanden."
 
 
+def get_log_from_offset(offset: int = 0) -> tuple:
+    """
+    Gibt Logzeilen ab einer Zeilennummer zurück.
+
+    Returns:
+        (lines: list[str], total_line_count: int)
+    """
+    if _data_folder:
+        last_run = Path(_data_folder) / "last_run.txt"
+        if last_run.exists():
+            try:
+                all_lines = last_run.read_text(encoding="utf-8").splitlines()
+                total = len(all_lines)
+                return all_lines[max(0, offset):], total
+            except Exception:
+                pass
+    with _log_lock:
+        snapshot = list(_run_log_lines)
+    total = len(snapshot)
+    return snapshot[max(0, offset):], total
+
+
 def get_all_logs() -> str:
     """Gibt alle Log-Einträge zurück (aus last_run.txt)."""
     return get_last_run_log()

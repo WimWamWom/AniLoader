@@ -6,9 +6,13 @@ const API = '';  // Relativer Pfad (same origin)
 const INTERVAL_STATUS_IDLE    = 10000;  // ms – Status-Polling im Leerlauf
 const INTERVAL_STATUS_RUNNING =  2000;  // ms – Status-Polling beim Download
 const INTERVAL_LOG_MINI       =  3000;  // ms – Mini-Log im Download-Tab
-const INTERVAL_LOG_FULL       =  500;  // ms – Vollständiger Log im Logs-Tab
+const INTERVAL_LOG_FULL       =  2000;  // ms – Inkrementelles Log-Polling im Logs-Tab
 const INTERVAL_DISK           = 60000;  // ms – Speicherplatz-Anzeige
 const INTERVAL_AUTOMATION     = 30000;  // ms – Automation-Status
+
+// Log-Performance-Konstanten
+const LOG_INITIAL_TAIL  = 500;   // Zeilen beim ersten Öffnen des Logs-Tabs
+const LOG_MAX_DOM_LINES = 3000;  // Maximale Zeilen gleichzeitig im DOM
 
 // ──────────────────────── Hilfsfunktionen ────────────────────────
 
@@ -51,6 +55,7 @@ function initTabs() {
             loadAutomationHistory();
           }
           if (btn.dataset.tab === 'tab-logs') {
+            resetLogState();
             refreshFullLog();
             loadArchivedLogs();
             loadLogSettings();
@@ -105,7 +110,6 @@ function startBackgroundPolling() {
       if ($('#tab-logs')?.classList.contains('active')) refreshFullLog();
     }, INTERVAL_LOG_FULL);
   }
-
   if (!diskInfoInterval) {
     refreshDiskInfo();
     diskInfoInterval = setInterval(refreshDiskInfo, INTERVAL_DISK);
@@ -277,10 +281,12 @@ let logLevel = 'all';       // 'all' | 'error' | 'warn' | 'ok' | 'dl'
 let rawLogText = '';
 let logAutoRefreshInterval = null;
 let _logAutoScroll = true;  // Auto-Scroll Zustand
-let _parsedLines = [];       // Cache aller geparsten Zeilen
+let _parsedLines = [];       // Cache aller geparsten Zeilen (im DOM)
 let _renderedCount = 0;      // Anzahl bereits gerenderter Zeilen (ohne Filter)
 let _activeFilter = false;   // Ob zuletzt ein Filter aktiv war
 let _renderLogTimer = null;
+let _logServerOffset = 0;    // Wie viele Zeilen der Server zuletzt hatte (für inkrementelles Polling)
+let _logViewingArchive = false; // Ob aktuell ein archivierter Log angezeigt wird
 function debouncedRenderLog() {
   clearTimeout(_renderLogTimer);
   _renderLogTimer = setTimeout(() => renderFormattedLog(true), 250);
@@ -418,6 +424,17 @@ function renderFormattedLog(forceFullRender = false) {
     if (newLines.length > 0) {
       container.insertAdjacentHTML('beforeend', newLines.map(renderLineHTML).join(''));
       _renderedCount = _parsedLines.length;
+
+      // DOM-Cap: älteste Zeilen entfernen wenn Limit überschritten
+      if (!hasFilter && _renderedCount > LOG_MAX_DOM_LINES) {
+        const excess = _renderedCount - LOG_MAX_DOM_LINES;
+        const children = container.children;
+        for (let i = 0; i < excess && children.length > 0; i++) {
+          container.removeChild(children[0]);
+        }
+        _parsedLines = _parsedLines.slice(excess);
+        _renderedCount = _parsedLines.length;
+      }
     }
   }
 
@@ -475,14 +492,58 @@ function setLogLevel(level) {
 }
 
 async function refreshFullLog() {
+  if (_logViewingArchive) return;  // Kein Auto-Refresh für archivierte Logs
+
   try {
-    const data = await api('/last_run');
-    rawLogText = data.log || '';
-    renderFormattedLog(false);
+    let data;
+
+    if (_logServerOffset === 0) {
+      // Erstes Laden: nur die letzten LOG_INITIAL_TAIL Zeilen holen
+      data = await api(`/last_run?tail=${LOG_INITIAL_TAIL}`);
+      _parsedLines = [];
+      _renderedCount = 0;
+      rawLogText = '';
+    } else {
+      // Inkrementell: nur neue Zeilen seit letztem Poll holen
+      data = await api(`/last_run?offset=${_logServerOffset}`);
+    }
+
+    // Rotation erkennen: Server hat weniger Zeilen als unser Offset → neuer Lauf
+    if (data.total_lines !== undefined && data.total_lines < _logServerOffset) {
+      _logServerOffset = 0;
+      _parsedLines = [];
+      _renderedCount = 0;
+      rawLogText = '';
+      data = await api(`/last_run?tail=${LOG_INITIAL_TAIL}`);
+    }
+
+    if (data.total_lines !== undefined) {
+      _logServerOffset = data.total_lines;
+    }
+
+    if (data.lines && data.lines.length > 0) {
+      // Neue Zeilen an rawLogText anhängen
+      const newText = data.lines.join('\n');
+      rawLogText = rawLogText ? rawLogText + '\n' + newText : newText;
+      renderFormattedLog(false);
+    } else if (_logServerOffset === 0) {
+      // Erste Antwort war leer
+      renderFormattedLog(false);
+    }
   } catch (e) {
     const container = $('#log-output-full');
-    if (container) container.innerHTML = '<span style="color:var(--danger)">Logs konnten nicht geladen werden.</span>';
+    if (container && !container.children.length) {
+      container.innerHTML = '<span style="color:var(--danger)">Logs konnten nicht geladen werden.</span>';
+    }
   }
+}
+
+function resetLogState() {
+  _logServerOffset = 0;
+  _parsedLines = [];
+  _renderedCount = 0;
+  rawLogText = '';
+  _logViewingArchive = false;
 }
 
 function toggleLogAutoRefresh() {
@@ -559,12 +620,16 @@ async function loadSelectedLog() {
   
   try {
     if (selectedLog === 'current') {
-      // Aktueller Log
+      // Aktueller Log: State zurücksetzen und frisch laden
+      resetLogState();
       await refreshFullLog();
     } else {
-      // Archivierter Log
+      // Archivierter Log: einmalig laden, kein Auto-Refresh
+      _logViewingArchive = true;
       const data = await api(`/archived_logs/${encodeURIComponent(selectedLog)}`);
       rawLogText = data.content || '';
+      _parsedLines = [];
+      _renderedCount = 0;
       renderFormattedLog(true);  // Neue Datei → immer voll neu rendern
       
       // Auto-Refresh deaktivieren für archivierte Logs

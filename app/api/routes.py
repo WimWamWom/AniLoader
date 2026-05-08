@@ -21,7 +21,7 @@ from ..config import (
     validate_config,
 )
 from ..file_manager import count_episodes_on_disk, get_free_space_gb
-from ..logger import get_all_logs, get_last_run_log, log
+from ..logger import get_all_logs, get_last_run_log, get_log_from_offset, log
 
 router = APIRouter()
 
@@ -30,7 +30,9 @@ TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "web" / "template
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
 # In-Memory-Cache für Poster-URLs (vermeidet wiederholte HTTP-Requests)
+# Begrenzt auf _POSTER_CACHE_MAX Einträge – älteste werden bei Überschreitung entfernt.
 _poster_cache: dict = {}
+_POSTER_CACHE_MAX = 500
 
 
 # ──────────────────────── Hilfsfunktionen ────────────────────────
@@ -118,6 +120,9 @@ async def get_all_series(q: Optional[str] = None):
 # ──────────────────────── Download-Steuerung ────────────────────────
 
 
+_VALID_DOWNLOAD_MODES = {"default", "german", "new", "check", "german_new"}
+
+
 @router.post("/start_download")
 async def start_download(request: Request):
     """Startet den Download mit einem bestimmten Modus."""
@@ -126,6 +131,12 @@ async def start_download(request: Request):
     except Exception:
         body = {}
     mode = body.get("mode", "default")
+
+    if mode not in _VALID_DOWNLOAD_MODES:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"Ungültiger Modus. Erlaubt: {sorted(_VALID_DOWNLOAD_MODES)}"},
+        )
 
     if downloader.start_download(mode):
         return {"status": "ok", "mode": mode}
@@ -138,6 +149,12 @@ async def start_download(request: Request):
 @router.get("/start_download")
 async def start_download_get(mode: str = Query("default")):
     """Startet den Download (GET-Variante für einfache Aufrufe)."""
+    if mode not in _VALID_DOWNLOAD_MODES:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"Ungültiger Modus. Erlaubt: {sorted(_VALID_DOWNLOAD_MODES)}"},
+        )
+
     if downloader.start_download(mode):
         return {"status": "ok", "mode": mode}
     return JSONResponse(
@@ -464,6 +481,8 @@ async def get_poster(url: str = Query(...)):
     try:
         poster_url = scraper.get_poster_url(url)
         # Cache speichern (auch None-Werte, um wiederholte Requests zu vermeiden)
+        if len(_poster_cache) >= _POSTER_CACHE_MAX:
+            _poster_cache.pop(next(iter(_poster_cache)))
         _poster_cache[url] = poster_url
         return {"poster_url": poster_url}
     except Exception as e:
@@ -521,8 +540,43 @@ async def get_logs():
 
 
 @router.get("/last_run")
-async def last_run():
-    """Log des aktuellen/letzten Laufs."""
+async def last_run(
+    offset: Optional[int] = Query(None, ge=0),
+    tail: Optional[int] = Query(None, ge=1, le=10000),
+):
+    """
+    Log des aktuellen/letzten Laufs.
+
+    Query-Parameter:
+      - ?tail=N        – gibt nur die letzten N Zeilen zurück (initiales Laden)
+      - ?offset=N      – gibt alle Zeilen ab Zeile N zurück (inkrementelles Polling)
+
+    Antwort enthält immer `log` (rückwärtskompatibel) sowie:
+      - `lines`        – Liste der zurückgegebenen Zeilen
+      - `total_lines`  – Gesamtzahl der Zeilen in der Datei
+      - `offset`       – Ab welcher Zeile die Antwort beginnt
+    """
+    if offset is not None or tail is not None:
+        all_lines, total = get_log_from_offset(0)
+
+        if tail is not None and offset is None:
+            # Letzten N Zeilen zurückgeben
+            start = max(0, total - tail)
+            return_lines = all_lines[start:]
+        else:
+            # Ab gegebenem Offset zurückgeben
+            start = max(0, offset)
+            return_lines = all_lines[start:]
+
+        return {
+            "log": "\n".join(return_lines),
+            "lines": return_lines,
+            "total_lines": total,
+            "offset": start,
+            "count": len(return_lines),
+        }
+
+    # Rückwärtskompatibel: vollständiger Log ohne Parameter
     return {"log": get_last_run_log()}
 
 

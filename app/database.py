@@ -48,6 +48,7 @@ def init_db(data_folder: str) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT,
             url TEXT UNIQUE,
+            series_key TEXT,
             complete INTEGER DEFAULT 0,
             deutsch_komplett INTEGER DEFAULT 0,
             deleted INTEGER DEFAULT 0,
@@ -59,15 +60,34 @@ def init_db(data_folder: str) -> None:
         )
     """)
 
-    # Migration: folder_name Spalte
+    c.execute("CREATE INDEX IF NOT EXISTS idx_anime_series_key ON anime(series_key)")
+
+    # Migrationen
     try:
         c.execute("PRAGMA table_info(anime)")
         cols = [r["name"] for r in c.fetchall()]
+
         if "folder_name" not in cols:
             c.execute("ALTER TABLE anime ADD COLUMN folder_name TEXT DEFAULT NULL")
             log("[DB] folder_name Spalte hinzugefügt")
+
+        if "series_key" not in cols:
+            c.execute("ALTER TABLE anime ADD COLUMN series_key TEXT DEFAULT NULL")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_anime_series_key ON anime(series_key)")
+            log("[DB] series_key Spalte hinzugefügt")
+            # Bestehende Zeilen befüllen
+            sc = _get_scraper()
+            c.execute("SELECT id, url FROM anime")
+            rows = c.fetchall()
+            updated = 0
+            for row in rows:
+                key = sc.get_series_key(row["url"])
+                if key:
+                    c.execute("UPDATE anime SET series_key = ? WHERE id = ?", (key, row["id"]))
+                    updated += 1
+            log(f"[DB] series_key für {updated} bestehende Einträge befüllt")
     except Exception as e:
-        log(f"[DB-ERROR] Migration folder_name: {e}")
+        log(f"[DB-ERROR] Migration: {e}")
 
     conn.commit()
     conn.close()
@@ -78,18 +98,15 @@ def init_db(data_folder: str) -> None:
 
 
 def _find_existing_id_by_series_key(cursor: sqlite3.Cursor, url: str) -> Optional[int]:
-    """Findet einen bestehenden Eintrag über den normalisierten Serien-Key."""
+    """Findet einen bestehenden Eintrag über den indizierten series_key."""
     sc = _get_scraper()
     series_key = sc.get_series_key(url)
     if not series_key:
         return None
 
-    cursor.execute("SELECT id, url FROM anime")
-    for row in cursor.fetchall():
-        existing_key = sc.get_series_key(row["url"])
-        if existing_key and existing_key == series_key:
-            return int(row["id"])
-    return None
+    cursor.execute("SELECT id FROM anime WHERE series_key = ?", (series_key,))
+    row = cursor.fetchone()
+    return int(row["id"]) if row else None
 
 
 def add_anime(data_folder: str, url: str, title: Optional[str] = None) -> Optional[int]:
@@ -105,9 +122,10 @@ def add_anime(data_folder: str, url: str, title: Optional[str] = None) -> Option
         if existing_id is not None:
             return existing_id
 
+        series_key = sc.get_series_key(normalized_url)
         c.execute(
-            "INSERT OR IGNORE INTO anime (url, title) VALUES (?, ?)",
-            (normalized_url, title or normalized_url),
+            "INSERT OR IGNORE INTO anime (url, title, series_key) VALUES (?, ?, ?)",
+            (normalized_url, title or normalized_url, series_key),
         )
         conn.commit()
         if c.rowcount > 0:
