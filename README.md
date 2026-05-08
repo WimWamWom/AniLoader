@@ -281,6 +281,9 @@
     serien_movies_path: /app/Serien-Filme # Nur bei separate mode + serien_separate_movies: true
     anime_separate_movies: false          # Anime-Filme in eigenen Ordner
     serien_separate_movies: false         # Serien-Filme in eigenen Ordner
+    # ⚠ Der finale Ordnername (letztes Pfadsegment) darf nicht mit '.' beginnen.
+    #   Erlaubt:  /app/Downloads  oder  /mnt/.cache/Downloads
+    #   Verboten: /app/.Downloads
 
   download:
     autostart_mode: null       # null, default, german, new, check, german_new

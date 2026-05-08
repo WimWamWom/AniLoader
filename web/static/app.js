@@ -971,6 +971,47 @@ function renderLanguages(langs) {
   });
 }
 
+// ──────────────────────── Einstellungen Validierung ────────────────────────
+
+/**
+ * Prüft ob das finale Pfadsegment (letzter Ordnername) mit '.' beginnt.
+ * Erlaubt: /app/Downloads, /app/.hidden/lokal
+ * Verboten: /app/.Downloads
+ */
+function _finalComponentStartsWithDot(path) {
+  if (!path || typeof path !== 'string') return false;
+  const parts = path.trim().replace(/\\/g, '/').split('/').filter(p => p.length > 0);
+  if (!parts.length) return false;
+  return parts[parts.length - 1].startsWith('.');
+}
+
+function _validateStoragePaths(cfg) {
+  const errors = [];
+  const storage = cfg.storage || {};
+
+  const toCheck = [
+    { key: 'storage.download_path', value: storage.download_path },
+  ];
+
+  if (storage.mode === 'separate') {
+    toCheck.push({ key: 'storage.anime_path',   value: storage.anime_path });
+    toCheck.push({ key: 'storage.series_path',  value: storage.series_path });
+    if (storage.anime_separate_movies) {
+      toCheck.push({ key: 'storage.anime_movies_path',   value: storage.anime_movies_path });
+    }
+    if (storage.serien_separate_movies) {
+      toCheck.push({ key: 'storage.serien_movies_path',  value: storage.serien_movies_path });
+    }
+  }
+
+  for (const { key, value } of toCheck) {
+    if (_finalComponentStartsWithDot(value)) {
+      errors.push(`${key}: Der finale Ordnername darf nicht mit '.' beginnen`);
+    }
+  }
+  return errors;
+}
+
 function buildConfigFromForm() {
   return {
     server: {
@@ -1001,6 +1042,13 @@ function buildConfigFromForm() {
 
 async function saveSettings() {
   const cfg = buildConfigFromForm();
+
+  // Client-seitige Pfad-Validierung (nur letztes Pfadsegment)
+  const clientErrors = _validateStoragePaths(cfg);
+  if (clientErrors.length) {
+    showMsg('#settings-msg', `Fehler: ${clientErrors.join(' | ')}`, 'danger');
+    return;
+  }
 
   try {
     const res = await api('/config', {

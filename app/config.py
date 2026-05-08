@@ -106,6 +106,25 @@ def _validate_string_list(values: Any) -> bool:
     return isinstance(values, list) and all(isinstance(v, str) for v in values)
 
 
+def _is_hidden_final_folder(path_value: Any) -> bool:
+    """Prüft, ob das finale Pfadsegment (letzter Ordnername) mit '.' beginnt.
+
+    Nur das letzte Segment wird geprüft – Zwischensegmente mit Punkt sind erlaubt:
+      OK:      /app/Downloads           → letztes Segment 'Downloads'
+      OK:      /app/.hidden/lokal       → letztes Segment 'lokal'
+      FEHLER:  /app/.Downloads          → letztes Segment '.Downloads'
+    """
+    if not isinstance(path_value, str):
+        return False
+
+    raw = path_value.strip()
+    if not raw:
+        return False
+
+    folder_name = Path(raw).name
+    return bool(folder_name) and folder_name.startswith(".")
+
+
 def _deep_merge(base: dict, override: dict) -> dict:
     """Merge override into base recursively, keeping base keys as defaults."""
     result = base.copy()
@@ -175,6 +194,22 @@ def validate_config(cfg: dict) -> List[str]:
     download_path = storage.get("download_path", "")
     if not download_path or not isinstance(download_path, str):
         errors.append("storage.download_path darf nicht leer sein")
+    elif _is_hidden_final_folder(download_path):
+        errors.append("storage.download_path darf nicht mit '.' beginnen")
+
+    if mode == "separate":
+        final_targets = [
+            ("storage.anime_path", storage.get("anime_path")),
+            ("storage.series_path", storage.get("series_path")),
+        ]
+        if storage.get("anime_separate_movies"):
+            final_targets.append(("storage.anime_movies_path", storage.get("anime_movies_path")))
+        if storage.get("serien_separate_movies"):
+            final_targets.append(("storage.serien_movies_path", storage.get("serien_movies_path")))
+
+        for key, path_value in final_targets:
+            if _is_hidden_final_folder(path_value):
+                errors.append(f"{key} darf nicht mit '.' beginnen")
 
     # Download
     dl = cfg.get("download", {})

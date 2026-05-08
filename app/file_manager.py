@@ -17,6 +17,27 @@ from .logger import log
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _set_hidden_on_windows(path: Path) -> None:
+    """Markiert Verzeichnisse unter Windows als versteckt (Best-Effort)."""
+    if os.name != "nt":
+        return
+
+    try:
+        import ctypes
+
+        attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+        if attrs == -1:
+            return
+
+        hidden_flag = 0x02
+        if attrs & hidden_flag:
+            return
+
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), attrs | hidden_flag)
+    except Exception as e:
+        log(f"[WARN] Konnte Windows-Hidden-Attribut nicht setzen: {e}")
+
+
 def _extract_imdb_id(folder_name: Optional[str]) -> Optional[str]:
     """Extrahiert tt1234567 aus einem Ordnernamen wie [...][imdbid-tt1234567]."""
     text = str(folder_name or "")
@@ -421,9 +442,9 @@ def get_tmp_path(base_download_path) -> Path:
     Das verhindert, dass die Dateisuche von dynamischen Serienordnernamen abhängt.
 
     Returns:
-        <base_download_path>/tmp/
+        <base_download_path>/.tmp/
     """
-    return Path(base_download_path) / "tmp"
+    return Path(base_download_path) / ".tmp"
 
 
 def clear_tmp(tmp_path: Path) -> None:
@@ -445,6 +466,7 @@ def clear_tmp(tmp_path: Path) -> None:
                 log(f"[WARN] TMP-Cleanup fehlgeschlagen für {item.name}: {e}")
     try:
         tmp_path.mkdir(parents=True, exist_ok=True)
+        _set_hidden_on_windows(tmp_path)
     except Exception as e:
         log(f"[WARN] TMP-Verzeichnis konnte nicht erstellt werden: {e}")
 
