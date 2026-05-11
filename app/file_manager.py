@@ -670,11 +670,12 @@ def migrate_film_naming(cfg: dict, target_mode: str) -> dict:
 
             target_dir = series_dir / dst_folder
 
-            # Alle Film-Dateien im Quell-Ordner sammeln
+            # Alle Film-bezogenen Dateien sammeln (Video, Thumbnails, Metadaten, …)
+            # Die Regex entscheidet ob eine Datei zum Film-Namensmuster passt.
             film_files = [
                 f for f in film_dir.iterdir()
-                if f.is_file() and f.suffix.lower() in (".mkv", ".mp4")
-                and not f.name.endswith(".migrate_tmp")
+                if f.is_file() and not f.name.endswith(".migrate_tmp")
+                and src_re.match(f.name)
             ]
 
             # Abgebrochene Migrationen bereinigen (.migrate_tmp ohne Zieldatei)
@@ -693,6 +694,7 @@ def migrate_film_naming(cfg: dict, target_mode: str) -> dict:
             for f in film_files:
                 m = src_re.match(f.name)
                 if not m:
+                    # sollte durch Vorfilterung nicht auftreten
                     skipped += 1
                     continue
 
