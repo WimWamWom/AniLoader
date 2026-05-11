@@ -60,8 +60,6 @@ def init_db(data_folder: str) -> None:
         )
     """)
 
-    c.execute("CREATE INDEX IF NOT EXISTS idx_anime_series_key ON anime(series_key)")
-
     # Migrationen
     try:
         c.execute("PRAGMA table_info(anime)")
@@ -73,7 +71,6 @@ def init_db(data_folder: str) -> None:
 
         if "series_key" not in cols:
             c.execute("ALTER TABLE anime ADD COLUMN series_key TEXT DEFAULT NULL")
-            c.execute("CREATE INDEX IF NOT EXISTS idx_anime_series_key ON anime(series_key)")
             log("[DB] series_key Spalte hinzugefügt")
             # Bestehende Zeilen befüllen
             sc = _get_scraper()
@@ -88,6 +85,9 @@ def init_db(data_folder: str) -> None:
             log(f"[DB] series_key für {updated} bestehende Einträge befüllt")
     except Exception as e:
         log(f"[DB-ERROR] Migration: {e}")
+
+    # Index nach Migrationen setzen (Spalte ist jetzt garantiert vorhanden)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_anime_series_key ON anime(series_key)")
 
     conn.commit()
     conn.close()
