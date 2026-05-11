@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 import random
 from . import database as db
 from . import scraper
-from .config import get_data_folder, get_download_path, load_config
+from .config import get_data_folder, get_download_path, get_film_naming_mode, load_config
 from .file_manager import (
     check_file_integrity,
     clear_tmp,
@@ -430,7 +430,8 @@ def _download_episode(
 
         ep_title = episode_info.get("title_de") or episode_info.get("title_en") or ""
         final_path = move_tmp_to_final(
-            found, target_dir, season, episode_num, ep_title, used_language or ""
+            found, target_dir, season, episode_num, ep_title, used_language or "",
+            film_naming_mode=get_film_naming_mode(cfg),
         )
 
         if final_path:

@@ -122,17 +122,14 @@ def get_storage_path(
     """
     Bestimmt den vollständigen Speicherpfad für eine Episode.
 
-    Jellyfin-Struktur:
+    Lokal-Modus (film_naming_mode='local'):
+        {base_path}/{folder_name}/Filme/
+    Jellyfin-Modus (film_naming_mode='jellyfin'):
+        {base_path}/{folder_name}/Season 00/
+    Staffeln:
         {base_path}/{folder_name}/Season {ss}/
-        Filme: {base_path}/{folder_name}/Filme/
-
-    Args:
-        cfg: Geladene Konfiguration
-        url: Serien-URL (bestimmt anime vs serie)
-        folder_name: z.B. "Title (2020) [imdbid-tt1234567]"
-        season: Staffelnummer (0 für Filme)
-        is_film: Ob es ein Film ist
     """
+    from .config import get_film_naming_mode
     base_path = get_download_path(cfg, url, is_film)
 
     if folder_name:
@@ -141,6 +138,9 @@ def get_storage_path(
         series_dir = Path(base_path)
 
     if is_film or season == 0:
+        film_naming_mode = get_film_naming_mode(cfg)
+        if film_naming_mode == "jellyfin":
+            return series_dir / "Season 00"
         return series_dir / "Filme"
     else:
         return series_dir / f"Season {season:02d}"
@@ -163,22 +163,26 @@ def episode_already_downloaded(
            die den Serientitel enthalten (z.B. "The Rookie (2018)...")
         3. Fallback → suche direkt im Basis-Pfad
 
-    Muster: S01E001 / Film01 / S00E001 (CLI-Original)
+    Muster: S01E001 / Film01 / S00E001 (CLI-Original) / S00E01 (Jellyfin-Final)
     Gibt den Dateipfad zurück falls gefunden, sonst None.
     """
     is_film = season == 0
     base_path = Path(get_download_path(cfg, url, is_film))
 
     if is_film:
-        patterns = [f"*Film{episode:02d}*", f"*S00E{episode:03d}*"]
-        subdir = "Filme"
+        # Alle möglichen Film-Namensmuster (Lokal + Jellyfin + CLI-Rohformat)
+        patterns = [
+            f"*Film{episode:02d}*",        # Lokal: Film01
+            f"*S00E{episode:03d}*",        # Jellyfin / CLI: S00E001 (3-stellig)
+        ]
+        subdirs = ["Filme", "Season 00"]
     else:
         patterns = [f"*S{season:02d}E{episode:03d}*"]
-        subdir = f"Season {season:02d}"
+        subdirs = [f"Season {season:02d}"]
 
     # Mögliche Suchpfade bestimmen (inkl. imdbid-Fallback bei geändertem Jahr im Ordnernamen)
     series_dirs = _resolve_series_dirs(base_path, folder_name=folder_name, title_hint=title_hint)
-    search_dirs = [d / subdir for d in series_dirs]
+    search_dirs = [d / sub for d in series_dirs for sub in subdirs]
 
     for search_dir in search_dirs:
         if not search_dir.exists():
@@ -273,14 +277,14 @@ def rename_episode_file(
     episode: int,
     title: str,
     language: str,
+    film_naming_mode: str = "local",
 ) -> Optional[Path]:
     """
     Benennt eine heruntergeladene Episode in das Zielformat um.
 
-    Zielformat: S{ss}E{eee} - {episode_title} {lang_suffix}{ext}
-    Filme:      Film{ff} - {film_title} {lang_suffix}{ext}
-    Beispiel:   S01E001 - Pilotfolge [Sub].mkv
-    Film:       Film01 - Your Name [Sub].mkv
+    Lokal-Modus:   Film{ff} - {film_title} {lang_suffix}{ext}  (Ordner: Filme/)
+    Jellyfin-Modus: S00E{ff} - {film_title} {lang_suffix}{ext}  (Ordner: Season 00/)
+    Staffeln:       S{ss}E{eee} - {episode_title} {lang_suffix}{ext}
 
     Returns:
         Neuen Dateipfad bei Erfolg, None bei Fehler
@@ -293,23 +297,29 @@ def rename_episode_file(
     }.get(language, "")
 
     if season == 0:
-        ep_code = f"Film{episode:02d}"
+        if film_naming_mode == "jellyfin":
+            ep_code = f"S00E{episode:03d}"
+        else:
+            ep_code = f"Film{episode:02d}"
     else:
         ep_code = f"S{season:02d}E{episode:03d}"
 
-    ext = found_path.suffix   # z.B. ".mkv"
+    ext = found_path.suffix
     parent = found_path.parent
-    stem = found_path.stem
 
     safe_title = sanitize_filename(title) if title else ""
 
-    # Für Filme: Prüfen ob wir im falschen Ordner sind (Season 00 statt Filme)
-    if season == 0 and parent.name == "Season 00":
-        # Wechsel zum Filme-Ordner
-        series_dir = parent.parent
-        target_parent = series_dir / "Filme"
-        target_parent.mkdir(exist_ok=True)
-        log(f"[MOVE] Verschiebe Film von Season 00 → Filme Ordner")
+    # Für Filme: Sicherstellen, dass wir im richtigen Ordner sind
+    if season == 0:
+        target_folder_name = "Season 00" if film_naming_mode == "jellyfin" else "Filme"
+        wrong_folder_names = {"Season 00", "Filme"} - {target_folder_name}
+        if parent.name in wrong_folder_names:
+            series_dir = parent.parent
+            target_parent = series_dir / target_folder_name
+            target_parent.mkdir(exist_ok=True)
+            log(f"[MOVE] Verschiebe Film von '{parent.name}' → '{target_folder_name}'")
+        else:
+            target_parent = parent
     else:
         target_parent = parent
 
@@ -323,23 +333,23 @@ def rename_episode_file(
 
     new_path = target_parent / new_name
 
-    # Bereits im Zielformat und richtigen Ordner?
+    # Bereits im Zielformat und richtigem Ordner?
     if found_path == new_path:
         return found_path
 
     try:
         shutil.move(str(found_path), str(new_path))
         log(f"[RENAME] {found_path.name} → {new_name}")
-        
-        # Bei Filmen: Leeren Season 00 Ordner entfernen
-        if season == 0 and parent.name == "Season 00":
+
+        # Leeren Quell-Film-Ordner entfernen
+        if season == 0 and parent != target_parent:
             try:
-                if parent.exists() and not any(parent.iterdir()):  # Ordner leer?
+                if parent.exists() and not any(parent.iterdir()):
                     parent.rmdir()
-                    log(f"[CLEANUP] Leerer Season 00 Ordner entfernt")
+                    log(f"[CLEANUP] Leerer Ordner '{parent.name}' entfernt")
             except Exception as e:
-                log(f"[WARN] Season 00 Ordner konnte nicht entfernt werden: {e}")
-        
+                log(f"[WARN] Ordner konnte nicht entfernt werden: {e}")
+
         return new_path
     except Exception as e:
         log(f"[WARN] Umbenennen fehlgeschlagen: {e}")
@@ -409,7 +419,8 @@ def count_episodes_on_disk(
         total_size += f.stat().st_size
 
         # Staffel/Episode aus Dateinamen extrahieren
-        m = re.search(r"S(\d{2})E(\d{3})", f.name)
+        # Matcht: S01E001 (Staffeln, 3-stellig), S00E001 (CLI-Film), S00E01 (Jellyfin-Film, 2-stellig)
+        m = re.search(r"S(\d{2})E(\d{2,3})", f.name)
         if m:
             s_num = int(m.group(1))
             if s_num == 0:
@@ -418,7 +429,7 @@ def count_episodes_on_disk(
                 seasons.add(s_num)
                 episodes += 1
         else:
-            # Filme im neuen Format: Film01, Film02, etc.
+            # Lokal-Format: Film01, Film02 …
             m = re.search(r"Film(\d{2})", f.name)
             if m:
                 films += 1
@@ -478,21 +489,24 @@ def move_tmp_to_final(
     episode: int,
     title: str,
     language: str,
+    film_naming_mode: str = "local",
 ) -> Optional[Path]:
     """
     Verschiebt eine Datei aus dem TMP-Verzeichnis in den finalen Zielordner
     und benennt sie dabei in das Zielformat um.
 
-    Zielformat: S{ss}E{eee} - {episode_title} {lang_suffix}{ext}
-    Filme:      Film{ff} - {film_title} {lang_suffix}{ext}
+    Lokal-Modus:    Film{ff} - {film_title} {lang_suffix}{ext}
+    Jellyfin-Modus: S00E{ff} - {film_title} {lang_suffix}{ext}
+    Staffeln:       S{ss}E{eee} - {episode_title} {lang_suffix}{ext}
 
     Args:
-        tmp_file:   Quelldatei im TMP-Verzeichnis
-        target_dir: Finaler Zielordner (wird angelegt falls nicht vorhanden)
-        season:     Staffelnummer (0 = Film)
-        episode:    Episoden-/Filmnummer
-        title:      Episodentitel (kann leer sein)
-        language:   Sprache für Suffix-Bestimmung
+        tmp_file:          Quelldatei im TMP-Verzeichnis
+        target_dir:        Finaler Zielordner (wird angelegt falls nicht vorhanden)
+        season:            Staffelnummer (0 = Film)
+        episode:           Episoden-/Filmnummer
+        title:             Episodentitel (kann leer sein)
+        language:          Sprache für Suffix-Bestimmung
+        film_naming_mode:  'local' oder 'jellyfin'
 
     Returns:
         Neuer Dateipfad bei Erfolg, None bei Fehler
@@ -505,7 +519,10 @@ def move_tmp_to_final(
     }.get(language, "")
 
     if season == 0:
-        ep_code = f"Film{episode:02d}"
+        if film_naming_mode == "jellyfin":
+            ep_code = f"S00E{episode:03d}"
+        else:
+            ep_code = f"Film{episode:02d}"
     else:
         ep_code = f"S{season:02d}E{episode:03d}"
 
@@ -539,3 +556,194 @@ def move_tmp_to_final(
     except Exception as e:
         log(f"[ERROR] Verschieben aus TMP fehlgeschlagen: {e}")
         return None
+
+
+# ──────────────────────── Film-Benennungsmigration ────────────────────────
+
+# Regex-Muster für Film-Dateinamen beider Modi
+# Lokal:    Film01 - Titel.mkv   (2-stellig)
+# Jellyfin: S00E01 - Titel.mkv   (2-stellig)
+# CLI-Raw:  S00E001 - Titel.mkv  (3-stellig, tritt nur in TMP auf, aber zur Sicherheit abgedeckt)
+_RE_FILM_LOCAL = re.compile(r"^Film(\d{2})(\s*-.+)?(\.[^.]+)$", re.IGNORECASE)
+_RE_FILM_JELLYFIN = re.compile(r"^S00E(\d{2,3})(\s*-.+)?(\.[^.]+)$", re.IGNORECASE)
+
+
+def _collect_film_roots(cfg: dict) -> list[Path]:
+    """
+    Sammelt alle Ordner, in denen Filme liegen können.
+
+    Nutzt get_download_path() mit is_film=True/False für alle registrierten
+    aniworld.to- und s.to-artigen URLs, um exakt dieselben Pfade zu bestimmen
+    wie der Downloader selbst.  Da URLs nicht bekannt sind, werden die
+    konfigurierten Pfade direkt aus dem Storage-Block gelesen — analog zu
+    get_download_path, aber ohne URL-Abhängigkeit.
+
+    Gibt deduplizierte, existierende Pfade zurück.
+    """
+    storage = cfg.get("storage", {})
+    paths: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: str) -> None:
+        if not p:
+            return
+        resolved = str(Path(p).resolve())
+        if resolved not in seen:
+            seen.add(resolved)
+            paths.append(Path(p))
+
+    mode = storage.get("mode", "standard")
+
+    if mode == "standard":
+        # Alle Downloads landen in download_path
+        _add(storage.get("download_path", ""))
+    else:
+        # Separate Mode: Filme folgen je nach separate_movies-Flag
+        # Anime-Filme
+        if storage.get("anime_separate_movies"):
+            _add(storage.get("anime_movies_path", ""))
+        else:
+            # ohne separaten Filme-Pfad landen Anime-Filme in anime_path
+            _add(storage.get("anime_path", ""))
+
+        # Serien-Filme
+        if storage.get("serien_separate_movies"):
+            _add(storage.get("serien_movies_path", ""))
+        else:
+            # ohne separaten Filme-Pfad landen Serien-Filme in series_path
+            _add(storage.get("series_path", ""))
+
+    return [p for p in paths if p.exists()]
+
+
+def migrate_film_naming(cfg: dict, target_mode: str) -> dict:
+    """
+    Migriert alle Film-Dateien zwischen Lokal- und Jellyfin-Modus.
+
+    Lokal   → Jellyfin: Film01… → S00E01…, Ordner Filme/ → Season 00/
+    Jellyfin → Lokal:   S00E01… → Film01…, Ordner Season 00/ → Filme/
+
+    Sicherheitsmechanismus (Zwei-Phasen-Umbenennung):
+        1. Datei → <name>.migrate_tmp  (atomare Phase 1)
+        2. <name>.migrate_tmp → <zielname>  (atomare Phase 2)
+    Schlägt Phase 2 fehl, bleibt die .migrate_tmp-Datei erhalten und
+    wird beim nächsten Lauf erkannt – kein Datenverlust.
+
+    Returns:
+        {
+          "renamed": int,      # erfolgreich umbenannte Dateien
+          "skipped": int,      # bereits im Zielformat
+          "errors": list[str], # Fehlermeldungen
+        }
+    """
+    if target_mode not in ("local", "jellyfin"):
+        return {"renamed": 0, "skipped": 0, "errors": [f"Ungültiger Modus: {target_mode}"]}
+
+    if target_mode == "jellyfin":
+        src_folder = "Filme"
+        dst_folder = "Season 00"
+        src_re = _RE_FILM_LOCAL
+        _make_ep_code = lambda n: f"S00E{n:03d}"
+    else:
+        src_folder = "Season 00"
+        dst_folder = "Filme"
+        src_re = _RE_FILM_JELLYFIN
+        _make_ep_code = lambda n: f"Film{n:02d}"
+
+    roots = _collect_film_roots(cfg)
+    renamed = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for root in roots:
+        # Iteriere alle Serien-Ordner direkt unterhalb des Root
+        try:
+            series_dirs = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        except PermissionError as exc:
+            errors.append(f"Kein Zugriff auf {root}: {exc}")
+            continue
+
+        for series_dir in series_dirs:
+            film_dir = series_dir / src_folder
+            if not film_dir.exists():
+                continue
+
+            target_dir = series_dir / dst_folder
+
+            # Alle Film-Dateien im Quell-Ordner sammeln
+            film_files = [
+                f for f in film_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in (".mkv", ".mp4")
+                and not f.name.endswith(".migrate_tmp")
+            ]
+
+            # Abgebrochene Migrationen bereinigen (.migrate_tmp ohne Zieldatei)
+            for leftover in film_dir.glob("*.migrate_tmp"):
+                errors.append(f"[MIGRATE-WARN] Unvollständige Migration gefunden: {leftover} – manuell prüfen")
+
+            if not film_files:
+                # Leerer Quell-Ordner: nur umbenennen wenn er existiert
+                if film_dir.exists() and not any(film_dir.iterdir()):
+                    try:
+                        film_dir.rmdir()
+                    except Exception:
+                        pass
+                continue
+
+            for f in film_files:
+                m = src_re.match(f.name)
+                if not m:
+                    skipped += 1
+                    continue
+
+                ep_num = int(m.group(1))
+                rest = m.group(2) or ""     # " - Titel [Sub]" Teil
+                ext = m.group(3)            # ".mkv"
+
+                new_stem = _make_ep_code(ep_num) + rest
+                new_name = new_stem + ext
+
+                # Zielordner anlegen
+                try:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                except Exception as exc:
+                    errors.append(f"Ordner konnte nicht erstellt werden ({target_dir}): {exc}")
+                    continue
+
+                final_path = target_dir / new_name
+
+                # Datei schon vorhanden im Ziel?
+                if final_path.exists():
+                    log(f"[MIGRATE-SKIP] Zieldatei existiert bereits: {new_name}")
+                    skipped += 1
+                    continue
+
+                # Phase 1: Quelle → .migrate_tmp
+                tmp_path = target_dir / (new_name + ".migrate_tmp")
+                try:
+                    shutil.move(str(f), str(tmp_path))
+                except Exception as exc:
+                    errors.append(f"Phase-1-Fehler für {f.name}: {exc}")
+                    continue
+
+                # Phase 2: .migrate_tmp → finale Zieldatei
+                try:
+                    os.replace(str(tmp_path), str(final_path))
+                    log(f"[MIGRATE] {f.name} → {dst_folder}/{new_name}")
+                    renamed += 1
+                except Exception as exc:
+                    errors.append(
+                        f"Phase-2-Fehler für {tmp_path.name}: {exc} "
+                        f"– Datei liegt als .migrate_tmp vor"
+                    )
+
+            # Quell-Ordner entfernen wenn er jetzt leer ist
+            try:
+                if film_dir.exists() and not any(film_dir.iterdir()):
+                    film_dir.rmdir()
+                    log(f"[MIGRATE-CLEANUP] Leerer Ordner '{src_folder}' entfernt: {series_dir.name}")
+            except Exception:
+                pass
+
+    log(f"[MIGRATE] Migration abgeschlossen: {renamed} umbenannt, {skipped} übersprungen, {len(errors)} Fehler")
+    return {"renamed": renamed, "skipped": skipped, "errors": errors}

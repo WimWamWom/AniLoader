@@ -40,6 +40,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "serien_movies_path": str(BASE_DIR / "Serien-Filme"),
         "anime_separate_movies": False,
         "serien_separate_movies": False,
+        "film_naming_mode": "local",  # local | jellyfin
     },
     "download": {
         "min_free_gb": 2.0,
@@ -91,6 +92,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 VALID_LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
 VALID_MODES = [None, "default", "german", "new", "check", "german_new"]
 VALID_STORAGE_MODES = ["standard", "separate"]
+VALID_FILM_NAMING_MODES = ["local", "jellyfin"]
 AUTOMATION_MODES = ["german", "new", "german_new"]
 
 
@@ -190,6 +192,10 @@ def validate_config(cfg: dict) -> List[str]:
     mode = storage.get("mode", "standard")
     if mode not in VALID_STORAGE_MODES:
         errors.append(f"storage.mode muss 'standard' oder 'separate' sein, ist: '{mode}'")
+
+    film_naming_mode = storage.get("film_naming_mode", "local")
+    if film_naming_mode not in VALID_FILM_NAMING_MODES:
+        errors.append(f"storage.film_naming_mode muss 'local' oder 'jellyfin' sein, ist: '{film_naming_mode}'")
 
     download_path = storage.get("download_path", "")
     if not download_path or not isinstance(download_path, str):
@@ -338,6 +344,11 @@ def get_data_folder(cfg: Optional[dict] = None) -> str:
     if cfg:
         return cfg.get("data", {}).get("folder", str(DEFAULT_DATA_DIR))
     return str(DEFAULT_DATA_DIR)
+
+
+def get_film_naming_mode(cfg: dict) -> str:
+    """Return the configured film naming mode ('local' or 'jellyfin')."""
+    return cfg.get("storage", {}).get("film_naming_mode", "local")
 
 
 def get_download_path(cfg: dict, url: str, is_film: bool = False) -> str:

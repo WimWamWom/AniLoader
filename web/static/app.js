@@ -979,6 +979,7 @@ function renderSettings(cfg) {
   $('#cfg-serien-movies-path').value = cfg.storage?.serien_movies_path || '';
   $('#cfg-anime-sep-movies').checked = cfg.storage?.anime_separate_movies || false;
   $('#cfg-serien-sep-movies').checked = cfg.storage?.serien_separate_movies || false;
+  $('#cfg-film-naming-mode').value = cfg.storage?.film_naming_mode || 'local';
 
   // Download
   $('#cfg-min-free').value = cfg.download?.min_free_gb || 2.0;
@@ -988,6 +989,9 @@ function renderSettings(cfg) {
 
   // Storage mode visibility
   toggleStoragePaths();
+
+  // Film-Benennung Preview + Migrations-Hinweis
+  updateFilmNamingPreview();
 
   // Languages (sortable)
   renderLanguages(cfg.languages || []);
@@ -1000,6 +1004,84 @@ function toggleStoragePaths() {
   const mode = $('#cfg-storage-mode').value;
   const sep = $('#separate-paths');
   if (sep) sep.style.display = mode === 'separate' ? 'block' : 'none';
+}
+
+// ──────────────────────── Film-Benennung ────────────────────────
+
+function updateFilmNamingPreview() {
+  const select = $('#cfg-film-naming-mode');
+  const preview = $('#film-naming-preview');
+  const migrateWrap = $('#film-naming-migrate-wrap');
+  if (!select || !preview) return;
+
+  const mode = select.value;
+  const savedMode = currentConfig.storage?.film_naming_mode || 'local';
+
+  if (mode === 'jellyfin') {
+    preview.innerHTML =
+      'Season 00/<br>' +
+      '&nbsp;&nbsp;S00E001 - Film-Titel.mkv<br>' +
+      '&nbsp;&nbsp;S00E002 - Film-Titel 2.mkv';
+  } else {
+    preview.innerHTML =
+      'Filme/<br>' +
+      '&nbsp;&nbsp;Film01 - Film-Titel.mkv<br>' +
+      '&nbsp;&nbsp;Film02 - Film-Titel 2.mkv';
+  }
+
+  // Migrations-Hinweis nur zeigen, wenn sich der Modus vom gespeicherten unterscheidet
+  if (migrateWrap) {
+    migrateWrap.style.display = (mode !== savedMode) ? 'block' : 'none';
+    const msgEl = $('#migrate-msg');
+    if (msgEl) msgEl.textContent = '';
+  }
+}
+
+async function migrateFilmNaming() {
+  const select = $('#cfg-film-naming-mode');
+  const btn = $('#btn-migrate-films');
+  const msgEl = $('#migrate-msg');
+  if (!select) return;
+
+  const target_mode = select.value;
+
+  if (!confirm(
+    `Alle vorhandenen Film-Dateien werden jetzt von "${target_mode === 'jellyfin' ? 'Lokal' : 'Jellyfin'}" → "${target_mode === 'jellyfin' ? 'Jellyfin' : 'Lokal'}" migriert.\n\nDies kann nicht automatisch rückgängig gemacht werden. Fortfahren?`
+  )) return;
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Migriere…'; }
+  if (msgEl) msgEl.textContent = '';
+
+  try {
+    const res = await api('/migrate_film_naming', {
+      method: 'POST',
+      body: JSON.stringify({ target_mode }),
+    });
+
+    if (res.status === 'ok') {
+      const info = `✓ ${res.renamed} umbenannt, ${res.skipped} übersprungen`;
+      if (msgEl) { msgEl.textContent = info; msgEl.style.color = 'var(--success)'; }
+
+      if (res.errors && res.errors.length) {
+        console.warn('Migrationswarnungen:', res.errors);
+      }
+
+      // Config speichern mit neuem film_naming_mode
+      const cfg = buildConfigFromForm();
+      await api('/config', { method: 'POST', body: JSON.stringify(cfg) });
+      currentConfig = cfg;
+
+      // UI-Status aktualisieren: kein Migrations-Hinweis mehr nötig
+      const migrateWrap = $('#film-naming-migrate-wrap');
+      if (migrateWrap) migrateWrap.style.display = 'none';
+    } else {
+      if (msgEl) { msgEl.textContent = `Fehler: ${res.message || 'unbekannt'}`; msgEl.style.color = 'var(--danger)'; }
+    }
+  } catch (e) {
+    if (msgEl) { msgEl.textContent = `Fehler: ${e.message}`; msgEl.style.color = 'var(--danger)'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Dateien jetzt umbenennen & verschieben'; }
+  }
 }
 
 function renderLanguages(langs) {
@@ -1092,6 +1174,7 @@ function buildConfigFromForm() {
       serien_movies_path: $('#cfg-serien-movies-path').value,
       anime_separate_movies: $('#cfg-anime-sep-movies').checked,
       serien_separate_movies: $('#cfg-serien-sep-movies').checked,
+      film_naming_mode: $('#cfg-film-naming-mode').value || 'local',
     },
     download: {
       min_free_gb: parseFloat($('#cfg-min-free').value) || 2.0,

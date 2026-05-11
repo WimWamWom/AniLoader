@@ -16,11 +16,12 @@ from .. import automation, downloader, scraper
 from ..config import (
     get_data_folder,
     get_download_path,
+    get_film_naming_mode,
     load_config,
     save_config,
     validate_config,
 )
-from ..file_manager import count_episodes_on_disk, get_free_space_gb
+from ..file_manager import count_episodes_on_disk, get_free_space_gb, migrate_film_naming
 from ..logger import get_all_logs, get_last_run_log, get_log_from_offset, log
 
 router = APIRouter()
@@ -375,6 +376,57 @@ async def update_config(request: Request):
         status_code=500,
         content={"status": "error", "message": "Speichern fehlgeschlagen"},
     )
+
+
+# ──────────────────────── Film-Benennungsmigration ────────────────────────
+
+
+@router.post("/migrate_film_naming")
+async def api_migrate_film_naming(request: Request):
+    """
+    Migriert vorhandene Film-Dateien zwischen Lokal- und Jellyfin-Modus.
+
+    Erwartet JSON: { "target_mode": "local" | "jellyfin" }
+
+    Gibt zurück: { "status": "ok", "renamed": N, "skipped": N, "errors": [...] }
+    """
+    if downloader.is_running():
+        return JSONResponse(
+            status_code=409,
+            content={"status": "error", "message": "Download läuft – Migration erst nach dem Stop möglich"},
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Ungültiges JSON"})
+
+    target_mode = body.get("target_mode", "")
+    if target_mode not in ("local", "jellyfin"):
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "target_mode muss 'local' oder 'jellyfin' sein"},
+        )
+
+    cfg = load_config()
+    current_mode = get_film_naming_mode(cfg)
+
+    if current_mode == target_mode:
+        return {"status": "ok", "renamed": 0, "skipped": 0, "errors": [], "message": "Bereits im Zielmodus"}
+
+    log(f"[MIGRATE] Starte Film-Migration: {current_mode} → {target_mode}")
+    result = migrate_film_naming(cfg, target_mode)
+
+    if result["errors"]:
+        for err in result["errors"]:
+            log(f"[MIGRATE-WARN] {err}")
+
+    return {
+        "status": "ok",
+        "renamed": result["renamed"],
+        "skipped": result["skipped"],
+        "errors": result["errors"],
+    }
 
 
 # ──────────────────────── Titel-Refresh ────────────────────────

@@ -607,6 +607,26 @@
           </div>
         </div>
       </div>
+
+      <!-- Film-Benennung -->
+      <hr style="border-color:var(--border); margin:18px 0;">
+      <div class="card-head" style="margin-bottom:10px;">
+        <h3>🎬 Film-Benennung</h3>
+        <p class="card-desc">Wähle, wie Filme im Dateisystem abgelegt werden</p>
+      </div>
+      <div class="setting-row">
+        <label>Modus</label>
+        <select id="cfg-film-naming-mode" onchange="updateFilmNamingPreview()">
+          <option value="local">Lokal (Film01 – Titel.mkv)</option>
+          <option value="jellyfin">Jellyfin / Server (S00E001 – Titel.mkv)</option>
+        </select>
+      </div>
+      <div id="film-naming-preview" class="setting-hint" style="font-family:monospace; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; padding:10px; margin-top:6px; line-height:1.8;"></div>
+      <div id="film-naming-migrate-wrap" style="margin-top:12px; display:none;">
+        <p class="setting-hint" style="color:var(--warning);">⚠️ Vorhandene Dateien sind noch im alten Format. Jetzt migrieren?</p>
+        <button class="btn btn-warning btn-sm" id="btn-migrate-films" onclick="migrateFilmNaming()">🔄 Dateien jetzt umbenennen &amp; verschieben</button>
+        <span id="migrate-msg" style="margin-left:10px;"></span>
+      </div>
     </div>
   </div>
 

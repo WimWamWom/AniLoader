@@ -57,6 +57,7 @@
   - **🔓 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
   - **⚡ Autostart:** Optional bei Container-Start Download-Modus starten
   - **📂 Separate Filmpfade:** Anime-Filme und Serien-Filme in eigene Ordner (Separate-Modus)
+  - **🎬 Film-Benennung:** Umschaltbar zwischen Lokal (`Film01`) und Jellyfin (`S00E001`) – mit automatischer Migration aller vorhandenen Dateien
   - **🐋 Docker-Ready:** Multi-Arch Images (amd64/arm64) mit Health-Checks
 
   ---
@@ -173,6 +174,7 @@
   **⚙️ Einstellungen-Tab**
   - Speicherpfade (Standard/Separate Mode) mit Ordner-Browser
   - Separate Filmpfade für Anime-Filme und Serien-Filme
+  - **Film-Benennung:** Lokal (`Film01 - Titel.mkv`) oder Jellyfin (`S00E001 - Titel.mkv`) wählbar; bei Modusänderung erscheint ein Button zum automatischen Umbenennen aller vorhandenen Dateien
   - Sprachpriorität per Drag & Drop  
   - Autostart, Titel-Refresh, System-Einstellungen
 
@@ -231,6 +233,10 @@
   POST /browse
   {"path": "/app"}
 
+  # Film-Benennung migrieren (umbenennen + verschieben aller Film-Dateien)
+  POST /migrate_film_naming
+  {"target_mode": "jellyfin"}  # jellyfin | local
+
   # Poster-URL abrufen
   GET /poster?url=https://aniworld.to/anime/stream/naruto
 
@@ -281,6 +287,7 @@
     serien_movies_path: /app/Serien-Filme # Nur bei separate mode + serien_separate_movies: true
     anime_separate_movies: false          # Anime-Filme in eigenen Ordner
     serien_separate_movies: false         # Serien-Filme in eigenen Ordner
+    film_naming_mode: local               # local | jellyfin
     # ⚠ Der finale Ordnername (letztes Pfadsegment) darf nicht mit '.' beginnen.
     #   Erlaubt:  /app/Downloads  oder  /mnt/.cache/Downloads
     #   Verboten: /app/.Downloads
@@ -360,22 +367,34 @@
   ### Standard-Modus
   **Ein Ordner für alles** (`storage.mode: standard`)
 
+  **Lokal-Modus** (`film_naming_mode: local`):
   ```
   Downloads/
   ├── Naruto (2002) [imdbid-tt0409591]/
   │   ├── Season 01/
   │   │   ├── S01E001 - Erste Episode.mkv
-  │   │   ├── S01E002 - Zweite Episode [Sub].mkv    # German Sub
-  │   │   └── S01E003 - Episode 3 [English].mkv    # English Dub
+  │   │   ├── S01E002 - Zweite Episode [Sub].mkv
+  │   │   └── S01E003 - Episode 3 [English].mkv
   │   ├── Season 02/
   │   └── Filme/
   │       └── Film01 - Naruto Movie.mkv
-  ├── Breaking Bad (2008) [imdbid-tt0903747]/  
-  │   ├── Season 01/
-  │   └── Season 02/
   └── Avatar (2009) [imdbid-tt0499549]/
       └── Filme/
           └── Film01 - Avatar.mkv
+  ```
+
+  **Jellyfin-Modus** (`film_naming_mode: jellyfin`):
+  ```
+  Downloads/
+  ├── Naruto (2002) [imdbid-tt0409591]/
+  │   ├── Season 00/                          # Jellyfin "Specials"
+  │   │   └── S00E001 - Naruto Movie.mkv
+  │   ├── Season 01/
+  │   │   └── S01E001 - Erste Episode.mkv
+  │   └── Season 02/
+  └── Avatar (2009) [imdbid-tt0499549]/
+      └── Season 00/
+          └── S00E001 - Avatar.mkv
   ```
 
   ### Separate-Modus  
@@ -406,8 +425,11 @@
 
   **Datei-Benennung:**
   - **Serien:** `S01E001 - Titel.mkv`, `S01E002 - Titel [Sub].mkv`
-  - **Filme:** `Film01 - Titel.mkv`, `Film02 - Titel [Sub].mkv`  
+  - **Filme (Lokal):** `Filme/Film01 - Titel.mkv` – Standard, unabhängig von Jellyfin
+  - **Filme (Jellyfin):** `Season 00/S00E001 - Titel.mkv` – Jellyfin erkennt Season 00 als "Specials"
   - **Suffixe:** `""` (German Dub), `[Sub]` (German Sub), `[English Dub]`, `[English Sub]`
+
+  > **Film-Benennung wechseln:** Einstellungen → Film-Benennung → Modus wählen → "Dateien jetzt umbenennen & verschieben". Die Migration ist transaktional – bei einem Abbruch können `.migrate_tmp`-Dateien beim nächsten Wechsel aufgeräumt werden. Wechsel in beide Richtungen möglich.
 
   ---
 
@@ -439,6 +461,9 @@
 
   **Q: Was ist der Unterschied zwischen `german` und `german_new`?**  
   A: `german` sucht nur fehlende deutsche Episoden bei bereits vorhandenen Serien. `german_new` prüft zusätzlich auf neue Episoden – beides in einem Lauf.
+
+  **Q: Lokal vs. Jellyfin Filmbenennung – was ist der Unterschied?**  
+  A: **Lokal** speichert Filme als `Filme/Film01 - Titel.mkv` – übersichtlich und unabhängig von Jellyfin. **Jellyfin** speichert als `Season 00/S00E001 - Titel.mkv` – Jellyfin erkennt Season 00 automatisch als Specials-Staffel und zeigt Poster/Metadaten korrekt an. Umschalten jederzeit möglich, alle Dateien werden automatisch umbenannt und verschoben.
 
   **Q: Wie richte ich Discord-Benachrichtigungen ein?**  
   A: Im Automation-Tab pro Modus einen Discord-Webhook eintragen. AniLoader sendet eine Zusammenfassung nach jedem automatischen Lauf.
