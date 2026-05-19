@@ -1365,6 +1365,7 @@ function renderAutomationSettings(automationCfg) {
     const interval = Number(modeCfg.interval_minutes || 0);
     const webhook = modeCfg.discord_webhook || '';
     const notifyEmpty = !!modeCfg.notify_on_empty;
+    const hideFailed = !!modeCfg.hide_failed_checks;
     const whitelist = modeCfg.whitelist || [];
     const blacklist = modeCfg.blacklist || [];
 
@@ -1373,6 +1374,7 @@ function renderAutomationSettings(automationCfg) {
     if ($(`#auto-${mode}-interval`)) $(`#auto-${mode}-interval`).value = interval;
     if ($(`#auto-${mode}-webhook`)) $(`#auto-${mode}-webhook`).value = webhook;
     if ($(`#auto-${mode}-notify-empty`)) $(`#auto-${mode}-notify-empty`).checked = notifyEmpty;
+    if ($(`#auto-${mode}-hide-failed`)) $(`#auto-${mode}-hide-failed`).checked = hideFailed;
 
     setAutomationFilterList(mode, 'whitelist', whitelist);
     setAutomationFilterList(mode, 'blacklist', blacklist);
@@ -1400,6 +1402,7 @@ function collectAutomationSettings() {
       interval_minutes: scheduleType === 'interval' && Number.isFinite(rawInterval) && rawInterval > 0 ? rawInterval : 0,
       discord_webhook: ($(`#auto-${mode}-webhook`)?.value || '').trim(),
       notify_on_empty: !!$(`#auto-${mode}-notify-empty`)?.checked,
+      hide_failed_checks: !!$(`#auto-${mode}-hide-failed`)?.checked,
       filter_mode: getSelectedFilterMode(mode),
       whitelist: normalizeSeriesList(state.whitelist || []),
       blacklist: normalizeSeriesList(state.blacklist || []),

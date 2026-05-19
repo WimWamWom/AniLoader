@@ -414,7 +414,8 @@ class AutomationManager:
         if not downloaded and not notify_on_empty:
             return
 
-        payload = self._build_discord_payload(mode, downloaded, failed)
+        hide_failed = bool(mode_cfg.get("hide_failed_checks", False))
+        payload = self._build_discord_payload(mode, downloaded, failed, hide_failed)
         if payload is None:
             return
 
@@ -436,7 +437,7 @@ class AutomationManager:
                 filtered.append(item)
         return filtered
 
-    def _build_discord_payload(self, mode: str, downloaded: List[Dict[str, Any]], failed: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _build_discord_payload(self, mode: str, downloaded: List[Dict[str, Any]], failed: List[Dict[str, Any]], hide_failed: bool = False) -> Optional[Dict[str, Any]]:
         now = datetime.now()
         footer_ts = now.strftime("%d.%m.%Y %H:%M")
 
@@ -452,7 +453,7 @@ class AutomationManager:
         }
 
         if mode == "german_new":
-            return self._build_discord_payload_german_new(downloaded, failed, footer_ts, color_map[mode], title_map[mode])
+            return self._build_discord_payload_german_new(downloaded, failed, footer_ts, color_map[mode], title_map[mode], hide_failed)
 
         grouped = self._group_episodes_by_series(downloaded)
         failed_grouped = self._group_episodes_by_series(failed)
@@ -464,12 +465,11 @@ class AutomationManager:
             empty_success_text = "Keine neuen Episoden heruntergeladen."
             failed_header = "⚠️ Fehlgeschlagene Downloads"
 
-        fields = self._build_embed_sections(
-            sections=[
-                ("", grouped, empty_success_text, mode != "german"),
-                (failed_header, failed_grouped, "Keine fehlgeschlagenen Episoden oder Checks.", mode != "german"),
-            ],
-        )
+        sections = [("", grouped, empty_success_text, mode != "german")]
+        if not hide_failed:
+            sections.append((failed_header, failed_grouped, "Keine fehlgeschlagenen Episoden oder Checks.", mode != "german"))
+
+        fields = self._build_embed_sections(sections=sections)
 
         return {
             "embeds": [
@@ -490,6 +490,7 @@ class AutomationManager:
         footer_ts: str,
         color: int,
         title: str,
+        hide_failed: bool = False,
     ) -> Dict[str, Any]:
         german_items = [ep for ep in downloaded if str(ep.get("language", "")).lower() == "german dub"]
         new_items = [ep for ep in downloaded if str(ep.get("language", "")).lower() != "german dub"]
@@ -498,13 +499,17 @@ class AutomationManager:
         new_grouped = self._group_episodes_by_series(new_items)
         failed_grouped = self._group_episodes_by_series(failed)
 
+        sections = [
+            ("🇩🇪 Neue deutsche Episoden", german_grouped, "Keine neuen deutschen Episoden gefunden.", False),
+            ("📺 Neue Episoden", new_grouped, "Keine neuen Episoden heruntergeladen.", True),
+        ]
+        sep_after = {0, 1}
+        if not hide_failed:
+            sections.append(("⚠️ Fehlgeschlagene Checks", failed_grouped, "Keine fehlgeschlagenen Episoden oder Checks.", True))
+
         fields = self._build_embed_sections(
-            sections=[
-                ("🇩🇪 Neue deutsche Episoden", german_grouped, "Keine neuen deutschen Episoden gefunden.", False),
-                ("📺 Neue Episoden", new_grouped, "Keine neuen Episoden heruntergeladen.", True),
-                ("⚠️ Fehlgeschlagene Checks", failed_grouped, "Keine fehlgeschlagenen Episoden oder Checks.", True),
-            ],
-            separators_after={0, 1},  # Add separator after each section
+            sections=sections,
+            separators_after=sep_after,
         )
 
         return {
