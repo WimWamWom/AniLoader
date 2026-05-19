@@ -738,3 +738,9 @@ async def export_links():
         media_type="text/plain",
         headers={"Content-Disposition": "attachment; filename=AniLoader.txt"}
     )
+
+
+@router.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
+async def chrome_devtools_stub():
+    """Unterdrückt den Chrome DevTools 404-Log-Spam."""
+    return JSONResponse(content={})
