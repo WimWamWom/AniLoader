@@ -1500,17 +1500,10 @@ async function triggerAutomation(mode) {
 let currentSeriesMode = null;
 let currentSeriesType = null;
 let allSeries = [];
-let _pendingSelections = new Map(); // lowercase → original title (modalweite Auswahl, überlebt Suchen)
 
 async function openSeriesSelector(mode, type) {
   currentSeriesMode = mode;
   currentSeriesType = type;
-  // Auswahl mit bereits gespeicherten Einträgen vorbelegen
-  const savedState = ensureAutomationFilterState(mode);
-  _pendingSelections = new Map((savedState[type] || []).map(v => {
-    const s = String(v || '').trim();
-    return [s.toLowerCase(), s];
-  }));
   const modal = $('#series-selector-modal');
   if (modal) {
     // Move modal under body so fixed positioning is always viewport-based.
@@ -1523,6 +1516,7 @@ async function openSeriesSelector(mode, type) {
     if (searchInput) {
       searchInput.value = '';
       searchInput.focus();
+      filterSeriesList(); // Suchfeld leeren = alle anzeigen
     }
   }
 }
@@ -1534,15 +1528,14 @@ function closeSeriesSelector() {
   currentSeriesType = null;
 }
 
-async function loadSeriesList(query = '') {
+async function loadSeriesList() {
   const seriesList = $('#series-list');
   if (!seriesList) return;
 
   seriesList.innerHTML = '<div class="series-loading">Lade Serien...</div>';
 
   try {
-    const url = query ? `/series?q=${encodeURIComponent(query)}` : '/series';
-    const res = await api(url);
+    const res = await api('/series');
     allSeries = normalizeSeriesList((res.series || []).map(s => s?.title || ''));
 
     if (allSeries.length === 0) {
@@ -1550,8 +1543,12 @@ async function loadSeriesList(query = '') {
       return;
     }
 
+    const state = ensureAutomationFilterState(currentSeriesMode || '');
+    const selectedList = state[currentSeriesType || 'whitelist'] || [];
+    const selectedSet = new Set(selectedList.map(v => String(v || '').trim().toLowerCase()));
+
     seriesList.innerHTML = allSeries.map((title, idx) => {
-      const isChecked = _pendingSelections.has(String(title).toLowerCase());
+      const isChecked = selectedSet.has(String(title).toLowerCase());
       return `
         <div class="series-item">
           <input type="checkbox" id="series-${idx}" data-title="${esc(title)}" ${isChecked ? 'checked' : ''}>
@@ -1566,14 +1563,12 @@ async function loadSeriesList(query = '') {
 }
 
 function filterSeriesList() {
-  // Aktuelle DOM-Auswahl in _pendingSelections sichern, bevor die Liste neu gerendert wird
-  $$('#series-list input[type="checkbox"]').forEach(cb => {
-    const title = cb.dataset.title || '';
-    if (cb.checked) _pendingSelections.set(title.toLowerCase(), title);
-    else _pendingSelections.delete(title.toLowerCase());
+  // Einträge ein-/ausblenden ohne die Liste neu zu laden → Häkchen bleiben erhalten
+  const query = ($('#series-search')?.value || '').toLowerCase().trim();
+  $$('#series-list .series-item').forEach(item => {
+    const label = item.querySelector('label')?.textContent?.toLowerCase() || '';
+    item.style.display = (!query || label.includes(query)) ? '' : 'none';
   });
-  const query = $('#series-search')?.value || '';
-  loadSeriesList(query);
 }
 
 function addSelectedSeriesToFilter() {
@@ -1582,23 +1577,14 @@ function addSelectedSeriesToFilter() {
     return;
   }
 
-  // Aktuelle DOM-Auswahl noch einmal in _pendingSelections sichern
-  $$('#series-list input[type="checkbox"]').forEach(cb => {
-    const title = cb.dataset.title || '';
-    if (cb.checked) _pendingSelections.set(title.toLowerCase(), title);
-    else _pendingSelections.delete(title.toLowerCase());
-  });
-
-  // Bereits gespeicherte Einträge aus _pendingSelections entfernen (addAutomationFilterItems mergt)
-  const savedState = ensureAutomationFilterState(currentSeriesMode);
-  const alreadySaved = new Set((savedState[currentSeriesType] || []).map(v => String(v || '').trim().toLowerCase()));
-  const selectedTitles = Array.from(_pendingSelections.values()).filter(t => !alreadySaved.has(t.toLowerCase()));
-
-  if (selectedTitles.length === 0) {
-    alert('Keine neuen Serien ausgewählt');
+  // Alle Checkboxen lesen (auch aktuell ausgeblendete)
+  const checkboxes = $$('#series-list input[type="checkbox"]:checked');
+  if (checkboxes.length === 0) {
+    alert('Keine Serien ausgewählt');
     return;
   }
 
+  const selectedTitles = Array.from(checkboxes).map(cb => cb.dataset.title).filter(Boolean);
   const addedCount = addAutomationFilterItems(currentSeriesMode, currentSeriesType, selectedTitles);
 
   closeSeriesSelector();
