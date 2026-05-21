@@ -980,7 +980,7 @@ def _run_check(cfg: dict, data_folder: str) -> None:
         status["progress"]["current_series_index"] = idx + 1
 
         base_url = scraper.get_base_url(anime["url"])
-        log(f"\n[CHECK] {anime['title']}")
+        log(f"[CHECK] {anime['title']}")
 
         seasons = scraper.get_season_numbers(anime["url"])
         if not seasons:
