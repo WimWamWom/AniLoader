@@ -2,8 +2,9 @@
 
 
   
-  Anime & Serien Download-Manager mit Web-Interface
-  Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur
+  Anime & Serien Download-Manager mit Web-Interface. 
+  Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur </br>
+  Basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader) Tool von [phoenixthrush](https://github.com/phoenixthrush) 🍻
 
 
   ---
