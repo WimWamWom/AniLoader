@@ -11,15 +11,20 @@
 
   ## TL;DR 
 
+  **1. Docker (empfohlen)**
   ```bash
-  # Docker starten (empfohlen)
   docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wimwamwom/aniloader:latest
-
-  # Web-Interface öffnen: http://localhost:5050
-  # Serie hinzufügen → Download-Modus wählen → Fertig!
   ```
 
-  **Das wars! AniLoader lädt Anime/Serien automatisch herunter, benennt sie für Jellyfin um und verwaltet alles über eine Web-Oberfläche.**
+  **2. Lokal**
+  ```bash
+  git clone https://github.com/WimWamWom/AniLoader.git
+  cd AniLoader
+  pip install -r requirements.txt
+  python main.py
+  ```
+
+  **Web-Interface:** `http://localhost:5050` → Serie hinzufügen → Download starten → Fertig!
 
   ---
 
@@ -98,6 +103,9 @@
   ```
 
   ### Docker
+
+  > **Image verfügbar auf:** Docker Hub `wimwamwom/aniloader:latest` · GHCR `ghcr.io/wimwamwom/aniloader:latest`
+
   ```yaml
   # docker-compose.yml
   services:
@@ -123,7 +131,6 @@
   ```
 
   ### Unraid
-  **Template:** Community Apps → AniLoader  
   **Docker Hub:** `wimwamwom/aniloader:latest`
 
   **Port:** `5050:5050`  
@@ -252,6 +259,7 @@
   2. **`Tampermonkey.user.js`** öffnen → Install
   3. **Server-Adresse anpassen** im Skript:
   ```javascript
+  const USE_DOMAIN = false;
   const SERVER_IP = "192.168.1.100";    // Deine AniLoader-IP
   const SERVER_PORT = 5050;
   ```
@@ -468,6 +476,9 @@
 
   **Q: Wie richte ich Discord-Benachrichtigungen ein?**  
   A: Im Automation-Tab pro Modus einen Discord-Webhook eintragen. AniLoader sendet eine Zusammenfassung nach jedem automatischen Lauf.
+
+  **Q: Separate Filmpfade einrichten?**  
+  A: `anime_separate_movies: true` und/oder `serien_separate_movies: true` in `config.yaml` setzen und die entsprechenden Volumes einbinden.
 
   ---
 

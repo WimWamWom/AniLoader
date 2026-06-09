@@ -7,13 +7,18 @@
 ---
 
 ## TL;DR
-```bash
-# Schnellstart Docker
-docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wimwamwom/aniloader:latest
 
-# Docker Compose (empfohlen)
-curl -o docker-compose.yml https://raw.githubusercontent.com/WimWamWom/AniLoader/main/docker-compose.yml
-docker compose up -d
+**1. Docker (empfohlen)**
+```bash
+docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wimwamwom/aniloader:latest
+```
+
+**2. Lokal**
+```bash
+git clone https://github.com/WimWamWom/AniLoader.git
+cd AniLoader
+pip install -r requirements.txt
+python main.py
 ```
 
 **Web-Interface:** `http://localhost:5050` → Serie hinzufügen → Download starten → Fertig!
@@ -56,10 +61,13 @@ docker compose up -d
 - **🔓 Anti-Sperre:** DNS-over-HTTPS umgeht Provider-Blocks
 - **⚡ Autostart:** Optional bei Container-Start Download-Modus starten
 - **📂 Separate Filmpfade:** Anime-Filme und Serien-Filme in eigene Ordner
+- **🎬 Film-Benennung:** Umschaltbar zwischen Lokal (`Film01`) und Jellyfin (`S00E001`) – mit automatischer Migration aller vorhandenen Dateien
 
 ---
 
 ## Installation
+
+> **Image verfügbar auf:** Docker Hub `wimwamwom/aniloader:latest` · GHCR `ghcr.io/wimwamwom/aniloader:latest`
 
 ### Docker Run
 ```bash
@@ -196,6 +204,7 @@ docker compose logs -f
 **⚙️ Einstellungen-Tab**
 - Storage-Mode (Standard vs Separate) mit Ordner-Browser
 - Separate Filmpfade für Anime-Filme und Serien-Filme
+- **Film-Benennung:** Lokal (`Film01 - Titel.mkv`) oder Jellyfin (`S00E001 - Titel.mkv`) wählbar; bei Modusänderung erscheint ein Button zum automatischen Umbenennen aller vorhandenen Dateien
 - Sprachpriorität per Drag & Drop
 - Autostart, Titel-Refresh, System-Settings
 
@@ -282,6 +291,10 @@ storage:
   serien_movies_path: /app/Serien-Filme
   anime_separate_movies: false
   serien_separate_movies: false
+  film_naming_mode: local               # local | jellyfin
+  # ⚠ Der finale Ordnername (letztes Pfadsegment) darf nicht mit '.' beginnen.
+  #   Erlaubt:  /app/Downloads  oder  /mnt/.cache/Downloads
+  #   Verboten: /app/.Downloads
 
 download:
   autostart_mode: null       # null, default, german, new, check, german_new
@@ -381,52 +394,69 @@ chown -R 1000:1000 data Downloads Anime Serien
 ### Standard-Modus
 **Ein Volume für alles** (`storage.mode: standard`)
 
+**Lokal-Modus** (`film_naming_mode: local`):
 ```
-Downloads/                              # ./Downloads:/app/Downloads
+Downloads/
 ├── Naruto (2002) [imdbid-tt0409591]/
 │   ├── Season 01/
-│   │   ├── S01E001 - Uzumaki Naruto.mkv
-│   │   ├── S01E002 - My Name is Konohamaru [Sub].mkv
-│   │   └── S01E003 - Sasuke and Sakura [English].mkv
+│   │   ├── S01E001 - Erste Episode.mkv
+│   │   ├── S01E002 - Zweite Episode [Sub].mkv
+│   │   └── S01E003 - Episode 3 [English].mkv
 │   ├── Season 02/
 │   └── Filme/
 │       └── Film01 - Naruto Movie.mkv
-└── Breaking Bad (2008) [imdbid-tt0903747]/
-    ├── Season 01/
-    └── Season 05/
+└── Avatar (2009) [imdbid-tt0499549]/
+    └── Filme/
+        └── Film01 - Avatar.mkv
+```
+
+**Jellyfin-Modus** (`film_naming_mode: jellyfin`):
+```
+Downloads/
+├── Naruto (2002) [imdbid-tt0409591]/
+│   ├── Season 00/                          # Jellyfin "Specials"
+│   │   └── S00E001 - Naruto Movie.mkv
+│   ├── Season 01/
+│   │   └── S01E001 - Erste Episode.mkv
+│   └── Season 02/
+└── Avatar (2009) [imdbid-tt0499549]/
+    └── Season 00/
+        └── S00E001 - Avatar.mkv
 ```
 
 ### Separate-Modus
 **Getrennte Volumes** (`storage.mode: separate`)
 
 ```
-Anime/                                  # ./Anime:/app/Anime (aniworld.to)
+Anime/                        # aniworld.to Serien
 ├── Naruto (2002)/
 │   ├── Season 01/
-│   ├── Season 02/
-│   └── Filme/
+│   └── Season 02/ 
 └── Attack on Titan (2013)/
-    ├── Season 01/
-    └── Season 04/
+    └── Season 01/
 
-Serien/                                 # ./Serien:/app/Serien (s.to)
-├── Breaking Bad (2008)/
-│   ├── Season 01/
-│   └── Season 05/
-└── The Office (2005)/
-    ├── Season 01/
-    └── Season 09/
-
-Anime-Filme/                            # ./Anime-Filme:/app/Anime-Filme  
-└── Your Name (2016)/                   # anime_separate_movies: true
+Anime-Filme/                  # aniworld.to Filme (anime_separate_movies: true)
+└── Naruto Movie (2004)/
     └── Filme/
-        └── Film01 - Your Name [Sub].mkv
+
+Serien/                       # s.to Serien  
+├── Breaking Bad (2008)/
+│   └── Season 01/
+└── Game of Thrones (2011)/
+    └── Season 01/
+
+Serien-Filme/                 # s.to Filme (serien_separate_movies: true)
+└── Some Movie (2010)/
+    └── Filme/
 ```
 
 **Datei-Benennung:**
-- **Serien:** `S01E001 - Titel.mkv`
-- **Filme:** `Film01 - Titel.mkv` 
-- **Sprach-Suffixe:** `[Sub]`, `[English Dub]`, `[English Sub]`
+- **Serien:** `S01E001 - Titel.mkv`, `S01E002 - Titel [Sub].mkv`
+- **Filme (Lokal):** `Filme/Film01 - Titel.mkv` – Standard, unabhängig von Jellyfin
+- **Filme (Jellyfin):** `Season 00/S00E001 - Titel.mkv` – Jellyfin erkennt Season 00 als "Specials"
+- **Suffixe:** `""` (German Dub), `[Sub]` (German Sub), `[English Dub]`, `[English Sub]`
+
+> **Film-Benennung wechseln:** Einstellungen → Film-Benennung → Modus wählen → "Dateien jetzt umbenennen & verschieben". Die Migration ist transaktional – bei einem Abbruch können `.migrate_tmp`-Dateien beim nächsten Wechsel aufgeräumt werden. Wechsel in beide Richtungen möglich.
 
 ---
 
@@ -441,20 +471,14 @@ A: `chmod 777 Downloads Anime Serien` oder `chown -R 1000:1000 Downloads`
 **Q: Downloads funktionieren nicht im Container**  
 A: ffmpeg und aniworld-CLI sind pre-installiert. `docker logs -f aniloader` für Details
 
+**Q: "DNS-Fehler" oder Seiten nicht erreichbar**  
+A: AniLoader nutzt DNS-over-HTTPS automatisch. Firewall für ausgehende HTTPS-Verbindungen prüfen
+
 **Q: Konfiguration geht bei Container-Neustart verloren**  
 A: `data/` Volume gemounted? Ohne Volume wird config.yaml nicht gespeichert!
 
 **Q: Autostart aktivieren bei Docker-Start**  
 A: `data/config.yaml` → `autostart_mode: default` oder Web-UI → Einstellungen → System
-
-**Q: Was ist `german_new` als Autostart-Modus?**  
-A: Kombiniert `german` (fehlende deutsche Episoden) und `new` (neue Episoden prüfen) in einem einzigen Lauf.
-
-**Q: Wie richte ich Automation ein?**  
-A: Web-UI → Automation-Tab → gewünschten Modus aktivieren, Cron-Schedule eintragen, optional Discord-Webhook hinzufügen.
-
-**Q: Container nutzt zu viel CPU/RAM**  
-A: Download-Modi sind CPU-intensiv (Video-Processing). Normal während aktiver Downloads
 
 **Q: AniLoader.txt Import im Container?**  
 A: `AniLoader.txt` ins Host-Verzeichnis (wird zu Container-Root gemounted) → automatischer Import beim Start
@@ -462,14 +486,38 @@ A: `AniLoader.txt` ins Host-Verzeichnis (wird zu Container-Root gemounted) → a
 **Q: Export-Funktionen nutzen?**  
 A: Web-UI → Datenbank-Tab → "💾 Export DB" oder "📄 Export Links" für Downloads
 
+**Q: Separate vs Standard Mode?**  
+A: **Standard** = Alles in Downloads. **Separate** = Anime/Serien getrennt für bessere Jellyfin-Organisation
+
+**Q: Welche Sprache wird heruntergeladen?**  
+A: Erste verfügbare aus der `languages`-Liste. Kaskade: German Dub → German Sub → English Sub → English Dub
+
+**Q: Was ist der Unterschied zwischen `german` und `german_new`?**  
+A: `german` sucht nur fehlende deutsche Episoden bei bereits vorhandenen Serien. `german_new` prüft zusätzlich auf neue Episoden – beides in einem Lauf.
+
+**Q: Lokal vs. Jellyfin Filmbenennung – was ist der Unterschied?**  
+A: **Lokal** speichert Filme als `Filme/Film01 - Titel.mkv` – übersichtlich und unabhängig von Jellyfin. **Jellyfin** speichert als `Season 00/S00E001 - Titel.mkv` – Jellyfin erkennt Season 00 automatisch als Specials-Staffel und zeigt Poster/Metadaten korrekt an. Umschalten jederzeit möglich, alle Dateien werden automatisch umbenannt und verschoben.
+
+**Q: Wie richte ich Automation ein?**  
+A: Web-UI → Automation-Tab → gewünschten Modus aktivieren, Cron-Schedule eintragen, optional Discord-Webhook hinzufügen.
+
+**Q: Wie richte ich Discord-Benachrichtigungen ein?**  
+A: Im Automation-Tab pro Modus einen Discord-Webhook eintragen. AniLoader sendet eine Zusammenfassung nach jedem automatischen Lauf.
+
+**Q: Separate Filmpfade einrichten?**  
+A: Im Separate-Modus: `anime_separate_movies: true` und/oder `serien_separate_movies: true` in `config.yaml` setzen. Die Volumes `./Anime-Filme:/app/Anime-Filme` und `./Serien-Filme:/app/Serien-Filme` einbinden.
+
+**Q: "Permission denied" für Download-Ordner**  
+A: `chmod 777 Downloads Anime Serien` oder `chown -R 1000:1000 Downloads`
+
+**Q: Container nutzt zu viel CPU/RAM**  
+A: Download-Modi sind CPU-intensiv (Video-Processing). Normal während aktiver Downloads
+
 **Q: Multi-Arch Support (ARM/Intel)**  
 A: `wimwamwom/aniloader:latest` unterstützt automatisch amd64 + arm64
 
 **Q: Reverse Proxy (nginx/Traefik)**  
 A: Container-Port 5050, externe URL im Tampermonkey-Skript anpassen
-
-**Q: Separate Filmpfade einrichten?**  
-A: Im Separate-Modus: `anime_separate_movies: true` und/oder `serien_separate_movies: true` in `config.yaml` setzen. Die Volumes `./Anime-Filme:/app/Anime-Filme` und `./Serien-Filme:/app/Serien-Filme` einbinden.
 
 ---
 
