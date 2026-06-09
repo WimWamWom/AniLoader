@@ -8,20 +8,14 @@
 
 ## TL;DR
 
-**1. Docker (empfohlen)**
+**Docker Run**
 ```bash
 docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wimwamwom/aniloader:latest
 ```
 
-**2. Lokal**
-```bash
-git clone https://github.com/WimWamWom/AniLoader.git
-cd AniLoader
-pip install -r requirements.txt
-python main.py
-```
-
 **Web-Interface:** `http://localhost:5050` → Serie hinzufügen → Download starten → Fertig!
+
+> Quellcode & Doku: [GitHub/WimWamWom/AniLoader](https://github.com/WimWamWom/AniLoader) — ein ⭐ freut mich!
 
 ---
 
@@ -506,9 +500,6 @@ A: Im Automation-Tab pro Modus einen Discord-Webhook eintragen. AniLoader sendet
 
 **Q: Separate Filmpfade einrichten?**  
 A: Im Separate-Modus: `anime_separate_movies: true` und/oder `serien_separate_movies: true` in `config.yaml` setzen. Die Volumes `./Anime-Filme:/app/Anime-Filme` und `./Serien-Filme:/app/Serien-Filme` einbinden.
-
-**Q: "Permission denied" für Download-Ordner**  
-A: `chmod 777 Downloads Anime Serien` oder `chown -R 1000:1000 Downloads`
 
 **Q: Container nutzt zu viel CPU/RAM**  
 A: Download-Modi sind CPU-intensiv (Video-Processing). Normal während aktiver Downloads
