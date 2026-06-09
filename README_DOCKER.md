@@ -510,6 +510,11 @@ A: `wimwamwom/aniloader:latest` unterstützt automatisch amd64 + arm64
 **Q: Reverse Proxy (nginx/Traefik)**  
 A: Container-Port 5050, externe URL im Tampermonkey-Skript anpassen
 
+## ⚠️ Disclaimer
+I provide this tool for educational and informational purposes only.
+You are solely responsible for how you use it.
+Any actions taken using this tool are entirely your own responsibility.
+I do not condone or support illegal use.
 ---
 
 <p align="center">
