@@ -480,6 +480,11 @@
   **Q: Separate Filmpfade einrichten?**  
   A: `anime_separate_movies: true` und/oder `serien_separate_movies: true` in `config.yaml` setzen und die entsprechenden Volumes einbinden.
 
+  ## ⚠️ Disclaimer
+  I provide this tool for educational and informational purposes only.
+  You are solely responsible for how you use it.
+  Any actions taken using this tool are entirely your own responsibility.
+  I do not condone or support illegal use.
   ---
 
   <p align="center">
