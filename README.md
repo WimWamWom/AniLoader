@@ -1,4 +1,4 @@
-<h1 align="center"><sub><img src="web/static/AniLoader.png" width="35"></sub>AniLoader </h1>
+<h1 align="center"><sub><img src="web/static/AniLoader.png" width="35"></sub>AniLoader v1</h1>
 
 
   
