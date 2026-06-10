@@ -52,7 +52,6 @@ function initTabs() {
           if (btn.dataset.tab === 'tab-automation') {
             loadSettings();
             loadAutomationStatus();
-            loadAutomationHistory();
           }
           if (btn.dataset.tab === 'tab-logs') {
             resetLogState();
@@ -121,9 +120,9 @@ function startBackgroundPolling() {
   }
 
   if (!automationHistoryInterval) {
-    loadAutomationHistory();
     automationHistoryInterval = setInterval(() => {
-      if ($('#tab-automation')?.classList.contains('active')) loadAutomationHistory();
+      const wrap = $('#automation-history-body-wrap');
+      if ($('#tab-automation')?.classList.contains('active') && wrap?.style.display !== 'none') loadAutomationHistory();
     }, INTERVAL_AUTOMATION);
   }
 }
@@ -1449,6 +1448,18 @@ async function loadAutomationStatus() {
   } catch (e) {
     console.error('Automation status error:', e);
   }
+}
+
+function toggleAutomationHistory() {
+  const wrap  = $('#automation-history-body-wrap');
+  const arrow = $('#automation-history-arrow');
+  const header = $('#automation-history-header');
+  if (!wrap) return;
+  const isOpen = wrap.style.display !== 'none';
+  wrap.style.display = isOpen ? 'none' : '';
+  arrow.classList.toggle('open', !isOpen);
+  header.setAttribute('aria-expanded', String(!isOpen));
+  if (!isOpen) loadAutomationHistory();
 }
 
 async function loadAutomationHistory() {

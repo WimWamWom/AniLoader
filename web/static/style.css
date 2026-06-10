@@ -443,6 +443,36 @@ header .status-badge {
   white-space: nowrap;
 }
 
+/* ─── Collapsible Header ─── */
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.collapsible-header:hover h3 {
+  color: var(--primary);
+}
+
+.collapsible-arrow {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  transition: transform var(--transition), color var(--transition);
+  display: inline-block;
+}
+
+.collapsible-arrow.open {
+  transform: rotate(90deg);
+  color: var(--primary);
+}
+
+.collapsible-body {
+  margin-top: 12px;
+}
+
 /* ─── Automation Filter Header ─── */
 .automation-mode-card .setting-hint {
   padding-left: 0;

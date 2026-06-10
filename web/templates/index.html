@@ -507,23 +507,28 @@
   </div>
 
   <div class="card">
-    <h3>Automation-Verlauf</h3>
-    <div class="db-table-wrap">
-      <table class="db-table automation-history-table">
-        <thead>
-          <tr>
-            <th>Datum</th>
-            <th>Modus</th>
-            <th>Quelle</th>
-            <th>Downloads</th>
-            <th>Fehlgeschlagen</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="automation-history-body">
-          <tr><td colspan="6" class="db-empty">Lade...</td></tr>
-        </tbody>
-      </table>
+    <div class="collapsible-header" id="automation-history-header" onclick="toggleAutomationHistory()" role="button" aria-expanded="false" aria-controls="automation-history-body-wrap">
+      <h3>Automation-Verlauf</h3>
+      <span class="collapsible-arrow" id="automation-history-arrow">▶</span>
+    </div>
+    <div id="automation-history-body-wrap" class="collapsible-body" style="display:none;">
+      <div class="db-table-wrap">
+        <table class="db-table automation-history-table">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Modus</th>
+              <th>Quelle</th>
+              <th>Downloads</th>
+              <th>Fehlgeschlagen</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="automation-history-body">
+            <tr><td colspan="6" class="db-empty">Lade...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
