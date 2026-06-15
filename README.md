@@ -6,6 +6,16 @@
   Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur </br>
   Basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader) Tool von [phoenixthrush](https://github.com/phoenixthrush) 🍻
 
+![Python](https://img.shields.io/badge/python-3.11+-blue?logo=python)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/wimwamwom/AniLoader)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/wimwamwom/AniLoader)
+![Docker Pulls](https://img.shields.io/docker/pulls/wimwamwom/aniloader)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/wimwamwom/aniloader/.github%2Fworkflows%2Fdocker-build.yml)
+![GitHub License](https://img.shields.io/github/license/wimwamwom/aniloader)
+![GitHub Release](https://img.shields.io/github/v/release/wimwamwom/aniloader)
+![GitHub Repo stars](https://img.shields.io/github/stars/wimwamwom/aniloader)
+![GitHub forks](https://img.shields.io/github/forks/wimwamwom/aniloader)
+
 
   ---
 
