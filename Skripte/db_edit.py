@@ -18,6 +18,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.config import get_data_folder, load_config
 from app import database as db
 
+BEHALTEN = object()  # Sentinel – diesen Wert bitte nicht ändern
+DELETE   = object()  # Sentinel – Feld auf Default-Wert zurücksetzen
+
 # ══════════════════════════════════════════════════════
 #  KONFIGURATION – hier anpassen
 # ══════════════════════════════════════════════════════
@@ -26,23 +29,18 @@ from app import database as db
 ANIME_ID = 1
 
 # Felder setzen – nicht gewünschte Felder auf BEHALTEN lassen
-# Zum expliziten Löschen/Zurücksetzen: None (Text) oder 0 (Zahlen)
+# Zum expliziten Löschen/Zurücksetzen: DELETE
 
-BEHALTEN = object()  # Sentinel – diesen Wert bitte nicht ändern
-DELETE   = object()  # Sentinel – Feld auf Default-Wert zurücksetzen
-
-# Default-Werte gemäß DB-Schema
-
-title               = BEHALTEN   # z.B. "My Hero Academia"
-url                 = BEHALTEN   # z.B. "https://aniworld.to/anime/stream/..."
-complete            = BEHALTEN  # 0 oder 1
-deutsch_komplett    = BEHALTEN  # 0 oder 1
-deleted             = BEHALTEN  # 0 oder 1
-last_season         = BEHALTEN   # z.B. 3
-last_episode        = BEHALTEN   # z.B. 12
-last_film           = BEHALTEN   # z.B. 0
-folder_name         = BEHALTEN   # z.B. "My.Hero.Academia"  |  None = leeren
-fehlende_deutsch_folgen = BEHALTEN # z.B. "[]"
+title               = BEHALTEN      # z.B. "My Hero Academia"
+url                 = BEHALTEN      # z.B. "https://aniworld.to/anime/stream/..."
+complete            = BEHALTEN      # 0 oder 1
+deutsch_komplett    = BEHALTEN      # 0 oder 1
+deleted             = BEHALTEN      # 0 oder 1
+last_season         = BEHALTEN      # z.B. 3
+last_episode        = BEHALTEN      # z.B. 12
+last_film           = BEHALTEN      # z.B. 0
+folder_name         = BEHALTEN      # z.B. "My.Hero.Academia"  |  None = leeren
+fehlende_deutsch_folgen = BEHALTEN  # z.B. "[]"
 
 # ══════════════════════════════════════════════════════
 #  AB HIER NICHTS ÄNDERN
