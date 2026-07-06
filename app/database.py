@@ -114,6 +114,9 @@ def add_anime(data_folder: str, url: str, title: Optional[str] = None) -> Option
     sc = _get_scraper()
     normalized_url = sc.normalize_series_url(url)
 
+    #TMP-FIX: keep s.to domains in DB rather than converting to serienstream.to
+    normalized_url = normalized_url.replace("://serienstream.to", "://s.to")
+    
     conn = _connect(data_folder)
     try:
         c = conn.cursor()
