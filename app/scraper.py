@@ -1,5 +1,5 @@
 """
-AniLoader – HTML-Scraper für aniworld.to und s.to.
+AniLoader – HTML-Scraper für aniworld.to und serienstream.to.
 
 Extrahiert Serien-Titel, Staffeln, Episoden und verfügbare Sprachen.
 Nutzt niquests mit DNS-over-HTTPS, mit automatischem Fallback auf System-DNS
@@ -132,7 +132,7 @@ def normalize_series_url(url: str) -> str:
         re.IGNORECASE,
     )
     if m:
-        return f"https://s.to/serie/{m.group(1)}"
+        return f"https://serienstream.to/serie/{m.group(1)}"
 
     return value
 
@@ -147,7 +147,7 @@ def get_series_key(url: str) -> Optional[str]:
 
     m = re.match(r"^https://s\.to/serie/([^/?#]+)", normalized, re.IGNORECASE)
     if m:
-        return f"s.to:{m.group(1).lower()}"
+        return f"serienstream.to:{m.group(1).lower()}"
 
     return None
 
@@ -159,7 +159,7 @@ def get_base_url(url: str) -> str:
     if "aniworld.to" in normalized:
         m = re.match(r"(https://aniworld\.to/anime/stream/[^/]+)", normalized)
         return m.group(1) if m else normalized
-    if "s.to" in normalized:
+    if "serienstream.to" in normalized:
         m = re.match(r"(https://s\.to/serie/[^/]+)", normalized)
         return m.group(1) if m else normalized
     return normalized
@@ -170,7 +170,7 @@ def is_aniworld(url: str) -> bool:
 
 
 def is_sto(url: str) -> bool:
-    return "s.to" in url
+    return "serienstream.to" in url
 
 
 def build_season_url(base_url: str, season: int) -> str:
@@ -223,7 +223,7 @@ def get_series_title(url: str) -> Optional[str]:
             h1 = soup.find("h1", attrs={"itemprop": "name"})
             if h1:
                 return h1.get_text(strip=True)
-            # Fallback: series-title Div (s.to nutzt ähnliche Struktur)
+            # Fallback: series-title Div (serienstream.to nutzt ähnliche Struktur)
             title_div = soup.find("div", class_="series-title")
             if title_div:
                 h1 = title_div.find("h1")
@@ -260,12 +260,12 @@ def get_poster_url(url: str) -> Optional[str]:
                     if src.startswith("http"):
                         return src
                     # Relative URL → absolute
-                    domain = "https://aniworld.to" if is_aniworld(url) else "https://s.to"
+                    domain = "https://aniworld.to" if is_aniworld(url) else "https://serienstream.to"
                     return f"{domain}{src}"
 
-        # Methode 2: Spezifisch für S.to - .backdrop oder .poster-image
+        # Methode 2: Spezifisch für serienstream.to - .backdrop oder .poster-image
         if is_sto(url):
-            # S.to nutzt oft .backdrop für große Bilder
+            # serienstream.to nutzt oft .backdrop für große Bilder
             backdrop = soup.find("div", class_="backdrop")
             if backdrop:
                 img = backdrop.find("img")
@@ -274,7 +274,7 @@ def get_poster_url(url: str) -> Optional[str]:
                     if src and not src.startswith("data:"):
                         if src.startswith("http"):
                             return src
-                        return f"https://s.to{src}"
+                        return f"https://serienstream.to{src}"
 
             # Alternative: .poster-image oder ähnliche Klassen
             for class_name in ["poster-image", "series-poster", "cover-image"]:
@@ -284,7 +284,7 @@ def get_poster_url(url: str) -> Optional[str]:
                     if src and not src.startswith("data:"):
                         if src.startswith("http"):
                             return src
-                        return f"https://s.to{src}"
+                        return f"https://serienstream.to{src}"
 
         # Methode 3: Fallback - alle <img> nach cover/poster durchsuchen
         for img in soup.find_all("img"):
@@ -294,7 +294,7 @@ def get_poster_url(url: str) -> Optional[str]:
                     continue
                 if src.startswith("http"):
                     return src
-                domain = "https://aniworld.to" if is_aniworld(url) else "https://s.to"
+                domain = "https://aniworld.to" if is_aniworld(url) else "https://serienstream.to"
                 return f"{domain}{src}"
 
     except Exception as e:
@@ -342,7 +342,7 @@ def get_season_numbers(url: str) -> List[int]:
                 if num_str.isdigit():
                     seasons.append(int(num_str))
             
-            # S.to: Filme sind unter /staffel-0 oder separate Filme-Section
+            # serienstream.to: Filme sind unter /staffel-0 oder separate Filme-Section
             # Prüfe auf Filme-Link oder Staffel-0
             for a in scope.find_all("a"):
                 href = a.get("href", "")
@@ -560,12 +560,12 @@ def _parse_sto_season(
     soup: BeautifulSoup, base_url: str, season: int
 ) -> List[Dict]:
     """
-    Parst eine S.to-Staffelseite.
+    Parst eine serienstream.to-Staffelseite.
     Sprachen sind in SVG-Icons in jeder Episode verfügbar (watch-language Icons).
     """
     episodes = []
 
-    # Moderne S.to Struktur: <table class="episode-table">
+    # Moderne serienstream.to Struktur: <table class="episode-table">
     episode_table = soup.find("table", class_="episode-table")
     if not episode_table:
         # Fallback: Suche nach Episode-Links im HTML
@@ -608,7 +608,7 @@ def _parse_sto_season(
             continue
 
         # Titel: Kombiniere Deutsche + Englische Titel
-        # S.to: zweite <td> (nach Episode-Nr)
+        # serienstream.to: zweite <td> (nach Episode-Nr)
         tds = row.find_all("td")
         if len(tds) >= 1:
             title_td = tds[0]
@@ -643,7 +643,7 @@ def _parse_sto_season(
 
 
 def _extract_sto_languages(element) -> List[str]:
-    """Extrahiert Sprachen aus S.to SVG-Icons (<use href='#icon-flag-*'>).
+    """Extrahiert Sprachen aus serienstream.to SVG-Icons (<use href='#icon-flag-*'>).
 
     Mapping:
         #icon-flag-german         → German Dub
@@ -664,7 +664,7 @@ def _extract_sto_languages(element) -> List[str]:
 
 
 def _map_sto_icon(href: str) -> Optional[str]:
-    """Mapped eine S.to SVG-Icon-href auf einen Sprachnamen."""
+    """Mapped eine serienstream.to SVG-Icon-href auf einen Sprachnamen."""
     if "icon-flag-english-german" in href:
         return "German Sub"
     if "icon-flag-german" in href:
@@ -688,7 +688,7 @@ def is_episode_available(episode_url: str) -> bool:
     Fallback: Prüft ob changeLanguageBox Flag-Images enthält.
 
     Gibt True zurück wenn mindestens ein Hoster-Link gefunden wurde.
-    Gibt True zurück wenn die Seite nicht aniworld.to ist (S.to hat eigene Logik).
+    Gibt True zurück wenn die Seite nicht aniworld.to ist (serienstream.to hat eigene Logik).
     """
     if not is_aniworld(episode_url):
         return True  # Nur für aniworld.to relevant
@@ -725,7 +725,7 @@ def is_episode_available(episode_url: str) -> bool:
 def get_episode_languages(episode_url: str) -> List[str]:
     """
     Holt die verfügbaren Sprachen direkt von der Episoden-Seite.
-    Dies wird verwendet, wenn die Staffelseite keine Sprach-Info pro Episode hat (z.B. S.to).
+    Dies wird verwendet, wenn die Staffelseite keine Sprach-Info pro Episode hat (z.B. serienstream.to).
     """
     try:
         html = _fetch(episode_url)
@@ -735,7 +735,7 @@ def get_episode_languages(episode_url: str) -> List[str]:
             # ANiworld: Sprachen aus Player-Bereich
             return _extract_aniworld_episode_languages(soup)
         elif is_sto(episode_url):
-            # S.to: Sprachen aus Hosters/Provider-Bereich
+            # serienstream.to: Sprachen aus Hosters/Provider-Bereich
             return _extract_sto_episode_languages(soup)
     except Exception as e:
         log(f"[SCRAPER] Sprachen-Fehler für {episode_url}: {e}")
@@ -771,7 +771,7 @@ def _extract_aniworld_episode_languages(soup: BeautifulSoup) -> List[str]:
 
 
 def _extract_sto_episode_languages(soup: BeautifulSoup) -> List[str]:
-    """Extrahiert verfügbare Sprachen von einer S.to-Episodenseite.
+    """Extrahiert verfügbare Sprachen von einer serienstream.to-Episodenseite.
 
     Nutzt dieselbe <use href='#icon-flag-*'>-Logik wie die Staffelseite.
     """
@@ -807,7 +807,7 @@ def get_episode_title(episode_url: str) -> Optional[str]:
                 return h2.get_text(strip=True)
 
         elif is_sto(episode_url):
-            # S.to Episodentitel
+            # serienstream.to Episodentitel
             h2 = soup.find("h2", class_="episodeTitle")
             if h2:
                 return h2.get_text(strip=True)
@@ -864,7 +864,7 @@ def search_anime(query: str, platform: str = "both", log_search: bool = False) -
     if platform in ("sto", "both"):
         try:
             resp = _get_session().get(
-                "https://s.to/api/search/suggest",
+                "https://serienstream.to/api/search/suggest",
                 params={"term": query},
                 timeout=10,
             )
@@ -881,18 +881,18 @@ def search_anime(query: str, platform: str = "both", log_search: bool = False) -
                     continue
                 if not slug:
                     continue
-                full_url = f"https://s.to/serie/stream/{slug}"
+                full_url = f"https://serienstream.to/serie/stream/{slug}"
                 title = (show.get("name", "") or "").replace("<em>", "").replace("</em>", "")
                 sto_results.append({
                     "title": title,
                     "url": full_url,
                     "description": "",
-                    "platform": "S.to",
+                    "platform": "serienstream.to",
                 })
         except Exception as e:
-            log(f"[SUCHE] S.to-Fehler: {e}")
+            log(f"[SUCHE] serienstream.to-Fehler: {e}")
 
-    # Ergebnisse abwechselnd mischen (AniWorld, S.to, AniWorld, S.to, …)
+    # Ergebnisse abwechselnd mischen (AniWorld, serienstream.to, AniWorld, serienstream.to, …)
     results: List[Dict] = []
     i_aw, i_st = 0, 0
     while i_aw < len(aniworld_results) or i_st < len(sto_results):
@@ -904,7 +904,7 @@ def search_anime(query: str, platform: str = "both", log_search: bool = False) -
             i_st += 1
 
     if log_search:
-        log(f"[SUCHE] AniWorld: {len(aniworld_results)}, S.to: {len(sto_results)}")
+        log(f"[SUCHE] AniWorld: {len(aniworld_results)}, serienstream.to: {len(sto_results)}")
 
     return results
 
