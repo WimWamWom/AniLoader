@@ -8,4 +8,4 @@ lxml>=5.0.0
 python-multipart>=0.0.5
 croniter>=2.0.5
 patchright>=1.50.0
-aniworld
+git+https://github.com/WimWamWom/AniWorld-Downloader-Fork.git@models#egg=aniworld
