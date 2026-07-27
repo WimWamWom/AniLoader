@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AniLoader Export-Button
 // @namespace    AniLoader
-// @version      2.3
+// @version      2.4
 // @icon         https://raw.githubusercontent.com/WimWamWom/AniLoader/main/web/static/AniLoader.png
 // @description  Fügt einen Download-Button auf aniworld.to / serienstream.to ein, der Serien an den AniLoader-Server sendet.
 // @author       WimWamWom
@@ -18,8 +18,7 @@
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @grant        GM_registerMenuCommand
-// @connect      aniloader.example.com
-// @connect      localhost:5050
+// @connect      *
 // ==/UserScript==
 
 (function () {
@@ -219,8 +218,8 @@
     }
 
     if (typeof GM_registerMenuCommand === 'function') {
-        GM_registerMenuCommand('⚙️ AniLoader – Einstellungen', openSettings);
-        GM_registerMenuCommand('↩️ AniLoader – Einstellungen zurücksetzen', resetSettings);
+        GM_registerMenuCommand('AniLoader – Einstellungen', openSettings);
+        GM_registerMenuCommand('AniLoader – Einstellungen zurücksetzen', resetSettings);
     }
 
     // ── Serien-URL extrahieren ──
