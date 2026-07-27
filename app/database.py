@@ -114,9 +114,6 @@ def add_anime(data_folder: str, url: str, title: Optional[str] = None) -> Option
     sc = _get_scraper()
     normalized_url = sc.normalize_series_url(url)
 
-    #TMP-FIX: keep s.to domains in DB rather than converting to serienstream.to
-    normalized_url = normalized_url.replace("://serienstream.to", "://s.to")
-    
     conn = _connect(data_folder)
     try:
         c = conn.cursor()
@@ -373,7 +370,7 @@ def import_txt(data_folder: str, content: str) -> int:
         url = line.strip()
         if not url or url.startswith("#"):
             continue
-        if "aniworld.to" in url or "s.to" in url:
+        if "aniworld.to" in url or "serienstream.to" in url or "serienstream.cx" in url or "s.to" in url:
             # Echten Titel von der Webseite abrufen
             try:
                 title = sc.get_series_title(url)

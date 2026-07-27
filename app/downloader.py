@@ -366,13 +366,13 @@ def _download_episode(
         cascading_languages = languages_config[:]
         log(f"[LANG] Sprachen unbekannt – verwende komplette Kaskade: {cascading_languages}")
 
-    # s.to unterstützt nur German Dub und English Dub
+    # serienstream.to unterstützt nur German Dub, German Sub und English Dub
     if scraper.is_sto(episode_url):
-        _sto_supported = {"German Dub", "English Dub"}
+        _sto_supported = {"German Dub", "German Sub", "English Dub"}
         _removed = [l for l in cascading_languages if l not in _sto_supported]
         cascading_languages = [l for l in cascading_languages if l in _sto_supported]
         if _removed:
-            log(f"[LANG] s.to: Nicht unterstützte Sprachen aus Kaskade entfernt: {_removed}")
+            log(f"[LANG] serienstream.to: Nicht unterstützte Sprachen aus Kaskade entfernt: {_removed}")
 
     # Download: Sprachen-Kaskade in TMP-Verzeichnis
     # TMP immer unter dem konfigurierten download_path (nicht output_path),
@@ -688,7 +688,7 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                 continue
 
             if not available_langs and scraper.is_sto(episode_url):
-                log(f"[WARN] s.to-Sprachen konnten nicht sicher erkannt werden – versuche German Dub trotzdem: {episode_url}")
+                log(f"[WARN] serienstream.to-Sprachen konnten nicht sicher erkannt werden – versuche German Dub trotzdem: {episode_url}")
 
             log(f"[CHECK] German Dub verfügbar – starte Download: {episode_url}")
 

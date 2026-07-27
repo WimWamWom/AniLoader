@@ -573,7 +573,7 @@ def _collect_film_roots(cfg: dict) -> list[Path]:
     Sammelt alle Ordner, in denen Filme liegen können.
 
     Nutzt get_download_path() mit is_film=True/False für alle registrierten
-    aniworld.to- und s.to-artigen URLs, um exakt dieselben Pfade zu bestimmen
+    aniworld.to- und serienstream.to-artigen URLs, um exakt dieselben Pfade zu bestimmen
     wie der Downloader selbst.  Da URLs nicht bekannt sind, werden die
     konfigurierten Pfade direkt aus dem Storage-Block gelesen — analog zu
     get_download_path, aber ohne URL-Abhängigkeit.

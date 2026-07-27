@@ -27,7 +27,7 @@ from pathlib import Path
 # ──────────────────────── URL-Logik (analog zu app/scraper.py) ────────────────────────
 
 def is_sto(url: str) -> bool:
-    return "s.to" in url
+    return "serienstream.to" in url or "serienstream.cx" in url or "s.to" in url
 
 
 def build_episode_url(series_url: str, season: int, episode: int) -> str:
@@ -46,8 +46,8 @@ def get_base_url(url: str) -> str:
     if "aniworld.to" in url:
         m = re.match(r"(https://aniworld\.to/anime/stream/[^/]+)", url, re.IGNORECASE)
         return m.group(1) if m else url
-    if "s.to" in url:
-        m = re.match(r"(https://s\.to/serie/[^/]+)", url, re.IGNORECASE)
+    if "serienstream.to" in url or "serienstream.cx" in url or "s.to" in url:
+        m = re.match(r"(https://(?:serienstream\.(?:to|cx)|s\.to)/serie/[^/]+)", url, re.IGNORECASE)
         return m.group(1) if m else url
     return url
 

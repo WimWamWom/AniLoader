@@ -250,7 +250,7 @@ async def add_link(request: Request):
     if not url or (not scraper.is_aniworld(url) and not scraper.is_sto(url)):
         return JSONResponse(
             status_code=400,
-            content={"status": "error", "message": "Ungültige URL (nur aniworld.to und s.to)"},
+            content={"status": "error", "message": "Ungültige URL (nur aniworld.to und serienstream.to)"},
         )
 
     data_folder = _data_folder()
@@ -520,7 +520,7 @@ async def browse_directories(request: Request):
 @router.get("/poster")
 async def get_poster(url: str = Query(...)):
     """Gibt die Poster-URL für eine Serie zurück."""
-    if not url or ("aniworld.to" not in url and "s.to" not in url):
+    if not url or ("aniworld.to" not in url and "serienstream.to" not in url and "serienstream.cx" not in url and "s.to" not in url):
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Ungültige URL"},
@@ -563,7 +563,7 @@ async def proxy_poster(url: str = Query(...)):
             "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
             "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-            "Referer": "https://aniworld.to/" if "aniworld.to" in url else "https://s.to/",
+            "Referer": "https://aniworld.to/" if "aniworld.to" in url else "https://serienstream.to/",
         }
         
         resp = niquests.get(url, headers=headers, timeout=10)

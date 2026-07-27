@@ -3,7 +3,7 @@
 
   
   Anime & Serien Download-Manager mit Web-Interface
-  Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur
+  Automatisches Herunterladen von aniworld.to und serienstream.to mit Jellyfin-Struktur
 ---
 
 ## TL;DR
@@ -108,7 +108,7 @@ services:
       - ./Downloads:/app/Downloads
       # Separate Pfade (Optional)
       - ./Anime:/app/Anime              # aniworld.to
-      - ./Serien:/app/Serien            # s.to
+      - ./Serien:/app/Serien            # serienstream.to
       - ./Anime-Filme:/app/Anime-Filme  # Separate Filme
       - ./Serien-Filme:/app/Serien-Filme
     environment:
@@ -257,7 +257,7 @@ const USE_DOMAIN = false;
 const SERVER_IP = "192.168.1.100";    // Docker-Host-IP
 const SERVER_PORT = 5050;
 ```
-4. **Button auf aniworld.to/s.to** nutzen
+4. **Button auf aniworld.to/serienstream.to** nutzen
 
 ---
 
@@ -280,7 +280,7 @@ storage:
   mode: separate             # standard | separate
   download_path: /app/Downloads        # Standard-Modus
   anime_path: /app/Anime              # aniworld.to → hier
-  series_path: /app/Serien            # s.to → hier
+  series_path: /app/Serien            # serienstream.to → hier
   anime_movies_path: /app/Anime-Filme  # Optional: Separate Filme
   serien_movies_path: /app/Serien-Filme
   anime_separate_movies: false
@@ -365,7 +365,7 @@ automation:
 ### Optional-Volumes (Separate-Modus)
 ```bash
 -v ./Anime:/app/Anime                  # aniworld.to Content
--v ./Serien:/app/Serien                # s.to Content  
+-v ./Serien:/app/Serien                # serienstream.to Content  
 -v ./Anime-Filme:/app/Anime-Filme      # Separate Anime-Filme
 -v ./Serien-Filme:/app/Serien-Filme    # Separate Serien-Filme
 ```
@@ -433,13 +433,13 @@ Anime-Filme/                  # aniworld.to Filme (anime_separate_movies: true)
 └── Naruto Movie (2004)/
     └── Filme/
 
-Serien/                       # s.to Serien  
+Serien/                       # serienstream.to Serien  
 ├── Breaking Bad (2008)/
 │   └── Season 01/
 └── Game of Thrones (2011)/
     └── Season 01/
 
-Serien-Filme/                 # s.to Filme (serien_separate_movies: true)
+Serien-Filme/                 # serienstream.to Filme (serien_separate_movies: true)
 └── Some Movie (2010)/
     └── Filme/
 ```

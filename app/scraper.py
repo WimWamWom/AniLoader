@@ -127,7 +127,7 @@ def normalize_series_url(url: str) -> str:
         return f"https://aniworld.to/anime/stream/{m.group(1)}"
 
     m = re.match(
-        r"^https?://(?:s\.to|serienstream\.to|186\.2\.175\.5)/serie/(?:stream/)?([^/?#]+)",
+        r"^https?://(?:s\.to|serienstream\.(?:to|cx)|186\.2\.175\.5)/serie/(?:stream/)?([^/?#]+)",
         value,
         re.IGNORECASE,
     )
@@ -145,7 +145,7 @@ def get_series_key(url: str) -> Optional[str]:
     if m:
         return f"aniworld:{m.group(1).lower()}"
 
-    m = re.match(r"^https://s\.to/serie/([^/?#]+)", normalized, re.IGNORECASE)
+    m = re.match(r"^https://serienstream\.to/serie/([^/?#]+)", normalized, re.IGNORECASE)
     if m:
         return f"serienstream.to:{m.group(1).lower()}"
 
@@ -160,7 +160,7 @@ def get_base_url(url: str) -> str:
         m = re.match(r"(https://aniworld\.to/anime/stream/[^/]+)", normalized)
         return m.group(1) if m else normalized
     if "serienstream.to" in normalized:
-        m = re.match(r"(https://s\.to/serie/[^/]+)", normalized)
+        m = re.match(r"(https://serienstream\.to/serie/[^/]+)", normalized)
         return m.group(1) if m else normalized
     return normalized
 
@@ -170,7 +170,7 @@ def is_aniworld(url: str) -> bool:
 
 
 def is_sto(url: str) -> bool:
-    return "serienstream.to" in url
+    return "serienstream.to" in url or "serienstream.cx" in url or "s.to" in url
 
 
 def build_season_url(base_url: str, season: int) -> str:
@@ -571,7 +571,7 @@ def _parse_sto_season(
         # Fallback: Suche nach Episode-Links im HTML
         log(f"[SCRAPER] episode-table nicht gefunden, nutze Regex-Fallback")
         pattern = re.compile(
-            r'href="(?:https?://(?:serienstream|s)\.to)?/serie/[^"]+/staffel-'
+            r'href="(?:https?://(?:serienstream\.(?:to|cx)|s\.to))?/serie/[^"]+/staffel-'
             + str(season)
             + r'/episode-(\d+)"'
         )

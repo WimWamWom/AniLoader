@@ -3,7 +3,7 @@
 
   
   Anime & Serien Download-Manager mit Web-Interface. 
-  Automatisches Herunterladen von aniworld.to und s.to mit Jellyfin-Struktur </br>
+  Automatisches Herunterladen von aniworld.to und serienstream.to mit Jellyfin-Struktur </br>
   Basiert auf dem [AniWorld-Downloader](https://github.com/phoenixthrush/AniWorld-Downloader) Tool von [phoenixthrush](https://github.com/phoenixthrush) 🍻
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue?logo=python)
@@ -127,7 +127,7 @@
         - ./data:/app/data              # Config + DB
         - ./Downloads:/app/Downloads    # Standard-Modus  
         - ./Anime:/app/Anime           # Separate: aniworld.to
-        - ./Serien:/app/Serien         # Separate: s.to
+        - ./Serien:/app/Serien         # Separate: serienstream.to
         - ./Anime-Filme:/app/Anime-Filme   # Separate: Anime-Filme
         - ./Serien-Filme:/app/Serien-Filme # Separate: Serien-Filme
       environment:
@@ -272,7 +272,7 @@
   const SERVER_IP = "192.168.1.100";    // Deine AniLoader-IP
   const SERVER_PORT = 5050;
   ```
-  4. **Fertig!** Button erscheint auf aniworld.to/s.to Seiten
+  4. **Fertig!** Button erscheint auf aniworld.to/serienstream.to Seiten
 
   **Button-Status:**
   - 📤 Downloaden → Serie hinzufügen
@@ -430,13 +430,13 @@
   └── Naruto Movie (2004)/
       └── Filme/
 
-  Serien/                       # s.to Serien  
+  Serien/                       # serienstream.to Serien  
   ├── Breaking Bad (2008)/
   │   └── Season 01/
   └── Game of Thrones (2011)/
       └── Season 01/
 
-  Serien-Filme/                 # s.to Filme (serien_separate_movies: true)
+  Serien-Filme/                 # serienstream.to Filme (serien_separate_movies: true)
   └── Some Movie (2010)/
       └── Filme/
   ```
