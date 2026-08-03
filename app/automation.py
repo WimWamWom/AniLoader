@@ -13,10 +13,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import niquests
 from croniter import croniter
 
-from . import downloader
+from . import downloader, scraper
 from .config import get_data_folder, load_config
 from .logger import log
 
@@ -420,7 +419,7 @@ class AutomationManager:
             return
 
         try:
-            resp = niquests.post(webhook, json=payload, timeout=10)
+            resp = scraper.get_shared_session().post(webhook, json=payload, timeout=10)
             if resp.status_code >= 400:
                 log(f"[AUTOMATION-WARN] Discord Webhook fuer {mode} antwortete mit HTTP {resp.status_code}")
         except Exception as exc:

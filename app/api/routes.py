@@ -546,8 +546,12 @@ async def get_poster(url: str = Query(...)):
 
 
 @router.get("/proxy_poster")
-async def proxy_poster(url: str = Query(...)):
-    """Lädt ein Poster-Bild über einen Proxy und gibt es zurück."""
+def proxy_poster(url: str = Query(...)):
+    """Lädt ein Poster-Bild über einen Proxy und gibt es zurück.
+
+    Bewusst sync (kein async def): der Request blockiert, FastAPI führt die
+    Funktion daher im Threadpool aus statt den Event-Loop anzuhalten.
+    """
     if not url.startswith(("http://", "https://")):
         return JSONResponse(
             status_code=400,
@@ -555,8 +559,6 @@ async def proxy_poster(url: str = Query(...)):
         )
 
     try:
-        import niquests
-        
         # HTTP-Request mit korrekten Headers
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -565,8 +567,8 @@ async def proxy_poster(url: str = Query(...)):
             "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
             "Referer": "https://aniworld.to/" if "aniworld.to" in url else "https://serienstream.to/",
         }
-        
-        resp = niquests.get(url, headers=headers, timeout=10)
+
+        resp = scraper.get_shared_session().get(url, headers=headers, timeout=10)
         resp.raise_for_status()
         
         # Content-Type aus Response übernehmen oder fallback

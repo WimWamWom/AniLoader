@@ -24,6 +24,12 @@ services:
       - ./Anime-Filme:/app/Anime-Filme
       # config.yaml: storage.serien_movies_path = /app/Serien-Filme
       - ./Serien-Filme:/app/Serien-Filme
+    # Startet einen echten Init-Prozess (tini) als PID 1.
+    # Ohne dies ist python selbst PID 1 und erntet verwaiste Enkelprozesse nicht –
+    # abgestürzte Chromium-Kinder von aniworld bleiben als Zombies liegen und
+    # belegen PIDs, bis der Container keine neuen Threads mehr starten kann
+    # ("RuntimeError: can't start new thread").
+    init: true
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Europe/Berlin

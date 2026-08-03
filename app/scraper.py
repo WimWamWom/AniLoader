@@ -7,6 +7,7 @@ falls DoH im Netzwerk blockiert ist (z.B. Firmennetz).
 """
 
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -20,21 +21,44 @@ from .logger import log
 
 _session: Optional[Session] = None
 _dns_mode: str = "doh"  # 'doh' | 'system'
+_session_lock = threading.Lock()
 
 # Harter Wall-Clock-Timeout für jeden HTTP-Request (inkl. DNS-Auflösung).
 # niquests' timeout= greift nicht für die interne DoH-DNS-Phase –
-# daher sichern wir jeden Request zusätzlich via ThreadPoolExecutor ab.
+# daher sichern wir jeden Request zusätzlich über einen Worker-Thread ab.
 _HTTP_HARD_TIMEOUT: int = 30  # Sekunden
 
+# Ein einziger, gemeinsamer Executor für alle HTTP-Requests.
+# Früher wurde pro Request ein eigener ThreadPoolExecutor erzeugt; hängt ein
+# Request in der DoH-Auflösung, blockiert dessen shutdown(wait=True) den Aufrufer
+# dauerhaft und der Worker-Thread bleibt für immer am Leben. Bei genügend
+# Timeouts gehen dem Container dadurch die Threads aus.
+_HTTP_WORKERS = 4
+_EXECUTOR = ThreadPoolExecutor(max_workers=_HTTP_WORKERS, thread_name_prefix="scraper-http")
 
-def _get_session(force_new: bool = False) -> Session:
-    """Lazy-Init einer niquests-Session. Versucht DoH, fällt auf System-DNS zurück."""
-    global _session, _dns_mode
-    if _session is not None and not force_new:
-        return _session
+# Anzahl Worker, die in einem hängenden Request verloren gegangen sind.
+_stuck_workers = 0
+_stuck_lock = threading.Lock()
 
-    resolver = ["doh+google://"] if _dns_mode == "doh" else None
-    _session = Session(
+
+def _close_session_quietly(session: Optional[Session]) -> None:
+    """Gibt die Pools einer verworfenen Session frei.
+
+    Jeder urllib3-future ConnectionPool hält einen Background-Monitoring-Thread,
+    der ausschliesslich über close() beendet wird. Eine Session einfach zu
+    dereferenzieren lässt diese Threads für die Prozesslaufzeit zurück.
+    """
+    if session is None:
+        return
+    try:
+        session.close()
+    except Exception as e:
+        log(f"[SCRAPER] Session-Close fehlgeschlagen: {e}")
+
+
+def _build_session(resolver_mode: str) -> Session:
+    resolver = ["doh+google://"] if resolver_mode == "doh" else None
+    return Session(
         resolver=resolver,
         headers={
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -48,16 +72,110 @@ def _get_session(force_new: bool = False) -> Session:
             "Referer": "https://aniworld.to/",
         },
     )
-    return _session
+
+
+def _get_session() -> Session:
+    """Lazy-Init einer niquests-Session. Versucht DoH, fällt auf System-DNS zurück.
+
+    Thread-safe: mehrere Worker teilen sich dieselbe Session. Ohne Lock könnten
+    zwei Worker gleichzeitig je eine Session bauen, von denen eine unbemerkt
+    verworfen würde – samt ihrer Pool-Threads.
+    """
+    global _session
+    with _session_lock:
+        if _session is not None:
+            return _session
+        mode = _dns_mode
+
+    new_session = _build_session(mode)
+
+    with _session_lock:
+        if _session is None:
+            _session = new_session
+            return _session
+        # Ein anderer Thread war schneller – unsere Session wieder freigeben.
+        existing = _session
+    _close_session_quietly(new_session)
+    return existing
+
+
+def get_shared_session() -> Session:
+    """Gemeinsame HTTP-Session für Aufrufer ausserhalb des Scrapers.
+
+    Wichtig für alles, was wiederholt HTTP macht (Poster-Proxy, Discord-Webhook):
+    niquests.get()/post() auf Modulebene bauen pro Aufruf eine neue Session mit
+    eigenem DoH-Resolver-Pool auf. Deren Monitoring-Threads werden nur bei einem
+    close() freigegeben, das ausschliesslich untätige Pools erwischt – wiederholte
+    Aufrufe lassen also Threads zurück.
+    """
+    return _get_session()
+
+
+def _switch_to_system_dns(reason: str) -> None:
+    """Schaltet dauerhaft auf System-DNS um und verwirft die DoH-Session."""
+    global _dns_mode, _session
+    with _session_lock:
+        if _dns_mode == "system":
+            return
+        log(f"[SCRAPER] Wechsle auf System-DNS: {reason}")
+        _dns_mode = "system"
+        old_session, _session = _session, None
+    _close_session_quietly(old_session)
+
+
+def _run_with_hard_timeout(fn, description: str):
+    """Führt fn im gemeinsamen Executor aus und erzwingt einen Wall-Clock-Timeout.
+
+    Bei Timeout wird der Worker NICHT abgewartet – er hängt typischerweise in der
+    DoH-Auflösung und würde den Aufrufer sonst dauerhaft blockieren. Stattdessen
+    wird auf System-DNS umgeschaltet und direkt (ohne Worker) erneut versucht.
+    """
+    global _stuck_workers
+
+    with _stuck_lock:
+        all_workers_stuck = _stuck_workers >= _HTTP_WORKERS
+
+    if all_workers_stuck:
+        # Kein freier Worker mehr – ein submit() würde nur in der Queue liegen und
+        # nach _HTTP_HARD_TIMEOUT ergebnislos ablaufen. Direkt synchron ausführen.
+        return fn()
+
+    try:
+        future = _EXECUTOR.submit(fn)
+    except RuntimeError as e:
+        # Executor bereits heruntergefahren – synchron ausführen statt zu scheitern.
+        log(f"[SCRAPER] Executor nicht verfügbar ({e}) – synchroner Fallback")
+        return fn()
+
+    try:
+        return future.result(timeout=_HTTP_HARD_TIMEOUT)
+    except FutureTimeoutError:
+        # cancel() entfernt den Task nur, falls er noch nicht gestartet ist –
+        # sonst bleibt der Worker in der DNS-Auflösung hängen und ist verloren.
+        if not future.cancel():
+            with _stuck_lock:
+                _stuck_workers += 1
+                stuck_now = _stuck_workers
+            log(
+                f"[SCRAPER] Hard-Timeout ({_HTTP_HARD_TIMEOUT}s) für {description} – "
+                f"DNS hängt (blockierte Worker: {stuck_now}/{_HTTP_WORKERS})"
+            )
+            if stuck_now >= _HTTP_WORKERS:
+                log(
+                    "[SCRAPER] Alle HTTP-Worker blockiert – Requests laufen ab jetzt "
+                    "synchron über System-DNS."
+                )
+        _switch_to_system_dns(f"Hard-Timeout bei {description}")
+        # Direkter Versuch mit System-DNS, ohne Worker-Thread.
+        return fn()
 
 
 def _fetch(url: str) -> str:
     """Fetch HTML für eine URL. Fällt auf System-DNS zurück, wenn DoH fehlschlägt.
 
-    Nutzt einen Hard-Timeout via ThreadPoolExecutor, da niquests' timeout=-Parameter
-    die interne DNS-Resolver-Phase (DoH) nicht abdeckt und dort endlos hängen kann.
+    Nutzt einen Hard-Timeout, da niquests' timeout=-Parameter die interne
+    DNS-Resolver-Phase (DoH) nicht abdeckt und dort endlos hängen kann.
     """
-    global _dns_mode, _session
 
     def _do_fetch() -> str:
         try:
@@ -66,31 +184,17 @@ def _fetch(url: str) -> str:
             return str(resp.text)
         except Exception as e:
             if _dns_mode == "doh":
-                log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
-                _dns_mode = "system"
-                _session = None  # Session neu erstellen
-                resp = _get_session(force_new=True).get(url, timeout=15)
+                _switch_to_system_dns(str(e))
+                resp = _get_session().get(url, timeout=15)
                 resp.raise_for_status()
                 return str(resp.text)
             raise
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_do_fetch)
-        try:
-            return future.result(timeout=_HTTP_HARD_TIMEOUT)
-        except FutureTimeoutError:
-            log(f"[SCRAPER] Hard-Timeout ({_HTTP_HARD_TIMEOUT}s) für {url} – DNS hängt, wechsle auf System-DNS")
-            _dns_mode = "system"
-            _session = None
-            # Direkter Versuch mit System-DNS, ohne doH
-            resp = _get_session(force_new=True).get(url, timeout=15)
-            resp.raise_for_status()
-            return str(resp.text)
+    return _run_with_hard_timeout(_do_fetch, url)
 
 
 def _post(url: str, **kwargs):
     """POST-Request mit DNS-Fallback."""
-    global _dns_mode, _session
     kwargs.setdefault("timeout", 15)
 
     def _do_post():
@@ -98,21 +202,11 @@ def _post(url: str, **kwargs):
             return _get_session().post(url, **kwargs)
         except Exception as e:
             if _dns_mode == "doh":
-                log(f"[SCRAPER] DoH fehlgeschlagen, wechsle auf System-DNS: {e}")
-                _dns_mode = "system"
-                _session = None
-                return _get_session(force_new=True).post(url, **kwargs)
+                _switch_to_system_dns(str(e))
+                return _get_session().post(url, **kwargs)
             raise
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_do_post)
-        try:
-            return future.result(timeout=_HTTP_HARD_TIMEOUT)
-        except FutureTimeoutError:
-            log(f"[SCRAPER] Hard-Timeout ({_HTTP_HARD_TIMEOUT}s) für POST {url} – DNS hängt, wechsle auf System-DNS")
-            _dns_mode = "system"
-            _session = None
-            return _get_session(force_new=True).post(url, **kwargs)
+    return _run_with_hard_timeout(_do_post, f"POST {url}")
 
 
 # ──────────────────────── URL-Hilfsfunktionen ────────────────────────

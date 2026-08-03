@@ -14,6 +14,7 @@ import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -77,6 +78,10 @@ _last_run_result: Dict[str, Any] = {
 
 _CDN_403_MAX_RETRIES = 2   # max. Anzahl Wiederholungen bei 403
 _CDN_403_RETRY_DELAY = 15  # Sekunden Pause vor 403-Retry
+
+# Zeit, die der aniworld-Prozessbaum nach SIGTERM zum Aufräumen bekommt,
+# bevor SIGKILL folgt.
+_KILL_GRACE_SECONDS = 10
 
 
 def _parse_season_episode_from_url(episode_url: str) -> Optional[tuple[int, int]]:
@@ -191,6 +196,137 @@ def _reset_status():
 # ──────────────────────── Subprocess Download ────────────────────────
 
 
+class ResourceExhaustedError(RuntimeError):
+    """Der Container kann keine neuen Threads/Prozesse mehr starten.
+
+    Wird nach oben durchgereicht, damit der Lauf abbricht statt jede weitere
+    Episode fälschlich als 'nicht verfügbar' in die DB zu schreiben.
+    """
+
+
+def _is_resource_exhaustion(stderr_text: str) -> bool:
+    """Erkennt, ob aniworld am Prozess-/Thread-Limit des Systems gescheitert ist.
+
+    Bewusst eng gefasst: 'Resource temporarily unavailable' (EAGAIN) tritt auch bei
+    normalen Netzwerkfehlern auf und zählt daher nur zusammen mit einem Hinweis auf
+    Thread-/Prozesserzeugung.
+    """
+    if "can't start new thread" in stderr_text:
+        return True
+    if "Cannot allocate memory" in stderr_text and "fork" in stderr_text:
+        return True
+
+    eagain = "Resource temporarily unavailable" in stderr_text or "Errno 11" in stderr_text
+    spawn_context = any(
+        marker in stderr_text
+        for marker in ("threading.py", "_start_new_thread", "fork", "subprocess.py")
+    )
+    return eagain and spawn_context
+
+
+def _kill_process_tree(proc: subprocess.Popen, is_windows: bool) -> None:
+    """Beendet den kompletten Prozessbaum von proc (aniworld → patchright → Chromium).
+
+    Ohne dies überleben Chromium-Kindprozesse einen Timeout und belegen dauerhaft
+    PIDs und Threads, bis der Container keine neuen Threads mehr starten kann.
+    """
+    if proc.poll() is not None:
+        return
+
+    if is_windows:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception as e:
+            log(f"[WARN] taskkill fehlgeschlagen: {e}")
+            proc.kill()
+        return
+
+    # POSIX: der Prozess läuft dank start_new_session=True in eigener Prozessgruppe,
+    # daher erwischt killpg auch alle Enkel (Chromium & Co.).
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, OSError):
+        return
+
+    for sig, label in ((signal.SIGTERM, "SIGTERM"), (signal.SIGKILL, "SIGKILL")):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return
+        except OSError as e:
+            log(f"[WARN] {label} an Prozessgruppe {pgid} fehlgeschlagen: {e}")
+            return
+
+        try:
+            proc.wait(timeout=_KILL_GRACE_SECONDS)
+            # Prozessgruppe kann noch verwaiste Enkel enthalten – SIGKILL folgt trotzdem,
+            # falls wir gerade erst SIGTERM geschickt haben.
+            if sig == signal.SIGKILL:
+                return
+        except subprocess.TimeoutExpired:
+            log(f"[WARN] Prozessgruppe {pgid} reagiert nicht auf {label} – eskaliere")
+
+    # Finaler Sweep: Enkel, die die Gruppe verlassen haben bzw. SIGTERM überlebt haben.
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, OSError):
+        pass
+
+
+def _run_process_group(
+    cmd: Any, timeout: int, env: Dict[str, str], is_windows: bool
+) -> tuple:
+    """Startet cmd in eigener Prozessgruppe und räumt bei Timeout den ganzen Baum ab.
+
+    Ersetzt subprocess.run(timeout=...), das bei Timeout nur den direkten Kindprozess
+    killt und dessen Chromium-Enkel als Waisen zurücklässt.
+
+    Returns:
+        (stdout, stderr, returncode)
+    """
+    popen_kwargs: Dict[str, Any] = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "env": env,
+    }
+
+    if is_windows:
+        popen_kwargs["shell"] = True
+        popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        # Eigene Session/Prozessgruppe, damit killpg den gesamten Baum trifft.
+        popen_kwargs["start_new_session"] = True
+
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+
+    try:
+        stdout_text, stderr_text = proc.communicate(timeout=timeout)
+        return stdout_text, stderr_text, proc.returncode
+    except subprocess.TimeoutExpired:
+        log("[CLEANUP] Timeout – beende aniworld-Prozessbaum inkl. Chromium …")
+        _kill_process_tree(proc, is_windows)
+        try:
+            proc.communicate(timeout=30)
+        except Exception:
+            pass
+        raise
+    except BaseException:
+        # Auch bei KeyboardInterrupt/Stop darf kein Chromium zurückbleiben.
+        _kill_process_tree(proc, is_windows)
+        try:
+            proc.communicate(timeout=30)
+        except Exception:
+            pass
+        raise
+
+
 def _run_aniworld_download(
     episode_url: str, language: str, output_path: str, timeout: int = 900
 ) -> bool:
@@ -215,11 +351,15 @@ def _run_aniworld_download(
     if cli_url != episode_url:
         log(f"[CMD] Normalisiere URL für aniworld CLI: {episode_url} -> {cli_url}")
 
+    cmd: Any
     if is_windows:
         cmd = f'chcp 65001 >nul & aniworld --language "{language}" -a Download -o "{output_path}" {cli_url}'
+        log(f"[CMD] {cmd}")
     else:
-        cmd = f"aniworld --language '{language}' -a Download -o '{output_path}' {cli_url}"
-    log(f"[CMD] {cmd}")
+        # Kein shell=True auf POSIX: die Shell wäre ein zusätzlicher Prozess zwischen
+        # uns und aniworld und würde das Aufräumen des Prozessbaums erschweren.
+        cmd = ["aniworld", "--language", language, "-a", "Download", "-o", output_path, cli_url]
+        log(f"[CMD] aniworld --language '{language}' -a Download -o '{output_path}' {cli_url}")
 
     for attempt in range(1 + _CDN_403_MAX_RETRIES):
         if attempt > 0:
@@ -227,15 +367,8 @@ def _run_aniworld_download(
             time.sleep(_CDN_403_RETRY_DELAY)
 
         try:
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
-                env=subprocess_env,
+            stdout_text, stderr_text, returncode = _run_process_group(
+                cmd, timeout=timeout, env=subprocess_env, is_windows=is_windows
             )
         except subprocess.TimeoutExpired:
             log(f"[ERROR] Timeout ({timeout}s) für {episode_url}")
@@ -245,22 +378,32 @@ def _run_aniworld_download(
             return False
 
         # Log Output
-        if result.stdout:
-            for line in result.stdout.strip().split("\n"):
+        if stdout_text:
+            for line in stdout_text.strip().split("\n"):
                 if line.strip():
                     log(f"[ANIWORLD] {line.strip()}")
 
-        if result.returncode == 0:
+        if returncode == 0:
             # Kurz warten bis Dateisystem aufholt
             time.sleep(3)
             return True
 
         # Fehlerausgabe prüfen
-        stderr_text = result.stderr or ""
-        if result.stderr:
+        stderr_text = stderr_text or ""
+        if stderr_text:
             for line in stderr_text.strip().split("\n"):
                 if line.strip():
                     log(f"[ANIWORLD-ERR] {line.strip()}")
+
+        if _is_resource_exhaustion(stderr_text):
+            log(
+                "[FATAL] Container hat keine Threads/PIDs mehr frei – "
+                "aniworld konnte nicht einmal starten. Weitere Downloads würden "
+                "ebenfalls scheitern und Episoden fälschlich als 'nicht verfügbar' markieren."
+            )
+            raise ResourceExhaustedError(
+                "Prozess-/Thread-Limit des Containers erreicht"
+            )
 
         # Bei HTTP 403 (CDN-Token abgelaufen) → Retry
         if "HTTP error 403" in stderr_text or "403 Forbidden" in stderr_text:
@@ -1107,6 +1250,15 @@ def _download_worker(mode: str) -> None:
             _last_run_result["mode"] = mode
             _last_run_result["finished_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _last_run_result["result"] = deepcopy(run_result)
+
+    except ResourceExhaustedError as e:
+        log(f"[ABORT] Lauf abgebrochen: {e}")
+        log(
+            "[ABORT] Bitte den Container neu starten. Verwaiste Chromium-Prozesse "
+            "eines früheren Timeouts belegen vermutlich alle PIDs."
+        )
+        with _status_lock:
+            status["status"] = "finished"
 
     except Exception as e:
         log(f"[FATAL] Download-Thread-Fehler: {e}")
