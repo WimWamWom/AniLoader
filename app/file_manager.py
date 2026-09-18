@@ -5,6 +5,7 @@ Verwaltet Dateipfade, prüft ob Episoden bereits heruntergeladen sind,
 und findet heruntergeladene Dateien nach dem Download.
 """
 
+import html
 import os
 import re
 import shutil
@@ -45,6 +46,26 @@ def _extract_imdb_id(folder_name: Optional[str]) -> Optional[str]:
     return m.group(1).lower() if m else None
 
 
+def _normalize_title(text: str) -> str:
+    """Normalisiert Titel für Ordnervergleiche (HTML-Entities, Satzzeichen, Groß/Klein)."""
+    # Verbotene Zeichen wie die CLI ersatzlos entfernen ("Re:ZERO" → "ReZERO")
+    text = re.sub(r'[<>:"/\\|?*]', '', html.unescape(text))
+    return re.sub(r"[\W_]+", " ", text).strip().casefold()
+
+
+def _folder_title_variants(folder: str) -> set[str]:
+    """
+    Liefert die normalisierten Titel-Varianten eines Serienordners.
+
+    aniworld CLI: "{title} ({year}) [imdbid-{id}]" – Jahr teils als Bereich
+    ("(2020-2026)") oder doppelt ("Genial Daneben (2017) (2017)"), Titel teils
+    mit HTML-Entities ("Sam &amp; Cat"). Alte AniLoader-Ordner heißen nur "{title}".
+    """
+    without_id = re.sub(r"\s*\[[^\]]*\]\s*$", "", folder)
+    without_year = re.sub(r"\s*\(\d{4}(?:\s*-\s*\d{4})?\)\s*$", "", without_id)
+    return {_normalize_title(folder), _normalize_title(without_id), _normalize_title(without_year)}
+
+
 def _resolve_series_dirs(
     base_path: Path,
     folder_name: Optional[str] = None,
@@ -76,14 +97,20 @@ def _resolve_series_dirs(
                 if d.is_dir() and marker in d.name.lower():
                     _add(d)
 
-    if title_hint:
-        title_sanitized = re.sub(r'[<>:"/\\|?*]', '', title_hint)
-        title_lower = title_sanitized.lower()[:15]
-        for d in base_path.iterdir():
-            if d.is_dir() and title_lower in d.name.lower():
-                _add(d)
+    elif title_hint:
+        # Nur ohne bekannten Ordner raten – und nur bei exaktem Titel-Treffer,
+        # sonst matcht z.B. "The Daily Life of the Immortal King" auf
+        # "The Daily Life of a Middle-Aged Online Shopper in Another World".
+        title_norm = _normalize_title(title_hint)
+        if title_norm:
+            for d in base_path.iterdir():
+                if d.is_dir() and title_norm in _folder_title_variants(d.name):
+                    _add(d)
 
-    if not candidates:
+    else:
+        # Ohne jeden Hinweis (z.B. TMP-Verzeichnis) direkt im Basis-Pfad suchen.
+        # Nicht bei unbekanntem Titel: sonst durchsucht rglob die ganze Bibliothek
+        # und liefert Episoden fremder Serien.
         _add(base_path)
 
     return candidates
@@ -158,10 +185,10 @@ def episode_already_downloaded(
     Prüft ob eine Episode bereits heruntergeladen wurde.
 
     Suchstrategie:
-        1. folder_name aus DB bekannt → suche in exaktem Unterordner
+        1. folder_name aus DB bekannt → suche in exaktem Unterordner (+ gleiche imdbid)
         2. folder_name unbekannt, title_hint vorhanden → suche in Unterordnern
-           die den Serientitel enthalten (z.B. "The Rookie (2018)...")
-        3. Fallback → suche direkt im Basis-Pfad
+           mit exakt diesem Serientitel (z.B. "The Rookie (2018)...")
+        3. Weder folder_name noch title_hint → suche direkt im Basis-Pfad
 
     Muster: S01E001 / Film01 / S00E001 (CLI-Original) / S00E01 (Jellyfin-Final)
     Gibt den Dateipfad zurück falls gefunden, sonst None.
@@ -212,8 +239,8 @@ def find_downloaded_file(
 
     Suchstrategie:
         1. folder_name bekannt → suche nur in diesem Unterordner
-        2. title_hint bekannt  → suche in Unterordnern die den Titel enthalten
-        3. Fallback            → rglob über alle Unterordner (unsicher bei mehreren Serien)
+        2. title_hint bekannt  → suche in Unterordnern mit exakt diesem Titel
+        3. Keine Hinweise      → rglob über alle Unterordner (nur für TMP gedacht)
     """
     base = Path(download_path)
     if not base.exists():
