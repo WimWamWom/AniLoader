@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from .domains import DEFAULT_DOMAINS
+
 try:
     from croniter import croniter
 except Exception:  # pragma: no cover - fallback if optional dependency is missing
@@ -31,6 +33,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "English Sub",
         "English Dub",
     ],
+    # Domains der unterstützten Plattformen. `canonical` wird gespeichert und
+    # ausgegeben, `aliases` nur als Eingabe akzeptiert und normalisiert.
+    # Neue Mirror-Domain? Einfach unter aliases ergänzen. Details: app/domains.py
+    "domains": {
+        platform: {"canonical": entry["canonical"], "aliases": list(entry["aliases"])}
+        for platform, entry in DEFAULT_DOMAINS.items()
+    },
     "storage": {
         "mode": "standard",  # standard | separate
         "download_path": str(DEFAULT_DOWNLOAD_DIR),
@@ -99,6 +108,75 @@ VALID_FILM_NAMING_MODES = ["local", "jellyfin"]
 AUTOMATION_MODES = ["german", "new", "german_new"]
 
 
+# ──────────────────────── Sprach-Normalisierung ────────────────────────
+# Zentral hier, damit Downloader (gescrapte Labels) und Datenbank
+# (gewünschte Sprachen pro Eintrag) dieselben Namen verwenden.
+
+_LANGUAGE_ALIASES = {
+    "german dub": "German Dub",
+    "german": "German Dub",
+    "deutsch": "German Dub",
+    "de": "German Dub",
+    "german sub": "German Sub",
+    "deutsch sub": "German Sub",
+    "deutsch untertitel": "German Sub",
+    "english dub": "English Dub",
+    "english": "English Dub",
+    "en": "English Dub",
+    "english sub": "English Sub",
+    "englisch sub": "English Sub",
+    "englische untertitel": "English Sub",
+}
+
+
+def normalize_language_label(label: Any) -> str:
+    """
+    Normalisiert ein Sprach-Label auf einen internen Namen.
+
+    Unbekannte Labels werden unverändert (nur getrimmt) zurückgegeben, damit
+    gescrapte Sprachen von der Webseite nicht verloren gehen.
+    """
+    text = str(label or "").strip()
+    return _LANGUAGE_ALIASES.get(text.lower(), text)
+
+
+def normalize_language_list(languages: Any, strict: bool = False) -> List[str]:
+    """
+    Normalisiert eine Sprachliste, entfernt Duplikate, behält die Reihenfolge.
+
+    Args:
+        languages: Liste beliebiger Sprach-Labels
+        strict:    True → nur Sprachen aus VALID_LANGUAGES behalten
+                   (für die gewünschten Sprachen eines DB-Eintrags)
+    """
+    if not isinstance(languages, (list, tuple, set)):
+        return []
+
+    normalized: List[str] = []
+    seen: set = set()
+    for lang in languages:
+        norm = normalize_language_label(lang)
+        if not norm or norm in seen:
+            continue
+        if strict and norm not in VALID_LANGUAGES:
+            continue
+        seen.add(norm)
+        normalized.append(norm)
+    return normalized
+
+
+def sort_languages_by_priority(languages: List[str], cfg: Optional[dict] = None) -> List[str]:
+    """
+    Sortiert Sprachen nach der global konfigurierten Prioritäts-Kaskade.
+
+    Dadurch wird bei Mehrsprach-Einträgen immer zuerst die höchstpriorisierte
+    Sprache (i.d.R. German Dub) geladen. Unbekannte Sprachen landen am Ende.
+    """
+    priority = (cfg or {}).get("languages") or DEFAULT_CONFIG["languages"]
+    order = {lang: idx for idx, lang in enumerate(priority)}
+    return sorted(languages, key=lambda lang: (order.get(lang, len(order)), lang))
+
+
 def _is_valid_webhook_url(url: str) -> bool:
     if not url:
         return True
@@ -109,6 +187,14 @@ def _is_valid_webhook_url(url: str) -> bool:
 
 def _validate_string_list(values: Any) -> bool:
     return isinstance(values, list) and all(isinstance(v, str) for v in values)
+
+
+def _is_bare_host(value: Any) -> bool:
+    """Prüft, ob ein Wert ein reiner Host ist ('serienstream.to', '186.2.175.5')."""
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return "://" not in text and "/" not in text and " " not in text
 
 
 def _is_hidden_final_folder(path_value: Any) -> bool:
@@ -189,6 +275,37 @@ def validate_config(cfg: dict) -> List[str]:
         for lang in langs:
             if lang not in VALID_LANGUAGES:
                 errors.append(f"Ungültige Sprache: '{lang}'. Erlaubt: {VALID_LANGUAGES}")
+
+    # Domains
+    domains_cfg = cfg.get("domains", {})
+    if not isinstance(domains_cfg, dict):
+        errors.append("domains muss ein Objekt sein")
+    else:
+        for platform in DEFAULT_DOMAINS:
+            entry = domains_cfg.get(platform, {})
+            if not isinstance(entry, dict):
+                errors.append(f"domains.{platform} muss ein Objekt sein")
+                continue
+
+            canonical = entry.get("canonical", "")
+            if not isinstance(canonical, str) or not canonical.strip():
+                errors.append(f"domains.{platform}.canonical darf nicht leer sein")
+            elif not _is_bare_host(canonical):
+                errors.append(
+                    f"domains.{platform}.canonical muss ein reiner Host sein "
+                    f"(ohne Protokoll und ohne '/'), ist: '{canonical}'"
+                )
+
+            aliases = entry.get("aliases", [])
+            if not _validate_string_list(aliases):
+                errors.append(f"domains.{platform}.aliases muss eine Liste von Strings sein")
+            else:
+                for alias in aliases:
+                    if not _is_bare_host(alias):
+                        errors.append(
+                            f"domains.{platform}.aliases: '{alias}' muss ein reiner Host sein "
+                            f"(ohne Protokoll und ohne '/')"
+                        )
 
     # Storage
     storage = cfg.get("storage", {})
@@ -371,7 +488,8 @@ def get_download_path(cfg: dict, url: str, is_film: bool = False) -> str:
         return download_path
 
     # Separate mode
-    is_anime = "aniworld.to" in url
+    from .domains import is_aniworld
+    is_anime = is_aniworld(url)
 
     if is_anime:
         if is_film and storage.get("anime_separate_movies"):

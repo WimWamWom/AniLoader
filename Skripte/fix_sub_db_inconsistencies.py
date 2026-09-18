@@ -24,10 +24,19 @@ from collections import defaultdict
 from pathlib import Path
 
 
-# ──────────────────────── URL-Logik (analog zu app/scraper.py) ────────────────────────
+# ──────────────────────── URL-Logik ────────────────────────
+# Kein eigenes Domain-Wissen mehr: die Registry aus app/domains.py ist die
+# einzige Quelle der Wahrheit und kennt auch konfigurierte Mirror-Domains.
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.domains import get_base_url, is_serienstream  # noqa: E402
+
 
 def is_sto(url: str) -> bool:
-    return "serienstream.to" in url or "serienstream.cx" in url or "s.to" in url
+    return is_serienstream(url)
 
 
 def build_episode_url(series_url: str, season: int, episode: int) -> str:
@@ -38,18 +47,6 @@ def build_episode_url(series_url: str, season: int, episode: int) -> str:
         else:
             return f"{series_url}/filme/film-{episode}"
     return f"{series_url}/staffel-{season}/episode-{episode}"
-
-
-def get_base_url(url: str) -> str:
-    """Gibt die Serien-Basis-URL ohne Staffel/Episode zurück."""
-    url = url.strip().rstrip("/")
-    if "aniworld.to" in url:
-        m = re.match(r"(https://aniworld\.to/anime/stream/[^/]+)", url, re.IGNORECASE)
-        return m.group(1) if m else url
-    if "serienstream.to" in url or "serienstream.cx" in url or "s.to" in url:
-        m = re.match(r"(https://(?:serienstream\.(?:to|cx)|s\.to)/serie/[^/]+)", url, re.IGNORECASE)
-        return m.group(1) if m else url
-    return url
 
 
 # ──────────────────────── Report-Parser ────────────────────────

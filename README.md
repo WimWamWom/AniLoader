@@ -50,6 +50,8 @@
     - [API](#api)
     - [Tampermonkey](#tampermonkey)
   - [Konfiguration](#konfiguration)
+  - [Domains & Mirrors](#domains--mirrors)
+  - [Mehrere Sprachen pro Serie](#mehrere-sprachen-pro-serie)
   - [Automation](#automation)
   - [Datei-Struktur](#datei-struktur)
     - [Standard-Modus](#standard-modus)
@@ -65,6 +67,7 @@
   - **🤖 Automation:** Geplante Läufe per Cron-Schedule oder Intervall mit Discord-Benachrichtigungen
   - **🔍 Suche + Poster:** Durchsuche Aniworld und SerieStream
   - **🇩🇪 Sprach-Priorität:** German Dub → Sub → English (automatischer Fallback)
+  - **🌍 Mehrsprach-Download:** Pro Serie mehrere Sprachen gleichzeitig pflegen (Datenbank-Tab → Spalte *Sprachen*) – jede Sprache landet als eigene Datei, sequenziell geladen (kein Merging durch aniworld)
   - **📁 Jellyfin-Ready:** `Title (Year) [IMDB]/Season/Episode.mkv`
   - **💾 Persistent:** SQLite-DB und Config überleben Container-Neustarts
   - **📄 AniLoader.txt Import:** Automatischer Import beim Container-Start
@@ -236,6 +239,13 @@
   GET /export/database     # SQLite-DB Download
   GET /export/links        # AniLoader.txt Download
 
+  # Gewünschte Sprachen eines Eintrags (Mehrsprach-Download)
+  GET /anime/{id}/languages
+  PUT /anime/{id}/languages
+  {"languages": ["German Dub", "English Sub"],
+   "delete_files": true,    # optional: Dateien entfernter Sprachen löschen (Standard: true)
+   "dry_run": false}        # optional: nur anzeigen, was gelöscht würde
+
   # Titel aktualisieren (aus Webseiten)
   POST /refresh_titles
 
@@ -296,6 +306,17 @@
     - English Sub              # 3. Priorität
     - English Dub              # 4. Priorität
 
+  domains:                      # Domains der Plattformen – siehe "Domains & Mirrors"
+    aniworld:
+      canonical: aniworld.to
+      aliases: []
+    serienstream:
+      canonical: serienstream.to  # einzige Domain, die gespeichert/ausgegeben wird
+      aliases:                    # nur als Eingabe akzeptiert, werden normalisiert
+        - serienstream.cx
+        - 186.2.175.5
+        - s.to
+
   storage:
     mode: standard             # standard | separate
     download_path: /app/Downloads
@@ -326,6 +347,176 @@
   - **new:** Prüft alle Serien auf neue Episoden
   - **german_new:** Kombiniert german + new in einem Lauf
   - **check:** Integritätsprüfung + defekte Downloads reparieren
+
+  ---
+
+  ## Domains & Mirrors
+
+  aniworld.to und serienstream.to ziehen regelmäßig um. Alle Domains stehen deshalb
+  an **einer** Stelle – im Abschnitt `domains:` der `config.yaml`. Ein Umzug ist damit
+  eine Konfigurationsänderung, kein Code-Eingriff.
+
+  ```yaml
+  domains:
+    serienstream:
+      canonical: serienstream.to    # wird gespeichert und ausgegeben
+      aliases:                      # werden nur erkannt und normalisiert
+        - serienstream.cx
+        - 186.2.175.5
+        - s.to
+  ```
+
+  **Regeln:**
+  - `canonical` ist die **einzige** Domain, die je in der Datenbank landet oder nach
+    außen geht. `s.to` erscheint dadurch nirgends mehr.
+  - `aliases` werden ausschließlich als **Eingabe** akzeptiert (alte Lesezeichen,
+    Mirrors, IP-Adresse) und sofort auf `canonical` umgeschrieben.
+  - Werte sind reine Hosts – ohne `https://` und ohne `/`.
+
+  **Neue Mirror-Domain hinzufügen:**
+  1. Domain unter `aliases` eintragen (Einstellungen → oder direkt in `config.yaml`)
+  2. Im `Tampermonkey.user.js` dieselbe Domain in `PLATFORMS` **und** als
+     `// @match https://<domain>/*` ergänzen
+  3. Speichern – AniLoader lädt die Domainliste sofort neu, kein Neustart nötig
+
+  > ⚠️ **Die `aniworld`-Library bringt ihre eigene Domainliste mit**
+  > (`aniworld/config.py` → `_STO_HOST`, `aniworld/cf_bypass.py` → `_CF_BYPASS_DOMAINS`).
+  > Sie kennt aktuell `serienstream.to`, `serienstream.cx`, `s.to` und `186.2.175.5`,
+  > der Cloudflare-Bypass greift aber nur für `serienstream.to` und `s.to`.
+  > Eine hier ergänzte, der Library **unbekannte** Domain wird von AniLoader zwar
+  > akzeptiert und normalisiert, das eigentliche Laden schlägt aber fehl, bis die
+  > Library nachzieht.
+
+  ### Automatische Migration der Datenbank
+
+  Beim Start (`python main.py` bzw. Container-Start) werden vorhandene Einträge
+  automatisch auf die kanonische Domain umgeschrieben – URL **und** `series_key`:
+
+  ```
+  https://s.to/serie/the-rookie   →  https://serienstream.to/serie/the-rookie
+  s.to:the-rookie                 →  serienstream:the-rookie
+  ```
+
+  Der `series_key` enthält bewusst **keine Domain mehr**, sondern den Plattformnamen –
+  so übersteht die Duplikaterkennung jeden weiteren Domain-Wechsel. Die Migration ist
+  idempotent und läuft bei jedem Start; sie ändert nur Zeilen, bei denen sich etwas
+  ergibt. Sollte eine kanonische URL bereits belegt sein (echtes Duplikat), wird die
+  Zeile übersprungen und im Log als `[DB-WARN]` gemeldet.
+
+  ---
+
+  ## Mehrere Sprachen pro Serie
+
+  Die `languages`-Liste in der `config.yaml` ist eine **Prioritäts-Kaskade**: es wird
+  genau *eine* Sprache geladen – die erste verfügbare. Wer eine Serie in **mehreren
+  Sprachen parallel** haben möchte (z.B. German Dub *und* English Sub), hinterlegt die
+  gewünschten Sprachen direkt am Datenbank-Eintrag.
+
+  **Erlaubte Werte:** `German Dub` · `German Sub` · `English Dub` · `English Sub`
+  (identisch mit den Sprachcodes der aniworld-CLI)
+
+  ### Sprachen setzen
+
+  **Im Web-Interface (empfohlen):** Tab **Datenbank** → Spalte **Sprachen** → auf die
+  Chips der Zeile klicken. Im Dialog die gewünschten Sprachen anhaken und speichern.
+
+  - Einträge ohne eigene Auswahl zeigen den Chip **`Kaskade`**
+  - Wird eine Sprache abgewählt, erscheint direkt im Dialog eine **Vorschau aller
+    Dateien, die gelöscht würden** – vor dem Speichern und vor einer zusätzlichen
+    Sicherheitsabfrage
+
+  **Per API:**
+
+  ```bash
+  # Aktuelle Auswahl abfragen
+  curl http://localhost:5050/anime/12/languages
+
+  # German Dub + English Sub für Eintrag 12 gewünscht
+  curl -X PUT http://localhost:5050/anime/12/languages \
+       -H "Content-Type: application/json" \
+       -d '{"languages": ["German Dub", "English Sub"]}'
+  ```
+
+  **Per Skript:** In **`Skripte/db_edit.py`** `ANIME_ID` und
+  `languages = ["German Dub", "English Sub"]` setzen und ausführen – auch hier gibt es
+  vor dem Speichern eine Vorschau aller betroffenen Dateien.
+
+  **Leere Liste = keine eigene Auswahl** → es gilt wieder die globale Kaskade aus der
+  `config.yaml` (Standard für alle bestehenden Einträge, es ändert sich also nichts,
+  solange nichts gesetzt wird).
+
+  ### Wie der Download abläuft
+
+  aniworld führt mehrere Sprachversionen automatisch zusammen, sobald beide im selben
+  Arbeitsordner landen. AniLoader verhindert das durch einen **strikt sequenziellen**
+  Ablauf – niemals parallel:
+
+  ```
+  TMP leeren → Sprache A laden → Datei sofort ins Zielverzeichnis verschieben
+             → TMP leeren → Sprache B laden → Datei verschieben → TMP leeren
+  ```
+
+  Dadurch liegt zu keinem Zeitpunkt mehr als eine Sprachversion im aniworld-Ordner.
+
+  ### Inkrementell – nichts wird doppelt geladen
+
+  Bei jedem Lauf wird pro **(Episode, Sprache)** geprüft, ob die Datei bereits existiert
+  (Erkennung über das Sprach-Suffix im Dateinamen). Geladen wird nur, was fehlt:
+
+  - neue Episoden in allen gewünschten Sprachen
+  - fehlende Sprachen bei bereits vorhandenen Episoden
+
+  Wird eine Sprache **ergänzt**, setzt AniLoader den Fortschritts-Zeiger des Eintrags
+  zurück (`complete`, `last_season`, `last_episode`, `last_film`), damit der nächste
+  Lauf auch alte Staffeln erneut prüft. Bereits vorhandene Dateien werden dabei
+  übersprungen.
+
+  ### Sprache entfernen
+
+  Wird eine Sprache aus der Auswahl entfernt, löscht AniLoader **ausschließlich die
+  Episodendateien dieser Sprache**. Alle anderen Sprachversionen, Episoden und Serien
+  bleiben unangetastet. Sicherheitsregeln:
+
+  - Ohne bekannten Serien-Ordnernamen (`folder_name`) wird **nichts** gelöscht
+  - Nur Ordner der Serie selbst (exakter Name oder identische imdbid) – kein Titel-Raten
+  - Nur `.mkv`/`.mp4` mit erkennbarem Episodencode (`S01E001`, `Film01`, …)
+  - Die Sprache muss eindeutig aus dem Dateinamen hervorgehen
+  - Jede gelöschte Datei wird im Log protokolliert (`[LANG-DEL]`)
+
+  Im Web-Interface passiert das automatisch: sobald eine Sprache abgewählt wird, listet
+  der Dialog die betroffenen Dateien auf, bevor irgendetwas gespeichert wird.
+
+  ```bash
+  # Vorher anschauen, was gelöscht würde (ändert weder DB noch Dateien)
+  curl -X PUT http://localhost:5050/anime/12/languages \
+       -H "Content-Type: application/json" \
+       -d '{"languages": ["German Dub"], "dry_run": true}'
+
+  # Dateien behalten und nur die DB ändern
+  curl -X PUT http://localhost:5050/anime/12/languages \
+       -H "Content-Type: application/json" \
+       -d '{"languages": ["German Dub"], "delete_files": false}'
+  ```
+
+  > **Hinweis:** Das Leeren der kompletten Auswahl (`[]`) löscht **keine** Dateien –
+  > es bedeutet „zurück zur globalen Kaskade", nicht „alles entfernen".
+
+  ### 🎬 Jellyfin: Sprachversionen wieder zusammenführen
+
+  Auf der Platte liegt pro Sprache eine eigene Datei, damit aniworld sie sauber getrennt
+  hält. Jellyfin zeigt sie dadurch standardmäßig als **mehrere Episoden** an.
+
+  Das Plugin **[jellyfin-plugin-mergeversions](https://github.com/danieladov/jellyfin-plugin-mergeversions)**
+  führt sie clientseitig wieder zu **einer Episode mit Versionsauswahl** zusammen – der
+  Zuschauer wählt die Sprache dann direkt im Player, die Dateien bleiben unverändert.
+
+  **Installation in Jellyfin:**
+  1. Dashboard → *Plugins* → *Repositories* → Repository hinzufügen:
+     `https://raw.githubusercontent.com/danieladov/JellyfinPluginManifest/master/manifest.json`
+  2. *Katalog* → **Merge Versions** installieren → Jellyfin neu starten
+  3. Dashboard → *Geplante Aufgaben* → **Merge All Versions** ausführen
+     (oder als wiederkehrende Aufgabe einplanen, damit neue Downloads automatisch
+     zusammengeführt werden)
 
   ---
 
@@ -447,6 +638,12 @@
   - **Filme (Jellyfin):** `Season 00/S00E001 - Titel.mkv` – Jellyfin erkennt Season 00 als "Specials"
   - **Suffixe:** `""` (German Dub), `[Sub]` (German Sub), `[English Dub]`, `[English Sub]`
 
+  > **Mehrere Sprachen:** Bei Einträgen mit eigener Sprachauswahl liegt pro Sprache eine
+  > eigene Datei nebeneinander (`S01E001 - Titel.mkv` + `S01E001 - Titel [English Sub].mkv`).
+  > Das Suffix ist gleichzeitig die Sprach-Kennung für inkrementelle Downloads und für das
+  > gezielte Löschen. Zum Zusammenführen in Jellyfin siehe
+  > [Mehrere Sprachen pro Serie](#mehrere-sprachen-pro-serie).
+
   > **Film-Benennung wechseln:** Einstellungen → Film-Benennung → Modus wählen → "Dateien jetzt umbenennen & verschieben". Die Migration ist transaktional – bei einem Abbruch können `.migrate_tmp`-Dateien beim nächsten Wechsel aufgeräumt werden. Wechsel in beide Richtungen möglich.
 
   ---
@@ -474,8 +671,23 @@
   **Q: Separate vs Standard Mode?**  
   A: **Standard** = Alles in Downloads. **Separate** = Anime/Serien getrennt für bessere Jellyfin-Organisation
 
+  **Q: serienstream.to ist umgezogen – was muss ich tun?**  
+  A: Neue Domain in `config.yaml` unter `domains.serienstream.aliases` eintragen (oder als neue `canonical` setzen) und im `Tampermonkey.user.js` unter `PLATFORMS` + `@match` ergänzen. Kein Code-Eingriff. Details: [Domains & Mirrors](#domains--mirrors). Achtung: die `aniworld`-Library muss die Domain ebenfalls kennen, sonst schlägt der Download fehl.
+
+  **Q: Was ist aus `s.to` geworden?**  
+  A: `s.to` ist nur noch ein Eingabe-Alias – alte Links funktionieren weiter, werden aber sofort auf `serienstream.to` normalisiert. Gespeichert oder ausgegeben wird `s.to` nirgends mehr. Bestehende Datenbank-Einträge werden beim Start automatisch umgeschrieben.
+
   **Q: Welche Sprache wird heruntergeladen?**  
   A: Erste verfügbare aus der `languages`-Liste. Kaskade: German Dub → German Sub → English Sub → English Dub
+
+  **Q: Kann ich eine Serie in mehreren Sprachen gleichzeitig laden?**  
+  A: Ja – Datenbank-Tab → Spalte **Sprachen** → Zeile anklicken → Sprachen anhaken. Alternativ per `PUT /anime/{id}/languages` oder `Skripte/db_edit.py`. Jede Sprache wird nacheinander geladen und als eigene Datei abgelegt. Details: [Mehrere Sprachen pro Serie](#mehrere-sprachen-pro-serie)
+
+  **Q: Jellyfin zeigt jede Sprachversion als eigene Episode – wie führe ich sie zusammen?**  
+  A: Mit dem Plugin [jellyfin-plugin-mergeversions](https://github.com/danieladov/jellyfin-plugin-mergeversions). Es fasst die Dateien clientseitig zu einer Episode mit Versionsauswahl zusammen; die Dateien auf der Platte bleiben getrennt (nötig, damit aniworld sie nicht mergt).
+
+  **Q: Was passiert, wenn ich eine Sprache wieder entferne?**  
+  A: Nur die Episodendateien genau dieser Sprache werden gelöscht – erkannt am Suffix im Dateinamen. Andere Sprachen, Episoden und Serien bleiben unberührt. Mit `"dry_run": true` lässt sich vorher anzeigen, was betroffen wäre.
 
   **Q: Was ist der Unterschied zwischen `german` und `german_new`?**  
   A: `german` sucht nur fehlende deutsche Episoden bei bereits vorhandenen Serien. `german_new` prüft zusätzlich auf neue Episoden – beides in einem Lauf.

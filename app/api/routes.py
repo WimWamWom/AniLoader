@@ -12,8 +12,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from .. import database as db
-from .. import automation, downloader, scraper
+from .. import automation, domains, downloader, scraper
 from ..config import (
+    VALID_LANGUAGES,
     get_data_folder,
     get_download_path,
     get_film_naming_mode,
@@ -22,7 +23,7 @@ from ..config import (
     validate_config,
 )
 from ..file_manager import count_episodes_on_disk, get_free_space_gb, migrate_film_naming
-from ..logger import get_all_logs, get_last_run_log, get_log_from_offset, log
+from ..logger import get_all_logs, get_last_run_log, get_log_from_offset, log, read_log_slice
 
 router = APIRouter()
 
@@ -42,6 +43,17 @@ _POSTER_CACHE_MAX = 500
 def _data_folder() -> str:
     cfg = load_config()
     return get_data_folder(cfg)
+
+
+def _known_hosts_label() -> str:
+    """Lesbare Liste der kanonischen Domains für Fehlermeldungen."""
+    return " und ".join(domains.canonical_host(p) for p in domains.DEFAULT_DOMAINS)
+
+
+def _poster_referer(image_url: str) -> str:
+    """Referer für den Poster-Proxy – kanonische Domain der erkannten Plattform."""
+    platform = domains.ANIWORLD if domains.is_aniworld(image_url) else domains.SERIENSTREAM
+    return f"{domains.canonical_origin(platform)}/"
 
 
 # ──────────────────────── Web-UI ────────────────────────
@@ -221,7 +233,7 @@ async def export_anime(request: Request):
         return JSONResponse(status_code=400, content={"status": "error"})
 
     url = scraper.normalize_series_url(body.get("url", "").strip())
-    if not url or (not scraper.is_aniworld(url) and not scraper.is_sto(url)):
+    if not url or not domains.is_known(url):
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Ungültige URL"},
@@ -247,10 +259,13 @@ async def add_link(request: Request):
         return JSONResponse(status_code=400, content={"status": "error"})
 
     url = scraper.normalize_series_url(body.get("url", "").strip())
-    if not url or (not scraper.is_aniworld(url) and not scraper.is_sto(url)):
+    if not url or not domains.is_known(url):
         return JSONResponse(
             status_code=400,
-            content={"status": "error", "message": "Ungültige URL (nur aniworld.to und serienstream.to)"},
+            content={
+                "status": "error",
+                "message": f"Ungültige URL (nur {_known_hosts_label()})",
+            },
         )
 
     data_folder = _data_folder()
@@ -290,6 +305,95 @@ async def update_anime(anime_id: int, request: Request):
     if db.update_anime(data_folder, anime_id, **body):
         return {"status": "ok"}
     return JSONResponse(status_code=400, content={"status": "error"})
+
+
+# ──────────────────────── Gewünschte Sprachen pro Eintrag ────────────────────────
+
+
+@router.get("/anime/{anime_id}/languages")
+async def get_anime_languages(anime_id: int):
+    """
+    Gibt die gewünschten Sprachen eines Eintrags zurück.
+
+    Leere Liste = keine eigene Auswahl → es gilt die globale Sprach-Kaskade
+    aus der config.yaml (erste verfügbare Sprache gewinnt).
+    """
+    data_folder = _data_folder()
+    anime = db.get_anime_by_id(data_folder, anime_id)
+    if not anime:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Eintrag nicht gefunden"})
+
+    return {
+        "status": "ok",
+        "id": anime_id,
+        "languages": db.parse_languages(anime.get("languages")),
+        "available": VALID_LANGUAGES,
+        "fallback": load_config().get("languages", []),
+    }
+
+
+@router.put("/anime/{anime_id}/languages")
+async def set_anime_languages(anime_id: int, request: Request):
+    """
+    Setzt die gewünschten Sprachen eines Eintrags.
+
+    Body:
+        {
+          "languages": ["German Dub", "English Sub"],
+          "delete_files": true,   # optional (Standard: true)
+          "dry_run": false        # optional: nur anzeigen, was gelöscht würde
+        }
+
+    Neu hinzugefügte Sprachen werden beim nächsten Lauf für alle bereits
+    vorhandenen Episoden nachgeladen (vorhandene Sprachen werden übersprungen).
+    Entfernte Sprachen: Es werden AUSSCHLIESSLICH die Episodendateien dieser
+    Sprache gelöscht – andere Sprachversionen und Serien bleiben unangetastet.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Ungültiges JSON"})
+
+    languages = body.get("languages")
+    if not isinstance(languages, list):
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "'languages' muss eine Liste sein"},
+        )
+
+    invalid = [l for l in languages if l not in VALID_LANGUAGES]
+    if invalid:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "message": f"Ungültige Sprachen: {invalid}. Erlaubt: {VALID_LANGUAGES}",
+            },
+        )
+
+    delete_files = bool(body.get("delete_files", True))
+    dry_run = bool(body.get("dry_run", False))
+
+    # Während eines laufenden Downloads keine Dateien anfassen
+    if delete_files and not dry_run and downloader.is_running():
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "message": "Download läuft – Sprachwechsel mit Dateilöschung erst nach dem Stop möglich",
+            },
+        )
+
+    cfg = load_config()
+    result = db.apply_language_selection(
+        get_data_folder(cfg), anime_id, languages,
+        cfg=cfg, delete_files=delete_files, dry_run=dry_run,
+    )
+
+    if result is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Eintrag nicht gefunden"})
+
+    return {"status": "ok", "id": anime_id, "dry_run": dry_run, **result}
 
 
 # ──────────────────────── Datei-Upload ────────────────────────
@@ -370,6 +474,9 @@ async def update_config(request: Request):
         )
 
     if save_config(body):
+        # Domain-Registry ist gecacht – nach einer Änderung neu einlesen,
+        # damit eine ergänzte Mirror-Domain sofort greift.
+        domains.reload_domains()
         log("[CONFIG] Konfiguration aktualisiert")
         return {"status": "ok"}
     return JSONResponse(
@@ -520,7 +627,7 @@ async def browse_directories(request: Request):
 @router.get("/poster")
 async def get_poster(url: str = Query(...)):
     """Gibt die Poster-URL für eine Serie zurück."""
-    if not url or ("aniworld.to" not in url and "serienstream.to" not in url and "serienstream.cx" not in url and "s.to" not in url):
+    if not url or not domains.is_known(url):
         return JSONResponse(
             status_code=400,
             content={"status": "error", "message": "Ungültige URL"},
@@ -565,7 +672,7 @@ def proxy_poster(url: str = Query(...)):
             "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
             "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-            "Referer": "https://aniworld.to/" if "aniworld.to" in url else "https://serienstream.to/",
+            "Referer": _poster_referer(url),
         }
 
         resp = scraper.get_shared_session().get(url, headers=headers, timeout=10)
@@ -597,19 +704,27 @@ async def get_logs():
 async def last_run(
     offset: Optional[int] = Query(None, ge=0),
     tail: Optional[int] = Query(None, ge=1, le=10000),
+    after: Optional[int] = Query(None, ge=0),
+    before: Optional[int] = Query(None, ge=0),
+    tail_bytes: Optional[int] = Query(None, ge=1),
 ):
     """
     Log des aktuellen/letzten Laufs.
 
-    Query-Parameter:
-      - ?tail=N        – gibt nur die letzten N Zeilen zurück (initiales Laden)
-      - ?offset=N      – gibt alle Zeilen ab Zeile N zurück (inkrementelles Polling)
+    Byte-Offset-Modus (empfohlen, kein Ganzdatei-Read):
+      - ?tail_bytes=N  – die letzten ~N Bytes (neueste Zeilen) – initiales Laden
+      - ?after=B       – neue Bytes ab Byte-Offset B – Live-Tailing
+      - ?before=B      – ältere Bytes vor Byte-Offset B – Backfill
+      → Antwort: {text, start, end, size, bof, eof}
 
-    Antwort enthält immer `log` (rückwärtskompatibel) sowie:
-      - `lines`        – Liste der zurückgegebenen Zeilen
-      - `total_lines`  – Gesamtzahl der Zeilen in der Datei
-      - `offset`       – Ab welcher Zeile die Antwort beginnt
+    Alt (Zeilen-basiert, rückwärtskompatibel):
+      - ?tail=N        – letzte N Zeilen
+      - ?offset=N      – alle Zeilen ab Zeile N
     """
+    # Byte-Offset-Modus (inkrementell, ohne die ganze Datei zu lesen)
+    if after is not None or before is not None or tail_bytes is not None:
+        return read_log_slice(after=after, before=before, tail_bytes=tail_bytes)
+
     if offset is not None or tail is not None:
         all_lines, total = get_log_from_offset(0)
 
@@ -659,15 +774,28 @@ async def get_archived_logs():
 
 
 @router.get("/archived_logs/{filename}")
-async def get_archived_log_content(filename: str):
-    """Inhalt einer spezifischen archivierten Log-Datei."""
+async def get_archived_log_content(
+    filename: str,
+    after: Optional[int] = Query(None, ge=0),
+    before: Optional[int] = Query(None, ge=0),
+    tail_bytes: Optional[int] = Query(None, ge=1),
+):
+    """Inhalt einer archivierten Log-Datei.
+
+    Byte-Offset-Modus (empfohlen): ?tail_bytes / ?after / ?before → {text, start, end, size, bof, eof}
+    Ohne Parameter: kompletter Inhalt (rückwärtskompatibel).
+    """
     from ..config import get_data_folder, load_config
     from pathlib import Path
-    
+
     # Sicherheitscheck: Nur run_*.txt Dateien erlauben
     if not filename.startswith("run_") or not filename.endswith(".txt"):
         raise HTTPException(status_code=400, detail="Ungültiger Dateiname")
-    
+
+    # Byte-Offset-Modus (Dateiname wird in read_log_slice traversal-sicher validiert)
+    if after is not None or before is not None or tail_bytes is not None:
+        return read_log_slice(filename, after=after, before=before, tail_bytes=tail_bytes)
+
     cfg = load_config()
     data_folder = get_data_folder(cfg)
     log_file = Path(data_folder) / "logs" / filename

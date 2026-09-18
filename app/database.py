@@ -12,12 +12,23 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .config import normalize_language_list, sort_languages_by_priority
 from .logger import log
 
 # Verzögerter Import um zirkuläre Abhängigkeiten zu vermeiden
 def _get_scraper():
     from . import scraper
     return scraper
+
+
+def _get_file_manager():
+    from . import file_manager
+    return file_manager
+
+
+def _get_domains():
+    from . import domains
+    return domains
 
 
 # Base directory für AniLoader.txt Dateien
@@ -56,7 +67,8 @@ def init_db(data_folder: str) -> None:
             last_film INTEGER DEFAULT 0,
             last_episode INTEGER DEFAULT 0,
             last_season INTEGER DEFAULT 0,
-            folder_name TEXT DEFAULT NULL
+            folder_name TEXT DEFAULT NULL,
+            languages TEXT DEFAULT NULL
         )
     """)
 
@@ -64,6 +76,11 @@ def init_db(data_folder: str) -> None:
     try:
         c.execute("PRAGMA table_info(anime)")
         cols = [r["name"] for r in c.fetchall()]
+
+        if "languages" not in cols:
+            # NULL = keine eigene Auswahl → globale Sprach-Kaskade aus config.yaml
+            c.execute("ALTER TABLE anime ADD COLUMN languages TEXT DEFAULT NULL")
+            log("[DB] languages Spalte hinzugefügt")
 
         if "folder_name" not in cols:
             c.execute("ALTER TABLE anime ADD COLUMN folder_name TEXT DEFAULT NULL")
@@ -86,12 +103,61 @@ def init_db(data_folder: str) -> None:
     except Exception as e:
         log(f"[DB-ERROR] Migration: {e}")
 
+    # Alt-Domains (s.to, Mirrors) auf die kanonische Domain umschreiben
+    try:
+        _migrate_domains(c)
+    except Exception as e:
+        log(f"[DB-ERROR] Domain-Migration: {e}")
+
     # Index nach Migrationen setzen (Spalte ist jetzt garantiert vorhanden)
     c.execute("CREATE INDEX IF NOT EXISTS idx_anime_series_key ON anime(series_key)")
 
     conn.commit()
     conn.close()
     log("[DB] Datenbank initialisiert")
+
+
+def _migrate_domains(c: sqlite3.Cursor) -> None:
+    """
+    Schreibt Alt-Domains auf die kanonische Domain um – URL und series_key.
+
+    Läuft bei jedem Start, ist idempotent und fasst nur Zeilen an, bei denen sich
+    tatsächlich etwas ändert. Nötig, weil ein Domain-Wechsel sonst die
+    Duplikaterkennung bricht: der alte Key (`s.to:slug`) passt nicht mehr zum
+    neu berechneten (`serienstream:slug`).
+    """
+    dom = _get_domains()
+
+    c.execute("SELECT id, url, series_key FROM anime")
+    rows = c.fetchall()
+
+    updated = 0
+    conflicts: List[str] = []
+
+    for row in rows:
+        old_url = row["url"] or ""
+        new_url = dom.normalize_series_url(old_url)
+        new_key = dom.get_series_key(new_url)
+
+        url_changed = new_url != old_url
+        key_changed = new_key is not None and new_key != (row["series_key"] or "")
+        if not url_changed and not key_changed:
+            continue
+
+        try:
+            c.execute(
+                "UPDATE anime SET url = ?, series_key = ? WHERE id = ?",
+                (new_url, new_key, row["id"]),
+            )
+            updated += 1
+        except sqlite3.IntegrityError:
+            # url ist UNIQUE – es gibt bereits einen Eintrag mit der kanonischen URL
+            conflicts.append(f"ID {row['id']}: '{old_url}' → '{new_url}' existiert bereits")
+
+    if updated:
+        log(f"[DB] Domain-Migration: {updated} Eintrag/Einträge auf kanonische Domains umgeschrieben")
+    for conflict in conflicts:
+        log(f"[DB-WARN] Domain-Migration übersprungen – {conflict} (Duplikat manuell prüfen)")
 
 
 # ────────────────────────── CRUD ──────────────────────────
@@ -338,6 +404,186 @@ def set_missing_german_episodes(data_folder: str, anime_id: int, episodes: List[
     )
 
 
+# ────────────────────────── Gewünschte Sprachen pro Eintrag ──────────────────────────
+
+
+def parse_languages(raw: Any) -> List[str]:
+    """
+    Liest den Inhalt der `languages`-Spalte als Liste.
+
+    Leer/NULL/ungültig → leere Liste (= keine eigene Auswahl, es gilt die
+    globale Sprach-Kaskade aus der config.yaml).
+    """
+    if not raw:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return normalize_language_list(list(raw), strict=True)
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return normalize_language_list(parsed, strict=True)
+
+
+def get_anime_languages(data_folder: str, anime_id: int) -> List[str]:
+    """Gibt die gewünschten Sprachen eines Eintrags zurück (leer = globale Kaskade)."""
+    conn = _connect(data_folder)
+    try:
+        c = conn.cursor()
+        c.execute("SELECT languages FROM anime WHERE id = ?", (anime_id,))
+        row = c.fetchone()
+        return parse_languages(row["languages"]) if row else []
+    finally:
+        conn.close()
+
+
+def set_anime_languages(
+    data_folder: str,
+    anime_id: int,
+    languages: List[str],
+    cfg: Optional[dict] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Setzt die gewünschten Sprachen eines Eintrags (reine DB-Operation).
+
+    Neu hinzugekommene Sprachen setzen den Fortschritt zurück (complete,
+    last_season/last_episode/last_film), damit der nächste Lauf die fehlende
+    Sprache auch für bereits vorhandene Episoden nachlädt. Bereits vorhandene
+    (Episode, Sprache)-Kombinationen werden dabei übersprungen – es wird also
+    nichts doppelt geladen.
+
+    Returns:
+        {"languages": [...], "previous": [...], "added": [...], "removed": [...]}
+        oder None wenn der Eintrag nicht existiert.
+    """
+    row = get_anime_by_id(data_folder, anime_id)
+    if not row:
+        return None
+
+    previous = parse_languages(row.get("languages"))
+    new_languages = sort_languages_by_priority(
+        normalize_language_list(languages, strict=True), cfg
+    )
+
+    added = [lang for lang in new_languages if lang not in previous]
+    removed = [lang for lang in previous if lang not in new_languages]
+
+    updates: Dict[str, Any] = {
+        "languages": json.dumps(new_languages, ensure_ascii=False) if new_languages else None,
+    }
+
+    if added:
+        # Fortschritts-Zeiger zurücksetzen, damit alte Episoden erneut geprüft
+        # werden (heruntergeladen wird nur, was für die Sprache noch fehlt).
+        updates.update({"complete": 0, "last_season": 0, "last_episode": 0, "last_film": 0})
+        if "German Dub" in added:
+            updates["deutsch_komplett"] = 0
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [anime_id]
+
+    conn = _connect(data_folder)
+    try:
+        conn.execute(f"UPDATE anime SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+    finally:
+        conn.close()
+
+    log(
+        f"[DB] Sprachen für ID {anime_id} gesetzt: {new_languages or '(globale Kaskade)'}"
+        + (f" | neu: {added}" if added else "")
+        + (f" | entfernt: {removed}" if removed else "")
+    )
+    if added:
+        log(f"[DB] Fortschritt für ID {anime_id} zurückgesetzt – fehlende Sprachen werden nachgeladen")
+
+    return {
+        "languages": new_languages,
+        "previous": previous,
+        "added": added,
+        "removed": removed,
+    }
+
+
+def apply_language_selection(
+    data_folder: str,
+    anime_id: int,
+    languages: List[str],
+    cfg: Optional[dict] = None,
+    delete_files: bool = True,
+    dry_run: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """
+    Setzt die gewünschten Sprachen und räumt entfernte Sprachen auf der Platte auf.
+
+    Für jede entfernte Sprache werden ausschließlich die Episodendateien dieser
+    Sprache gelöscht (siehe file_manager.delete_language_files) – alle anderen
+    Sprachversionen, Episoden und Serien bleiben unangetastet.
+
+    Args:
+        delete_files: False → nur die DB wird geändert, Dateien bleiben liegen
+        dry_run:      True  → reine Vorschau: WEDER die DB noch Dateien werden
+                              angefasst, es wird nur ermittelt was passieren würde
+
+    Returns:
+        Ergebnis von set_anime_languages, ergänzt um "deleted_files" und "errors".
+    """
+    anime = get_anime_by_id(data_folder, anime_id)
+    if not anime:
+        return None
+
+    if dry_run:
+        # Vorschau ohne jede Änderung – die UI kann das Ergebnis anzeigen und
+        # der Nutzer danach immer noch abbrechen.
+        previous = parse_languages(anime.get("languages"))
+        new_languages = sort_languages_by_priority(
+            normalize_language_list(languages, strict=True), cfg
+        )
+        result = {
+            "languages": new_languages,
+            "previous": previous,
+            "added": [l for l in new_languages if l not in previous],
+            "removed": [l for l in previous if l not in new_languages],
+        }
+    else:
+        result = set_anime_languages(data_folder, anime_id, languages, cfg=cfg)
+        if result is None:
+            return None
+
+    deleted_files: List[str] = []
+    errors: List[str] = []
+
+    if delete_files and result["removed"] and not result["languages"]:
+        # Leere Auswahl bedeutet "zurück zur globalen Kaskade", NICHT "alles weg".
+        # Ohne diese Bremse würde das Leeren der Liste die komplette Serie löschen.
+        log(
+            f"[DB] ID {anime_id}: Sprachauswahl geleert (globale Kaskade) – "
+            f"es werden keine Dateien gelöscht"
+        )
+    elif delete_files and result["removed"]:
+        if cfg is None:
+            from .config import load_config
+            cfg = load_config()
+
+        fm = _get_file_manager()
+        for language in result["removed"]:
+            cleanup = fm.delete_language_files(
+                cfg,
+                anime["url"],
+                anime.get("folder_name"),
+                language,
+                dry_run=dry_run,
+            )
+            deleted_files.extend(cleanup["deleted"])
+            errors.extend(cleanup["errors"])
+
+    result["deleted_files"] = deleted_files
+    result["errors"] = errors
+    return result
+
+
 def get_db_stats(data_folder: str) -> Dict[str, int]:
     """Gibt Statistiken über die Datenbank zurück."""
     conn = _connect(data_folder)
@@ -370,7 +616,7 @@ def import_txt(data_folder: str, content: str) -> int:
         url = line.strip()
         if not url or url.startswith("#"):
             continue
-        if "aniworld.to" in url or "serienstream.to" in url or "serienstream.cx" in url or "s.to" in url:
+        if _get_domains().is_known(url):
             # Echten Titel von der Webseite abrufen
             try:
                 title = sc.get_series_title(url)

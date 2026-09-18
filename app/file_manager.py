@@ -18,6 +18,121 @@ from .logger import log
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+# ──────────────────────── Sprach-Kennzeichnung im Dateinamen ────────────────────────
+
+# Einzige Quelle der Wahrheit für die Sprach-Suffixe. Wird verwendet für
+#   1. die Benennung beim Verschieben aus TMP,
+#   2. die inkrementelle Prüfung "(Episode, Sprache) schon vorhanden?",
+#   3. das sprachgenaue Löschen beim Entfernen einer Sprache.
+LANGUAGE_FILE_SUFFIX: dict = {
+    "German Dub": "",
+    "German Sub": "[Sub]",
+    "English Dub": "[English Dub]",
+    "English Sub": "[English Sub]",
+}
+
+# German Dub trägt historisch KEIN Suffix. Eine Episodendatei ohne bekanntes
+# Suffix wird daher eindeutig dieser Sprache zugeordnet.
+LANGUAGE_WITHOUT_SUFFIX = "German Dub"
+
+# Längste Suffixe zuerst prüfen, damit "[English Sub]" nicht als "[Sub]" gilt.
+_SUFFIX_LOOKUP = sorted(
+    ((suffix, language) for language, suffix in LANGUAGE_FILE_SUFFIX.items() if suffix),
+    key=lambda item: len(item[0]),
+    reverse=True,
+)
+
+VIDEO_EXTENSIONS = (".mkv", ".mp4")
+
+# Erkennt einen Episoden-/Filmcode irgendwo im Dateinamen: S01E001, S00E01, Film01 …
+# Dient als Sicherheitsnetz beim Löschen: Dateien ohne Episodencode werden nie angefasst.
+_RE_ANY_EPISODE_CODE = re.compile(r"(?:^|[^A-Za-z0-9])(?:S\d{2,3}E\d{2,3}|Film\d{2,3})(?![0-9])")
+
+
+def get_language_suffix(language: str) -> str:
+    """Gibt das Dateinamen-Suffix einer Sprache zurück ('' für German Dub)."""
+    return LANGUAGE_FILE_SUFFIX.get(language, "")
+
+
+def detect_file_language(filename) -> str:
+    """
+    Ermittelt die Sprache einer Episodendatei anhand des Suffixes im Dateinamen.
+
+    Ohne bekanntes Suffix gilt LANGUAGE_WITHOUT_SUFFIX (German Dub) – damit
+    werden auch die bereits vorhandenen Dateien ohne Marker korrekt zugeordnet.
+    """
+    stem = Path(str(filename)).stem.strip()
+    for suffix, language in _SUFFIX_LOOKUP:
+        if stem.endswith(suffix):
+            return language
+    return LANGUAGE_WITHOUT_SUFFIX
+
+
+def build_episode_code(season: int, episode: int, film_naming_mode: str = "local") -> str:
+    """Baut den Episoden-/Filmcode für den Zieldateinamen."""
+    if season == 0:
+        if film_naming_mode == "jellyfin":
+            return f"S00E{episode:03d}"
+        return f"Film{episode:02d}"
+    return f"S{season:02d}E{episode:03d}"
+
+
+def build_episode_filename(
+    season: int,
+    episode: int,
+    title: str,
+    language: str,
+    ext: str,
+    film_naming_mode: str = "local",
+) -> str:
+    """Baut den finalen Dateinamen: '<Code> - <Titel> <Sprach-Suffix><ext>'."""
+    new_name = build_episode_code(season, episode, film_naming_mode)
+
+    safe_title = sanitize_filename(title) if title else ""
+    if safe_title:
+        new_name += f" - {safe_title}"
+
+    lang_suffix = get_language_suffix(language)
+    if lang_suffix:
+        new_name += f" {lang_suffix}"
+
+    return new_name + ext
+
+
+def _episode_code_candidates(season: int, episode: int) -> list[str]:
+    """Alle Code-Schreibweisen, unter denen eine Episode auf der Platte liegen kann."""
+    if season == 0:
+        return [f"Film{episode:02d}", f"S00E{episode:03d}", f"S00E{episode:02d}"]
+    return [f"S{season:02d}E{episode:03d}", f"S{season:02d}E{episode:02d}"]
+
+
+def _episode_subdirs(season: int) -> list[str]:
+    """Unterordner, in denen eine Episode/ein Film liegen kann."""
+    if season == 0:
+        return ["Filme", "Season 00"]
+    return [f"Season {season:02d}"]
+
+
+def _name_matches_episode(name: str, codes: list[str]) -> bool:
+    """
+    Prüft, ob ein Dateiname zu einer konkreten Episode gehört.
+
+    Der Code darf irgendwo im Namen stehen (die aniworld-CLI stellt den
+    Serientitel voran), direkt danach darf aber keine weitere Ziffer folgen –
+    sonst würde 'S01E001' fälschlich auch auf 'S01E0011' passen.
+    """
+    upper = name.upper()
+    for code in codes:
+        code_upper = code.upper()
+        idx = upper.find(code_upper)
+        while idx != -1:
+            after = upper[idx + len(code_upper): idx + len(code_upper) + 1]
+            if not after.isdigit():
+                return True
+            idx = upper.find(code_upper, idx + 1)
+    return False
+
+
 def _set_hidden_on_windows(path: Path) -> None:
     """Markiert Verzeichnisse unter Windows als versteckt (Best-Effort)."""
     if os.name != "nt":
@@ -116,6 +231,37 @@ def _resolve_series_dirs(
     return candidates
 
 
+def _resolve_series_dirs_strict(base_path: Path, folder_name: Optional[str]) -> list[Path]:
+    """
+    Serien-Ordner für sicherheitskritische Operationen (Löschen).
+
+    Im Gegensatz zu _resolve_series_dirs gibt es hier bewusst KEINEN
+    Titel-Fallback und KEINEN Rückfall auf das Basisverzeichnis: ohne exakt
+    zuordenbaren Ordner wird eine leere Liste geliefert, damit niemals Dateien
+    anderer Serien erfasst werden können.
+    """
+    if not folder_name or not base_path.is_dir():
+        return []
+
+    dirs: list[Path] = []
+    exact = base_path / folder_name
+    if exact.is_dir():
+        dirs.append(exact)
+
+    # Fallback nur bei identischer imdbid (z.B. geändertes Jahr im Ordnernamen)
+    imdb_id = _extract_imdb_id(folder_name)
+    if imdb_id:
+        marker = f"[imdbid-{imdb_id}]"
+        try:
+            for d in base_path.iterdir():
+                if d.is_dir() and marker in d.name.lower() and d not in dirs:
+                    dirs.append(d)
+        except OSError as e:
+            log(f"[WARN] Serienordner konnten nicht gelesen werden ({base_path}): {e}")
+
+    return dirs
+
+
 # ──────────────────────── Initialisierungsfunktionen ────────────────────────
 
 
@@ -173,6 +319,66 @@ def get_storage_path(
         return series_dir / f"Season {season:02d}"
 
 
+def find_episode_files(
+    cfg: dict,
+    url: str,
+    folder_name: Optional[str],
+    season: int,
+    episode: int,
+    title_hint: Optional[str] = None,
+    language: Optional[str] = None,
+    min_size_bytes: int = 1_000_000,
+) -> list[Path]:
+    """
+    Listet alle vorhandenen Dateien einer Episode – optional nur einer Sprache.
+
+    Suchstrategie (wie episode_already_downloaded):
+        1. folder_name aus DB bekannt → suche in exaktem Unterordner (+ gleiche imdbid)
+        2. folder_name unbekannt, title_hint vorhanden → suche in Unterordnern
+           mit exakt diesem Serientitel (z.B. "The Rookie (2018)...")
+        3. Weder folder_name noch title_hint → suche direkt im Basis-Pfad
+
+    Muster: S01E001 / Film01 / S00E001 (CLI-Original) / S00E01 (Jellyfin-Final)
+
+    Args:
+        language: Wenn gesetzt, werden nur Dateien dieser Sprache zurückgegeben
+                  (Zuordnung über das Suffix im Dateinamen).
+    """
+    base_path = Path(get_download_path(cfg, url, season == 0))
+    codes = _episode_code_candidates(season, episode)
+
+    # Mögliche Suchpfade bestimmen (inkl. imdbid-Fallback bei geändertem Jahr im Ordnernamen)
+    series_dirs = _resolve_series_dirs(base_path, folder_name=folder_name, title_hint=title_hint)
+    search_dirs = [d / sub for d in series_dirs for sub in _episode_subdirs(season)]
+
+    matches: list[Path] = []
+    for search_dir in search_dirs:
+        if not search_dir.is_dir():
+            continue
+        try:
+            entries = sorted(search_dir.iterdir(), key=lambda p: p.name.lower())
+        except OSError as e:
+            log(f"[WARN] Ordner konnte nicht gelesen werden ({search_dir}): {e}")
+            continue
+
+        for f in entries:
+            if not f.is_file() or f.suffix.lower() not in VIDEO_EXTENSIONS:
+                continue
+            if not _name_matches_episode(f.stem, codes):
+                continue
+            try:
+                if f.stat().st_size < min_size_bytes:
+                    continue
+            except OSError:
+                continue
+            if language is not None and detect_file_language(f) != language:
+                continue
+            if f not in matches:
+                matches.append(f)
+
+    return matches
+
+
 def episode_already_downloaded(
     cfg: dict,
     url: str,
@@ -180,47 +386,23 @@ def episode_already_downloaded(
     season: int,
     episode: int,
     title_hint: Optional[str] = None,
+    language: Optional[str] = None,
 ) -> Optional[Path]:
     """
     Prüft ob eine Episode bereits heruntergeladen wurde.
 
-    Suchstrategie:
-        1. folder_name aus DB bekannt → suche in exaktem Unterordner (+ gleiche imdbid)
-        2. folder_name unbekannt, title_hint vorhanden → suche in Unterordnern
-           mit exakt diesem Serientitel (z.B. "The Rookie (2018)...")
-        3. Weder folder_name noch title_hint → suche direkt im Basis-Pfad
+    Args:
+        language: Wenn gesetzt, gilt die Episode nur dann als vorhanden, wenn
+                  sie in genau dieser Sprache existiert (inkrementelle Logik
+                  für Mehrsprach-Einträge).
 
-    Muster: S01E001 / Film01 / S00E001 (CLI-Original) / S00E01 (Jellyfin-Final)
     Gibt den Dateipfad zurück falls gefunden, sonst None.
     """
-    is_film = season == 0
-    base_path = Path(get_download_path(cfg, url, is_film))
-
-    if is_film:
-        # Alle möglichen Film-Namensmuster (Lokal + Jellyfin + CLI-Rohformat)
-        patterns = [
-            f"*Film{episode:02d}*",        # Lokal: Film01
-            f"*S00E{episode:03d}*",        # Jellyfin / CLI: S00E001 (3-stellig)
-        ]
-        subdirs = ["Filme", "Season 00"]
-    else:
-        patterns = [f"*S{season:02d}E{episode:03d}*"]
-        subdirs = [f"Season {season:02d}"]
-
-    # Mögliche Suchpfade bestimmen (inkl. imdbid-Fallback bei geändertem Jahr im Ordnernamen)
-    series_dirs = _resolve_series_dirs(base_path, folder_name=folder_name, title_hint=title_hint)
-    search_dirs = [d / sub for d in series_dirs for sub in subdirs]
-
-    for search_dir in search_dirs:
-        if not search_dir.exists():
-            continue
-        for pattern in patterns:
-            for ext in (".mkv", ".mp4"):
-                for f in search_dir.glob(pattern + ext):
-                    if f.is_file() and f.stat().st_size > 1_000_000:
-                        return f
-
-    return None
+    matches = find_episode_files(
+        cfg, url, folder_name, season, episode,
+        title_hint=title_hint, language=language,
+    )
+    return matches[0] if matches else None
 
 
 def find_downloaded_file(
@@ -316,25 +498,8 @@ def rename_episode_file(
     Returns:
         Neuen Dateipfad bei Erfolg, None bei Fehler
     """
-    lang_suffix = {
-        "German Dub": "",
-        "German Sub": "[Sub]",
-        "English Dub": "[English Dub]",
-        "English Sub": "[English Sub]",
-    }.get(language, "")
-
-    if season == 0:
-        if film_naming_mode == "jellyfin":
-            ep_code = f"S00E{episode:03d}"
-        else:
-            ep_code = f"Film{episode:02d}"
-    else:
-        ep_code = f"S{season:02d}E{episode:03d}"
-
     ext = found_path.suffix
     parent = found_path.parent
-
-    safe_title = sanitize_filename(title) if title else ""
 
     # Für Filme: Sicherstellen, dass wir im richtigen Ordner sind
     if season == 0:
@@ -350,14 +515,8 @@ def rename_episode_file(
     else:
         target_parent = parent
 
-    # Ziel-Dateiname aufbauen
-    new_name = ep_code
-    if safe_title:
-        new_name += f" - {safe_title}"
-    if lang_suffix:
-        new_name += f" {lang_suffix}"
-    new_name += ext
-
+    # Ziel-Dateiname aufbauen (inkl. Sprach-Suffix)
+    new_name = build_episode_filename(season, episode, title, language, ext, film_naming_mode)
     new_path = target_parent / new_name
 
     # Bereits im Zielformat und richtigem Ordner?
@@ -538,30 +697,9 @@ def move_tmp_to_final(
     Returns:
         Neuer Dateipfad bei Erfolg, None bei Fehler
     """
-    lang_suffix = {
-        "German Dub": "",
-        "German Sub": "[Sub]",
-        "English Dub": "[English Dub]",
-        "English Sub": "[English Sub]",
-    }.get(language, "")
-
-    if season == 0:
-        if film_naming_mode == "jellyfin":
-            ep_code = f"S00E{episode:03d}"
-        else:
-            ep_code = f"Film{episode:02d}"
-    else:
-        ep_code = f"S{season:02d}E{episode:03d}"
-
-    ext = tmp_file.suffix
-    safe_title = sanitize_filename(title) if title else ""
-
-    new_name = ep_code
-    if safe_title:
-        new_name += f" - {safe_title}"
-    if lang_suffix:
-        new_name += f" {lang_suffix}"
-    new_name += ext
+    new_name = build_episode_filename(
+        season, episode, title, language, tmp_file.suffix, film_naming_mode
+    )
 
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -585,6 +723,117 @@ def move_tmp_to_final(
         return None
 
 
+# ──────────────────────── Sprachgenaues Löschen ────────────────────────
+
+
+def delete_language_files(
+    cfg: dict,
+    url: str,
+    folder_name: Optional[str],
+    language: str,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Löscht ausschließlich die Episodendateien EINER Sprache EINER Serie.
+
+    Sicherheitsregeln (alle müssen erfüllt sein, sonst wird nichts gelöscht):
+        1. Die Sprache muss bekannt sein (LANGUAGE_FILE_SUFFIX).
+        2. Der Serien-Ordnername muss in der DB stehen. Ohne eindeutigen
+           Ordner wird abgebrochen – es wird nie geraten.
+        3. Es werden nur Ordner der Serie selbst durchsucht: exakter
+           Ordnername oder identische imdbid (kein Titel-Fallback,
+           kein Rückfall auf das Download-Basisverzeichnis).
+        4. Nur Video-Dateien (.mkv/.mp4) in 'Season xx'-/'Filme'-Ordnern.
+        5. Der Dateiname muss einen Episoden-/Filmcode enthalten.
+        6. Die aus dem Dateinamen erkannte Sprache muss exakt der zu
+           löschenden Sprache entsprechen.
+
+    Args:
+        dry_run: True → es wird nur ermittelt, was gelöscht würde.
+
+    Returns:
+        {"language": str, "deleted": [str], "kept": int, "errors": [str]}
+    """
+    result: dict = {"language": language, "deleted": [], "kept": 0, "errors": []}
+
+    if language not in LANGUAGE_FILE_SUFFIX:
+        result["errors"].append(f"Unbekannte Sprache: '{language}' – kein Löschvorgang")
+        return result
+
+    if not folder_name:
+        result["errors"].append(
+            "Ordnername der Serie ist nicht bekannt – Dateien können nicht "
+            "eindeutig zugeordnet werden, es wird nichts gelöscht"
+        )
+        return result
+
+    # Serien- und Film-Basispfad können bei separate-Storage unterschiedlich sein
+    base_paths: list[Path] = []
+    for is_film in (False, True):
+        candidate = Path(get_download_path(cfg, url, is_film))
+        if candidate not in base_paths:
+            base_paths.append(candidate)
+
+    series_dirs: list[Path] = []
+    for base in base_paths:
+        for d in _resolve_series_dirs_strict(base, folder_name):
+            if d not in series_dirs:
+                series_dirs.append(d)
+
+    if not series_dirs:
+        result["errors"].append(
+            f"Kein Serien-Ordner '{folder_name}' gefunden – nichts zu löschen"
+        )
+        return result
+
+    for series_dir in series_dirs:
+        try:
+            subdirs = [
+                d for d in series_dir.iterdir()
+                if d.is_dir() and (d.name.lower().startswith("season ") or d.name.lower() == "filme")
+            ]
+        except OSError as e:
+            result["errors"].append(f"Ordner nicht lesbar ({series_dir}): {e}")
+            continue
+
+        for subdir in sorted(subdirs, key=lambda p: p.name.lower()):
+            try:
+                entries = sorted(subdir.iterdir(), key=lambda p: p.name.lower())
+            except OSError as e:
+                result["errors"].append(f"Ordner nicht lesbar ({subdir}): {e}")
+                continue
+
+            for f in entries:
+                if not f.is_file() or f.suffix.lower() not in VIDEO_EXTENSIONS:
+                    continue
+                # Ohne Episodencode im Namen wird die Datei nie angefasst
+                if not _RE_ANY_EPISODE_CODE.search(f.stem):
+                    continue
+                if detect_file_language(f) != language:
+                    result["kept"] += 1
+                    continue
+
+                if dry_run:
+                    result["deleted"].append(str(f))
+                    log(f"[LANG-DEL-DRY] Würde löschen [{language}]: {f}")
+                    continue
+
+                try:
+                    f.unlink()
+                    result["deleted"].append(str(f))
+                    log(f"[LANG-DEL] Gelöscht [{language}]: {f}")
+                except Exception as e:
+                    result["errors"].append(f"{f}: {e}")
+                    log(f"[LANG-DEL-ERROR] {f}: {e}")
+
+    verb = "würden gelöscht" if dry_run else "gelöscht"
+    log(
+        f"[LANG-DEL] {folder_name} – {len(result['deleted'])} Datei(en) [{language}] {verb}, "
+        f"{result['kept']} Datei(en) anderer Sprachen unberührt, {len(result['errors'])} Fehler"
+    )
+    return result
+
+
 # ──────────────────────── Film-Benennungsmigration ────────────────────────
 
 # Regex-Muster für Film-Dateinamen beider Modi
@@ -600,7 +849,7 @@ def _collect_film_roots(cfg: dict) -> list[Path]:
     Sammelt alle Ordner, in denen Filme liegen können.
 
     Nutzt get_download_path() mit is_film=True/False für alle registrierten
-    aniworld.to- und serienstream.to-artigen URLs, um exakt dieselben Pfade zu bestimmen
+    aniworld- und serienstream-URLs, um exakt dieselben Pfade zu bestimmen
     wie der Downloader selbst.  Da URLs nicht bekannt sind, werden die
     konfigurierten Pfade direkt aus dem Storage-Block gelesen — analog zu
     get_download_path, aber ohne URL-Abhängigkeit.

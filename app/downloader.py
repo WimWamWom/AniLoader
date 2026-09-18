@@ -24,12 +24,21 @@ from typing import Any, Dict, List, Optional
 import random
 from . import database as db
 from . import scraper
-from .config import get_data_folder, get_download_path, get_film_naming_mode, load_config
+from .config import (
+    get_data_folder,
+    get_download_path,
+    get_film_naming_mode,
+    load_config,
+    normalize_language_list,
+    sort_languages_by_priority,
+)
 from .file_manager import (
     check_file_integrity,
     clear_tmp,
+    detect_file_language,
     episode_already_downloaded,
     find_downloaded_file,
+    find_episode_files,
     get_free_space_gb,
     get_storage_path,
     get_tmp_path,
@@ -83,6 +92,44 @@ _CDN_403_RETRY_DELAY = 15  # Sekunden Pause vor 403-Retry
 # bevor SIGKILL folgt.
 _KILL_GRACE_SECONDS = 10
 
+# Trennlinie um den Serien-Banner. Feste Breite mit ─ statt einer Reihe von "="
+# in Titellänge: so erkennt der Web-Log-View sie als Trennlinie und stylt sie
+# dezent, statt 130 Zeichen "=" als normale Logzeile zu rendern.
+_LOG_SEPARATOR = "─" * 72
+
+# ANSI-Steuersequenzen (Farben, Cursor-Bewegung) und OSC-Sequenzen der CLI.
+# Sie landen sonst wörtlich im Log und im Web-View als "[32m…[0m".
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+# Fortschrittszeilen von yt-dlp/ffmpeg ("[download]  42.3% of 350.00MiB at 2.50MiB/s").
+# aniworld überschreibt sie per \r; text=True übersetzt jedes \r in ein \n, wodurch
+# ohne Zusammenfassen jeder Frame eine eigene Logzeile mit Timestamp bekäme.
+_PROGRESS_RE = re.compile(
+    r"\d+(?:[.,]\d+)?\s?%.*(?:ETA|/s\b|of\s|iB\b)|[━#=]{5,}", re.IGNORECASE
+)
+
+
+def _clean_cli_lines(text: str) -> List[str]:
+    """Bereitet aniworld-Ausgabe fürs Log auf.
+
+    Entfernt ANSI-Sequenzen und fasst aufeinanderfolgende Fortschritts-Frames
+    zusammen, sodass pro Fortschrittsphase nur der letzte Stand im Log steht.
+    """
+    lines: List[str] = []
+
+    for raw in (text or "").split("\n"):
+        line = _ANSI_RE.sub("", raw).replace("\r", "").strip()
+        if not line:
+            continue
+
+        if _PROGRESS_RE.search(line) and lines and _PROGRESS_RE.search(lines[-1]):
+            lines[-1] = line  # vorherigen Frame ersetzen statt anhängen
+            continue
+
+        lines.append(line)
+
+    return lines
+
 
 def _parse_season_episode_from_url(episode_url: str) -> Optional[tuple[int, int]]:
     """Extrahiert (season, episode) aus einer Episoden-/Film-URL."""
@@ -104,33 +151,37 @@ def _normalize_aniworld_cli_url(url: str) -> str:
     return url
 
 
-def _normalize_language_label(label: str) -> str:
-    """Normalisiert bekannte Sprach-Labels auf interne Namen."""
-    text = str(label or "").strip().lower()
-    if text in ("german dub", "german", "deutsch", "de"):
-        return "German Dub"
-    if text in ("german sub", "deutsch sub", "deutsch untertitel"):
-        return "German Sub"
-    if text in ("english dub", "english", "en"):
-        return "English Dub"
-    if text in ("english sub", "englisch sub", "englische untertitel"):
-        return "English Sub"
-    return str(label or "").strip()
-
-
 def _normalize_language_list(languages: List[str]) -> List[str]:
     """Normalisiert Sprachliste und entfernt Duplikate, Reihenfolge bleibt erhalten."""
-    normalized: List[str] = []
-    seen: set[str] = set()
-    for lang in languages or []:
-        norm = _normalize_language_label(lang)
-        if not norm:
-            continue
-        if norm in seen:
-            continue
-        seen.add(norm)
-        normalized.append(norm)
-    return normalized
+    return normalize_language_list(languages or [])
+
+
+def _resolve_target_languages(
+    cfg: dict,
+    anime: Dict,
+    force_languages: Optional[List[str]] = None,
+) -> tuple[List[str], bool]:
+    """
+    Bestimmt die Zielsprachen für einen Eintrag.
+
+    Returns:
+        (Sprachliste, multi_mode)
+
+        multi_mode=True  → Der Eintrag hat eine eigene Sprachauswahl in der DB.
+                           ALLE dieser Sprachen werden geladen (nacheinander).
+        multi_mode=False → Keine eigene Auswahl: globale Prioritäts-Kaskade,
+                           die erste erfolgreiche Sprache gewinnt (Alt-Verhalten).
+    """
+    if force_languages:
+        return _normalize_language_list(force_languages), False
+
+    entry_languages = db.parse_languages(anime.get("languages"))
+    if entry_languages:
+        # Nach globaler Priorität sortieren → German Dub zuerst
+        return sort_languages_by_priority(entry_languages, cfg), True
+
+    cascade = cfg.get("languages") or ["German Dub", "German Sub", "English Sub", "English Dub"]
+    return _normalize_language_list(cascade), False
 
 
 def get_status() -> Dict:
@@ -352,14 +403,19 @@ def _run_aniworld_download(
         log(f"[CMD] Normalisiere URL für aniworld CLI: {episode_url} -> {cli_url}")
 
     cmd: Any
+    log_cmd = f'aniworld --language "{language}" -a Download -o "{output_path}" {cli_url}'
+
     if is_windows:
-        cmd = f'chcp 65001 >nul & aniworld --language "{language}" -a Download -o "{output_path}" {cli_url}'
-        log(f"[CMD] {cmd}")
+        # chcp 65001 schaltet die Codepage der cmd.exe auf UTF-8, damit Umlaute in
+        # Titeln und Pfaden nicht verstümmelt zurückkommen; >nul unterdrückt die
+        # Meldung "Aktive Codepage: 65001". Der Prefix bleibt aus dem Log heraus.
+        cmd = f"chcp 65001 >nul & {log_cmd}"
     else:
         # Kein shell=True auf POSIX: die Shell wäre ein zusätzlicher Prozess zwischen
         # uns und aniworld und würde das Aufräumen des Prozessbaums erschweren.
         cmd = ["aniworld", "--language", language, "-a", "Download", "-o", output_path, cli_url]
-        log(f"[CMD] aniworld --language '{language}' -a Download -o '{output_path}' {cli_url}")
+
+    log(f"[CMD] {log_cmd}")
 
     for attempt in range(1 + _CDN_403_MAX_RETRIES):
         if attempt > 0:
@@ -378,10 +434,8 @@ def _run_aniworld_download(
             return False
 
         # Log Output
-        if stdout_text:
-            for line in stdout_text.strip().split("\n"):
-                if line.strip():
-                    log(f"[ANIWORLD] {line.strip()}")
+        for line in _clean_cli_lines(stdout_text):
+            log(f"[ANIWORLD] {line}")
 
         if returncode == 0:
             # Kurz warten bis Dateisystem aufholt
@@ -390,10 +444,8 @@ def _run_aniworld_download(
 
         # Fehlerausgabe prüfen
         stderr_text = stderr_text or ""
-        if stderr_text:
-            for line in stderr_text.strip().split("\n"):
-                if line.strip():
-                    log(f"[ANIWORLD-ERR] {line.strip()}")
+        for line in _clean_cli_lines(stderr_text):
+            log(f"[ANIWORLD-ERR] {line}")
 
         if _is_resource_exhaustion(stderr_text):
             log(
@@ -425,6 +477,47 @@ def _select_language(
     return None
 
 
+def _resolve_target_dir(
+    cfg: dict,
+    data_folder: str,
+    anime: Dict,
+    found: Path,
+    tmp_path: Path,
+    season: int,
+    is_film: bool,
+):
+    """
+    Bestimmt den finalen Zielordner für eine aus TMP kommende Datei.
+
+    Der Serien-Ordnername wird aus dem TMP-Pfad abgeleitet (zuverlässig, kein
+    Raten) und beim ersten Download in der DB gespeichert.
+    """
+    try:
+        rel = found.relative_to(tmp_path)
+        parts = rel.parts
+        detected_folder = parts[0] if len(parts) >= 2 else None
+    except ValueError:
+        detected_folder = None
+
+    existing_folder = anime.get("folder_name")
+
+    # DB-Ordnername initial speichern, wenn noch nicht bekannt
+    if not existing_folder and detected_folder:
+        db.update_anime(data_folder, anime["id"], folder_name=detected_folder)
+        anime["folder_name"] = detected_folder
+        log(f"[DB] Ordnername gespeichert: {detected_folder}")
+
+    # Finaler Zielordner: DB-Ordnername hat Vorrang vor erkanntem (verhindert Ordner-Drift)
+    final_folder = existing_folder or detected_folder
+    return get_storage_path(
+        cfg,
+        anime["url"],
+        folder_name=final_folder,
+        season=season,
+        is_film=is_film,
+    )
+
+
 def _download_episode(
     cfg: dict,
     data_folder: str,
@@ -433,23 +526,46 @@ def _download_episode(
     episode_info: Dict,
     detailed: bool = False,
     ignore_existing: bool = False,
+    force_languages: Optional[List[str]] = None,
 ) -> Any:
     """
     Lädt eine einzelne Episode herunter.
 
+    Bei Einträgen mit eigener Sprachauswahl wird jede Sprache STRIKT
+    SEQUENZIELL abgearbeitet:
+
+        TMP leeren → Sprache A laden → Datei sofort ins Zielverzeichnis
+        verschieben → TMP leeren → erst danach Sprache B laden → …
+
+    Dadurch liegt zu keinem Zeitpunkt mehr als eine Sprachversion im
+    aniworld-Arbeitsordner und aniworld kann die Versionen nicht automatisch
+    zusammenführen.
+
     Returns:
         Standard: "downloaded" | "skipped" | "failed" | "no_german" | "no_language"
-        Detailed: {"status": str, "language": Optional[str]}
+        Detailed: {"status": str, "language": Optional[str],
+                   "languages": List[str], "missing_languages": List[str]}
     """
-    def _result(result_status: str, language: Optional[str] = None) -> Any:
+    def _result(
+        result_status: str,
+        language: Optional[str] = None,
+        languages: Optional[List[str]] = None,
+        missing: Optional[List[str]] = None,
+    ) -> Any:
         if detailed:
-            return {"status": result_status, "language": language}
+            return {
+                "status": result_status,
+                "language": language,
+                "languages": languages if languages is not None else ([language] if language else []),
+                "missing_languages": missing or [],
+            }
         return result_status
 
     episode_num = episode_info["episode"]
     episode_url = episode_info["url"]
     is_film = season == 0
-    languages_config = cfg.get("languages", ["German Dub", "German Sub", "English Sub", "English Dub"])
+    ep_label = f"S{season:02d}E{episode_num:03d}"
+    target_languages, multi_mode = _resolve_target_languages(cfg, anime, force_languages)
     min_free = cfg.get("download", {}).get("min_free_gb", 2.0)
     timeout = cfg.get("download", {}).get("timeout_seconds", 900)
     output_path = get_download_path(cfg, anime["url"], is_film)
@@ -464,22 +580,42 @@ def _download_episode(
     free_gb = get_free_space_gb(output_path)
     if free_gb < min_free:
         log(f"[WARN] Nur {free_gb:.1f} GB frei (Minimum: {min_free} GB) – überspringe")
-        return _result("failed")
+        return _result("failed", missing=target_languages)
 
-    # Bereits heruntergeladen?
+    # ── Inkrementell: bereits vorhandene (Episode, Sprache)-Kombinationen ermitteln ──
+    present_languages: List[str] = []
+    pending_languages: List[str] = list(target_languages)
+
     if not ignore_existing:
-        existing = episode_already_downloaded(
-            cfg, anime["url"], anime.get("folder_name"), season, episode_num,
-            title_hint=anime.get("title"),
-        )
-        if existing:
-            log(f"[SKIP] Bereits vorhanden: S{season:02d}E{episode_num:03d}")
-            return _result("skipped")
+        if multi_mode:
+            # Pro gewünschter Sprache prüfen – nur fehlende Sprachen werden geladen
+            for lang in target_languages:
+                if episode_already_downloaded(
+                    cfg, anime["url"], anime.get("folder_name"), season, episode_num,
+                    title_hint=anime.get("title"), language=lang,
+                ):
+                    present_languages.append(lang)
+
+            pending_languages = [l for l in target_languages if l not in present_languages]
+            if not pending_languages:
+                log(f"[SKIP] Bereits vorhanden [{', '.join(target_languages)}]: {ep_label}")
+                return _result("skipped", languages=present_languages)
+            if present_languages:
+                log(f"[LANG] {ep_label} – vorhanden: {present_languages} | fehlt: {pending_languages}")
+        else:
+            # Kaskaden-Modus: jede vorhandene Sprachversion zählt als erledigt
+            existing = episode_already_downloaded(
+                cfg, anime["url"], anime.get("folder_name"), season, episode_num,
+                title_hint=anime.get("title"),
+            )
+            if existing:
+                log(f"[SKIP] Bereits vorhanden: {ep_label}")
+                return _result("skipped")
 
     # Sprachen IMMER von der Episoden-Seite holen (vor dem Download)
     ep_langs = _normalize_language_list(episode_info.get("languages", []))
-    log(f"[LANG] S{season:02d}E{episode_num:03d} – Sprachen aus Staffel-Seite: {ep_langs}")
-    
+    log(f"[LANG] {ep_label} – Sprachen aus Staffel-Seite: {ep_langs}")
+
     if not ep_langs:
         # Von Staffelseite nicht vorhanden → von Episoden-Seite scrapen
         log(f"[LANG] Scrape Sprachen von Episode-Seite …")
@@ -489,107 +625,119 @@ def _download_episode(
     # AniWorld: Prüfe ob Episode überhaupt Streams hat (kein Ankündigungs-Placeholder)
     if scraper.is_aniworld(episode_url) and not ep_langs:
         if not scraper.is_episode_available(episode_url):
-            log(f"[SKIP] S{season:02d}E{episode_num:03d} – keine Streams verfügbar (Ankündigung)")
-            return _result("no_language")
+            log(f"[SKIP] {ep_label} – keine Streams verfügbar (Ankündigung)")
+            return _result("no_language", missing=pending_languages)
 
     # S.to: Keine Sprache gefunden → Episode nicht verfügbar, überspringen
     if scraper.is_sto(episode_url) and not ep_langs:
-        log(f"[SKIP] S{season:02d}E{episode_num:03d} – keine Sprache → nicht verfügbar")
-        return _result("no_language")
+        log(f"[SKIP] {ep_label} – keine Sprache → nicht verfügbar")
+        return _result("no_language", missing=pending_languages)
 
-    # Sprachen zur Kaskade vorbereiten
-    cascading_languages = []
+    # Zielsprachen auf die tatsächlich verfügbaren einschränken
     if ep_langs:
-        # Nur verfügbare Sprachen verwenden
-        for lang in languages_config:
-            if lang in ep_langs:
-                cascading_languages.append(lang)
+        cascading_languages = [l for l in pending_languages if l in ep_langs]
     else:
-        # Sprachen unbekannt → komplette Kaskade
-        cascading_languages = languages_config[:]
-        log(f"[LANG] Sprachen unbekannt – verwende komplette Kaskade: {cascading_languages}")
+        # Sprachen unbekannt → alle offenen Zielsprachen versuchen
+        cascading_languages = list(pending_languages)
+        log(f"[LANG] Sprachen unbekannt – versuche alle offenen Sprachen: {cascading_languages}")
 
-    # serienstream.to unterstützt nur German Dub, German Sub und English Dub
+    # serienstream unterstützt kein English Sub
     if scraper.is_sto(episode_url):
         _sto_supported = {"German Dub", "German Sub", "English Dub"}
         _removed = [l for l in cascading_languages if l not in _sto_supported]
         cascading_languages = [l for l in cascading_languages if l in _sto_supported]
         if _removed:
-            log(f"[LANG] serienstream.to: Nicht unterstützte Sprachen aus Kaskade entfernt: {_removed}")
+            log(f"[LANG] serienstream: Nicht unterstützte Sprachen entfernt: {_removed}")
 
-    # Download: Sprachen-Kaskade in TMP-Verzeichnis
+    if not cascading_languages:
+        log(f"[SKIP] {ep_label} – keine der gewünschten Sprachen verfügbar "
+            f"(gewünscht: {pending_languages} | verfügbar: {ep_langs or 'unbekannt'})")
+        return _result("no_language", missing=pending_languages)
+
+    # Download: sequenziell pro Sprache in das TMP-Verzeichnis.
     # TMP immer unter dem konfigurierten download_path (nicht output_path),
     # damit bei separate-Storage kein /app/Serien/tmp entsteht.
     dl_base = cfg.get("storage", {}).get("download_path", output_path)
     tmp_path = get_tmp_path(dl_base)
+    film_naming_mode = get_film_naming_mode(cfg)
 
-    downloaded = False
-    used_language = None
-    found = None
+    downloaded_languages: List[str] = []
+    failed_languages: List[str] = []
+    ep_title: Optional[str] = None
 
     for lang in cascading_languages:
-        log(f"[DL] S{season:02d}E{episode_num:03d} [{lang}] → TMP: {tmp_path}")
-        # TMP vor jedem Versuch leeren, damit keine Altlasten die Dateisuche stören
+        if _check_stop():
+            log(f"[STOP] {ep_label} – weitere Sprachen werden nicht mehr geladen")
+            break
+
+        log(f"[DL] {ep_label} [{lang}] → TMP: {tmp_path}")
+        # TMP vor jedem Versuch leeren: aniworld darf nie zwei Sprachversionen
+        # gleichzeitig im selben Ordner sehen, sonst werden sie zusammengeführt.
         clear_tmp(tmp_path)
-        if _run_aniworld_download(episode_url, lang, str(tmp_path), timeout):
-            found = find_downloaded_file(str(tmp_path), season, episode_num)
-            if found:
-                log(f"[TMP] Gefundene Datei: {found.name}")
-                downloaded = True
-                used_language = lang
-                break
 
-    if not downloaded:
-        log(f"[FAIL] S{season:02d}E{episode_num:03d} – kein Download möglich")
-        return _result("failed")
+        if not _run_aniworld_download(episode_url, lang, str(tmp_path), timeout):
+            failed_languages.append(lang)
+            continue
 
-    # Ordnernamen aus TMP-Pfad bestimmen (zuverlässig, kein Raten nötig)
-    if found:
-        try:
-            rel = found.relative_to(tmp_path)
-            parts = rel.parts
-            detected_folder = parts[0] if len(parts) >= 2 else None
-        except ValueError:
-            detected_folder = None
+        found = find_downloaded_file(str(tmp_path), season, episode_num)
+        if not found:
+            log(f"[WARN] {ep_label} [{lang}] – keine Datei im TMP gefunden")
+            failed_languages.append(lang)
+            continue
 
-        existing_folder = anime.get("folder_name")
+        log(f"[TMP] Gefundene Datei: {found.name}")
 
-        # DB-Ordnername initial speichern, wenn noch nicht bekannt
-        if not existing_folder and detected_folder:
-            db.update_anime(data_folder, anime["id"], folder_name=detected_folder)
-            anime["folder_name"] = detected_folder
-            log(f"[DB] Ordnername gespeichert: {detected_folder}")
-
-        # Finaler Zielordner: DB-Ordnername hat Vorrang vor erkanntem (verhindert Ordner-Drift)
-        final_folder = existing_folder or detected_folder
-        target_dir = get_storage_path(
-            cfg,
-            anime["url"],
-            folder_name=final_folder,
-            season=season,
-            is_film=is_film,
-        )
+        target_dir = _resolve_target_dir(cfg, data_folder, anime, found, tmp_path, season, is_film)
         log(f"[TMP] Zielpfad: {target_dir}")
 
-        ep_title = episode_info.get("title_de") or episode_info.get("title_en") or ""
+        if ep_title is None:
+            # serienstream liefert Episodentitel nicht auf Staffel-Ebene (das Modul
+            # kennt sie nur pro Episoden-Fetch). Deshalb hier – nur beim tatsächlichen
+            # Download, wo der Dateiname gebaut wird – gezielt nachladen: 1 Fetch pro
+            # Episode statt 1 pro enumerierter Episode oder 1 pro Sprache.
+            ep_title = episode_info.get("title_de") or episode_info.get("title_en") or ""
+            if not ep_title:
+                ep_title = scraper.get_episode_title(episode_url) or ""
+
         final_path = move_tmp_to_final(
-            found, target_dir, season, episode_num, ep_title, used_language or "",
-            film_naming_mode=get_film_naming_mode(cfg),
+            found, target_dir, season, episode_num, ep_title, lang,
+            film_naming_mode=film_naming_mode,
         )
 
-        if final_path:
-            log(f"[OK] S{season:02d}E{episode_num:03d} [{used_language}] → {final_path.name}")
-        else:
-            log(f"[WARN] S{season:02d}E{episode_num:03d} – Verschieben aus TMP fehlgeschlagen")
-
-        # TMP nach Abschluss aufräumen
+        # TMP sofort nach dem Verschieben leeren – erst danach startet die
+        # nächste Sprache (strikt sequenziell, kein paralleler Zugriff).
         clear_tmp(tmp_path)
 
-    # Fehlende deutsche Episoden tracken
-    if used_language and used_language != "German Dub":
-        return _result("no_german", used_language)
+        if final_path:
+            log(f"[OK] {ep_label} [{lang}] → {final_path.name}")
+            downloaded_languages.append(lang)
+        else:
+            log(f"[WARN] {ep_label} [{lang}] – Verschieben aus TMP fehlgeschlagen")
+            failed_languages.append(lang)
+            continue
 
-    return _result("downloaded", used_language)
+        if not multi_mode:
+            # Kaskaden-Modus: erste erfolgreiche Sprache gewinnt
+            break
+
+    all_present = present_languages + downloaded_languages
+    missing_languages = [l for l in target_languages if l not in all_present]
+
+    if not downloaded_languages:
+        log(f"[FAIL] {ep_label} – kein Download möglich (versucht: {failed_languages})")
+        return _result("failed", missing=missing_languages)
+
+    if multi_mode and missing_languages:
+        log(f"[WARN] {ep_label} – nicht geladen: {missing_languages}")
+
+    primary_language = downloaded_languages[0]
+
+    # Fehlende deutsche Episoden tracken – nur wenn German Dub gewünscht ist
+    # und weder vorhanden noch geladen wurde.
+    if "German Dub" in target_languages and "German Dub" not in all_present:
+        return _result("no_german", primary_language, downloaded_languages, missing_languages)
+
+    return _result("downloaded", primary_language, downloaded_languages, missing_languages)
 
 
 # ──────────────────────── Modi ────────────────────────
@@ -617,10 +765,9 @@ def _run_default(cfg: dict, data_folder: str) -> None:
         status["progress"]["current_series_index"] = idx + 1
 
         base_url = scraper.get_base_url(anime["url"])
-        start_msg = f"[SERIE] {anime['title']} – {base_url}"
-        log(f"{'='*len(start_msg)}")
-        log(start_msg)
-        log(f"{'='*len(start_msg)}")
+        log(_LOG_SEPARATOR)
+        log(f"[SERIE] {anime['title']} – {base_url}")
+        log(_LOG_SEPARATOR)
 
         seasons = scraper.get_season_numbers(anime["url"])
         if not seasons:
@@ -813,14 +960,14 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
             season, episode_num = parsed
             output_path = get_download_path(german_cfg, anime["url"], season == 0)
 
-            # Episode-Info aus Staffelseiten-Cache (enthält korrekte Sprachen + Titel)
-            log(f"[CHECK] Prüfe Sprachverfügbarkeit für {episode_url}")
+            # Sprach-Verfügbarkeit gezielt für die laut DB fehlende Sprache (German Dub)
+            # ermitteln. Das aniworld-Modul liefert Sprachen nur pro Episode (gebündelt
+            # in EINEM Fetch); es wird ausschließlich German Dub geprüft/geladen.
+            log(f"[CHECK] Prüfe Sprachverfügbarkeit (German Dub) für {episode_url}")
             cached_ep = ep_info_cache.get(episode_url)
-            if cached_ep is not None:
-                available_langs = _normalize_language_list(cached_ep.get("languages", []))
-            else:
-                # Nicht im Cache (z.B. URL-Format weicht ab) → Fallback auf Episodenseite
-                log(f"[CHECK] Nicht im Staffel-Cache – Fallback auf Episodenseite")
+            available_langs = _normalize_language_list((cached_ep or {}).get("languages", []))
+            if not available_langs:
+                # Sprachen kommen nicht mehr von der Staffelseite → pro Episode holen (1 Fetch).
                 available_langs = _normalize_language_list(scraper.get_episode_languages(episode_url))
 
             if available_langs and "German Dub" not in available_langs:
@@ -831,18 +978,23 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                 continue
 
             if not available_langs and scraper.is_sto(episode_url):
-                log(f"[WARN] serienstream.to-Sprachen konnten nicht sicher erkannt werden – versuche German Dub trotzdem: {episode_url}")
+                log(f"[WARN] serienstream-Sprachen konnten nicht sicher erkannt werden – versuche German Dub trotzdem: {episode_url}")
 
             log(f"[CHECK] German Dub verfügbar – starte Download: {episode_url}")
 
-            # Vorhandene Datei für diese Episode merken (zum späteren Ersetzen)
-            found_existing = find_downloaded_file(
-                output_path,
-                season,
-                episode_num,
-                folder_name=anime.get("folder_name"),
-                title_hint=anime.get("title"),
-            )
+            # Vorhandene Dateien dieser Episode merken (zum späteren Ersetzen).
+            # Nur Dateien entfernen, deren Sprache NICHT gewünscht ist: bei
+            # Mehrsprach-Einträgen bleiben z.B. English-Sub-Versionen erhalten,
+            # bei Einträgen ohne eigene Auswahl gilt wie bisher "nur German Dub behalten".
+            entry_languages = db.parse_languages(anime.get("languages"))
+            keep_languages = set(entry_languages) | {"German Dub"} if entry_languages else {"German Dub"}
+            replaceable_files = [
+                f for f in find_episode_files(
+                    german_cfg, anime["url"], anime.get("folder_name"),
+                    season, episode_num, title_hint=anime.get("title"),
+                )
+                if detect_file_language(f) not in keep_languages
+            ]
 
             # Vollständiges episode_info aus dem Cache verwenden (wie in anderen Modi),
             # damit Titel und Sprachen direkt von der Staffelseite stammen.
@@ -863,16 +1015,18 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                 episode_info,
                 detailed=True,
                 ignore_existing=True,
+                force_languages=["German Dub"],
             )
             result = detailed_result.get("status")
             used_language = detailed_result.get("language") or "German Dub"
 
             if result == "downloaded":
-                # Alte Nicht-German-Dub-Datei erst jetzt entfernen (Download war erfolgreich)
-                if found_existing:
+                # Alte, nicht (mehr) gewünschte Sprachversionen erst jetzt entfernen
+                # (der German-Dub-Download war erfolgreich)
+                for old_file in replaceable_files:
                     try:
-                        found_existing.unlink()
-                        log(f"[REPLACE] Alte Datei gelöscht: {found_existing.name}")
+                        old_file.unlink()
+                        log(f"[REPLACE] Alte Datei gelöscht: {old_file.name}")
                     except Exception as e:
                         log(f"[WARN] Alte Datei konnte nicht gelöscht werden: {e}")
 
@@ -1161,26 +1315,63 @@ def _run_check(cfg: dict, data_folder: str) -> None:
                         db.set_missing_german_episodes(data_folder, anime["id"], all_missing)
                     return
 
-                existing = episode_already_downloaded(
-                    cfg, anime["url"], anime.get("folder_name"),
-                    season, ep["episode"],
-                    title_hint=anime.get("title"),
-                )
+                target_languages, multi_mode = _resolve_target_languages(cfg, anime)
 
-                if existing and check_file_integrity(existing):
-                    status["progress"]["skipped_episodes"] += 1
-                    status["completed_episodes_overall"] += 1
-                    continue
+                if multi_mode:
+                    # Pro gewünschter Sprache prüfen: fehlt die Datei oder ist sie defekt?
+                    broken: List = []
+                    missing_languages: List[str] = []
+                    for lang in target_languages:
+                        lang_file = episode_already_downloaded(
+                            cfg, anime["url"], anime.get("folder_name"),
+                            season, ep["episode"],
+                            title_hint=anime.get("title"), language=lang,
+                        )
+                        if lang_file is None:
+                            missing_languages.append(lang)
+                        elif not check_file_integrity(lang_file):
+                            broken.append((lang, lang_file))
 
-                if existing:
-                    log(f"[CHECK] Defekte Datei: {existing.name} – lade erneut herunter")
-                    try:
-                        existing.unlink()
-                    except Exception as e:
-                        log(f"[WARN] Defekte Datei konnte nicht gelöscht werden: {e}")
+                    if not missing_languages and not broken:
+                        status["progress"]["skipped_episodes"] += 1
+                        status["completed_episodes_overall"] += 1
+                        continue
+
+                    # Nur die defekten Dateien der jeweiligen Sprache entfernen
+                    unlink_failed = False
+                    for lang, lang_file in broken:
+                        log(f"[CHECK] Defekte Datei [{lang}]: {lang_file.name} – lade erneut herunter")
+                        try:
+                            lang_file.unlink()
+                        except Exception as e:
+                            log(f"[WARN] Defekte Datei konnte nicht gelöscht werden: {e}")
+                            unlink_failed = True
+
+                    if unlink_failed:
                         status["progress"]["failed_episodes"] += 1
                         status["completed_episodes_overall"] += 1
                         continue
+                else:
+                    existing = episode_already_downloaded(
+                        cfg, anime["url"], anime.get("folder_name"),
+                        season, ep["episode"],
+                        title_hint=anime.get("title"),
+                    )
+
+                    if existing and check_file_integrity(existing):
+                        status["progress"]["skipped_episodes"] += 1
+                        status["completed_episodes_overall"] += 1
+                        continue
+
+                    if existing:
+                        log(f"[CHECK] Defekte Datei: {existing.name} – lade erneut herunter")
+                        try:
+                            existing.unlink()
+                        except Exception as e:
+                            log(f"[WARN] Defekte Datei konnte nicht gelöscht werden: {e}")
+                            status["progress"]["failed_episodes"] += 1
+                            status["completed_episodes_overall"] += 1
+                            continue
 
                 result = _download_episode(cfg, data_folder, anime, season, ep)
                 status["completed_episodes_overall"] += 1

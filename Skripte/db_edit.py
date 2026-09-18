@@ -15,8 +15,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-from app.config import get_data_folder, load_config
+from app.config import VALID_LANGUAGES, get_data_folder, load_config
 from app import database as db
+from app import file_manager as fm
 
 BEHALTEN = object()  # Sentinel – diesen Wert bitte nicht ändern
 DELETE   = object()  # Sentinel – Feld auf Default-Wert zurücksetzen
@@ -41,6 +42,16 @@ last_episode        = BEHALTEN      # z.B. 12
 last_film           = BEHALTEN      # z.B. 0
 folder_name         = BEHALTEN      # z.B. "My.Hero.Academia"  |  None = leeren
 fehlende_deutsch_folgen = BEHALTEN  # z.B. "[]"
+
+# Gewünschte Sprachen dieses Eintrags (Mehrsprach-Download).
+#   BEHALTEN            = nicht ändern
+#   []                  = keine eigene Auswahl → globale Kaskade aus config.yaml
+#                         (löscht KEINE Dateien)
+#   ["German Dub", ...] = genau diese Sprachen werden geladen
+# Erlaubt: "German Dub", "German Sub", "English Dub", "English Sub"
+# ⚠ Wird eine Sprache aus einer bestehenden Auswahl entfernt, werden die
+#   Episodendateien GENAU DIESER Sprache gelöscht (mit Vorschau + Rückfrage).
+languages           = BEHALTEN      # z.B. ["German Dub", "English Sub"]
 
 # ══════════════════════════════════════════════════════
 #  AB HIER NICHTS ÄNDERN
@@ -86,6 +97,10 @@ def fmt_row(row: dict) -> str:
     lines.append(f"  Letzte Episode  : {row.get('last_episode', 0)}")
     lines.append(f"  Letzter Film    : {row.get('last_film', 0)}")
     lines.append(f"  Ordnername      : {row.get('folder_name') or '–'}")
+    entry_languages = db.parse_languages(row.get("languages"))
+    lines.append(
+        f"  Sprachen        : {', '.join(entry_languages) if entry_languages else '– (globale Kaskade)'}"
+    )
     try:
         missing = json.loads(row.get("fehlende_deutsch_folgen") or "[]")
         lines.append(f"  Fehlende DE     : {len(missing)} Einträge")
@@ -125,7 +140,21 @@ def main() -> None:
         if v is not BEHALTEN
     }
 
-    if not updates:
+    # Sprachen laufen über einen eigenen Pfad, weil beim Entfernen einer Sprache
+    # deren Episodendateien gelöscht werden.
+    new_languages = None
+    removed_languages = []
+    if languages is not BEHALTEN:
+        raw = [] if languages is DELETE else (languages or [])
+        invalid = [l for l in raw if l not in VALID_LANGUAGES]
+        if invalid:
+            print(f"\n✗ Ungültige Sprachen: {invalid}\n  Erlaubt: {VALID_LANGUAGES}")
+            sys.exit(1)
+        new_languages = list(raw)
+        current = db.parse_languages(row.get("languages"))
+        removed_languages = [l for l in current if l not in new_languages]
+
+    if not updates and new_languages is None:
         print("\nKeine Änderungen definiert (alle Felder auf BEHALTEN).")
         return
 
@@ -135,12 +164,56 @@ def main() -> None:
         display_v = f"<DEFAULT: {repr(v)}>" if local_vars[k] is DELETE else repr(v)
         print(f"  {k:28} {repr(alt):30} → {display_v}")
 
+    if new_languages is not None:
+        alt_langs = db.parse_languages(row.get("languages"))
+        print(f"  {'languages':28} {repr(alt_langs):30} → {repr(new_languages)}")
+
+    # Vorschau der Löschungen (Dry-Run, es wird noch nichts angefasst)
+    to_delete = []
+    if removed_languages and new_languages:
+        cfg = load_config()
+        for language in removed_languages:
+            preview = fm.delete_language_files(
+                cfg, row["url"], row.get("folder_name"), language, dry_run=True
+            )
+            to_delete.extend(preview["deleted"])
+            for err in preview["errors"]:
+                print(f"  ⚠ {err}")
+
+        print(f"\n── Zu löschende Dateien ({', '.join(removed_languages)}) ──")
+        if to_delete:
+            for path in to_delete:
+                print(f"  ✗ {path}")
+            print(f"\n  {len(to_delete)} Datei(en) werden GELÖSCHT.")
+        else:
+            print("  (keine passenden Dateien gefunden)")
+    elif removed_languages:
+        print("\n  Hinweis: Auswahl wird geleert (globale Kaskade) – es werden KEINE Dateien gelöscht.")
+
     confirm = input("\nÜbernehmen? [j/N] ").strip().lower()
     if confirm != "j":
         print("Abgebrochen.")
         return
 
-    ok = db.update_anime(data_folder, ANIME_ID, **updates)
+    ok = True
+    if updates:
+        ok = db.update_anime(data_folder, ANIME_ID, **updates)
+
+    if new_languages is not None:
+        result = db.apply_language_selection(
+            data_folder, ANIME_ID, new_languages, delete_files=True
+        )
+        if result is None:
+            ok = False
+        else:
+            if result["deleted_files"]:
+                print(f"\n✓ {len(result['deleted_files'])} Datei(en) gelöscht.")
+            for err in result["errors"]:
+                print(f"  ⚠ {err}")
+            if result["added"]:
+                print(f"✓ Neue Sprachen {result['added']} – Fortschritt zurückgesetzt, "
+                      f"fehlende Episoden werden beim nächsten Lauf nachgeladen.")
+
     if ok:
         print("\n✓ Gespeichert.\n")
         updated = db.get_anime_by_id(data_folder, ANIME_ID)

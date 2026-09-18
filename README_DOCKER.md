@@ -48,6 +48,7 @@ docker run -d -p 5050:5050 -v ./data:/app/data -v ./Downloads:/app/Downloads wim
 - **🤖 Automation:** Geplante Läufe per Cron-Schedule oder Intervall mit Discord-Benachrichtigungen
 - **🔍 Suche + Poster:** Durchsuche Aniworld und SerieStream
 - **🇩🇪 Sprach-Priorität:** German Dub → Sub → English (automatischer Fallback)
+- **🌍 Mehrsprach-Download:** Pro Serie mehrere Sprachen gleichzeitig – jede als eigene Datei, sequenziell geladen (kein Merging durch aniworld)
 - **📁 Jellyfin-Ready:** `Title (Year) [IMDB]/Season/Episode.mkv`
 - **💾 Persistent:** SQLite-DB und Config überleben Container-Neustarts
 - **📄 AniLoader.txt Import:** Automatischer Import beim Container-Start
@@ -180,6 +181,7 @@ docker compose logs -f
 **🗃️ Datenbank-Tab**
 - Alle Serien mit Status, Fortschritt, fehlende DE-Episoden
 - Sortierung, Filter, Löschen/Wiederherstellen
+- **🌍 Sprachen-Spalte:** Pro Serie die gewünschten Sprachen anhaken (Mehrsprach-Download). Chip `Kaskade` = keine eigene Auswahl. Beim Abwählen einer Sprache zeigt der Dialog vorab alle Dateien, die gelöscht würden
 - **💾 Export DB:** Komplette SQLite-Datenbank herunterladen
 - **📄 Export Links:** Alle URLs als AniLoader.txt herunterladen
 
@@ -233,6 +235,17 @@ curl -X POST http://localhost:5050/search \
 curl http://localhost:5050/database?q=naruto
 curl http://localhost:5050/database/stats
 
+# Mehrsprach-Download: gewünschte Sprachen eines Eintrags
+curl http://localhost:5050/anime/12/languages
+curl -X PUT http://localhost:5050/anime/12/languages \
+  -H "Content-Type: application/json" \
+  -d '{"languages": ["German Dub", "English Sub"]}'
+# Erlaubt: German Dub | German Sub | English Dub | English Sub
+# Leere Liste = globale Kaskade aus config.yaml (löscht nichts)
+# Entfernte Sprachen: nur DEREN Episodendateien werden gelöscht
+#   "dry_run": true      → nur anzeigen, was gelöscht würde
+#   "delete_files": false → Dateien behalten, nur DB ändern
+
 # Export-Funktionen
 curl http://localhost:5050/export/database  # SQLite-DB Download
 curl http://localhost:5050/export/links     # AniLoader.txt Download
@@ -269,6 +282,19 @@ const SERVER_PORT = 5050;
 ```yaml
 server:
   port: 5050
+
+domains:                      # Domains der Plattformen (Umzüge/Mirrors)
+  serienstream:
+    canonical: serienstream.to  # einzige Domain, die gespeichert/ausgegeben wird
+    aliases:                    # nur Eingabe, werden normalisiert
+      - serienstream.cx
+      - 186.2.175.5
+      - s.to
+  # Neue Mirror-Domain: hier unter aliases ergänzen (kein Neustart nötig) und
+  # im Tampermonkey.user.js unter PLATFORMS + @match eintragen.
+  # ⚠ Die aniworld-Library hat eine eigene Domainliste – eine ihr unbekannte
+  #   Domain wird zwar akzeptiert, der Download schlägt aber fehl.
+  # Alt-Einträge (s.to) werden beim Container-Start automatisch migriert.
 
 languages:                    # Download-Priorität
   - German Dub               # 1. Erste verfügbare Sprache
@@ -450,6 +476,10 @@ Serien-Filme/                 # serienstream.to Filme (serien_separate_movies: t
 - **Filme (Jellyfin):** `Season 00/S00E001 - Titel.mkv` – Jellyfin erkennt Season 00 als "Specials"
 - **Suffixe:** `""` (German Dub), `[Sub]` (German Sub), `[English Dub]`, `[English Sub]`
 
+> **Mehrere Sprachen pro Serie:** Bei Einträgen mit eigener Sprachauswahl (`PUT /anime/{id}/languages`) liegt pro Sprache eine eigene Datei nebeneinander: `S01E001 - Titel.mkv` + `S01E001 - Titel [English Sub].mkv`. Die Sprachen werden strikt nacheinander geladen und sofort aus dem TMP-Ordner ins Ziel verschoben, damit aniworld sie nicht zusammenführt. Das Suffix dient gleichzeitig als Sprach-Kennung für inkrementelle Downloads und für gezieltes Löschen.
+>
+> **🎬 In Jellyfin zusammenführen:** Damit die Sprachversionen nicht als mehrere Episoden erscheinen, das Plugin **[jellyfin-plugin-mergeversions](https://github.com/danieladov/jellyfin-plugin-mergeversions)** installieren – es fasst sie clientseitig zu einer Episode mit Versionsauswahl zusammen. Repository-URL: `https://raw.githubusercontent.com/danieladov/JellyfinPluginManifest/master/manifest.json` → Katalog → *Merge Versions* → Neustart → Geplante Aufgabe *Merge All Versions* ausführen.
+
 > **Film-Benennung wechseln:** Einstellungen → Film-Benennung → Modus wählen → "Dateien jetzt umbenennen & verschieben". Die Migration ist transaktional – bei einem Abbruch können `.migrate_tmp`-Dateien beim nächsten Wechsel aufgeräumt werden. Wechsel in beide Richtungen möglich.
 
 ---
@@ -485,6 +515,12 @@ A: **Standard** = Alles in Downloads. **Separate** = Anime/Serien getrennt für 
 
 **Q: Welche Sprache wird heruntergeladen?**  
 A: Erste verfügbare aus der `languages`-Liste. Kaskade: German Dub → German Sub → English Sub → English Dub
+
+**Q: Kann ich eine Serie in mehreren Sprachen gleichzeitig laden?**  
+A: Ja – Datenbank-Tab → Spalte **Sprachen** → Zeile anklicken → Sprachen anhaken (oder per `PUT /anime/{id}/languages`). Jede Sprache wird nacheinander geladen und als eigene Datei abgelegt. Zum Zusammenführen in Jellyfin das Plugin [jellyfin-plugin-mergeversions](https://github.com/danieladov/jellyfin-plugin-mergeversions) nutzen.
+
+**Q: Was passiert, wenn ich eine Sprache wieder entferne?**  
+A: Nur die Episodendateien genau dieser Sprache werden gelöscht (erkannt am Suffix im Dateinamen). Andere Sprachen, Episoden und Serien bleiben unberührt. Mit `"dry_run": true` vorher prüfen.
 
 **Q: Was ist der Unterschied zwischen `german` und `german_new`?**  
 A: `german` sucht nur fehlende deutsche Episoden bei bereits vorhandenen Serien. `german_new` prüft zusätzlich auf neue Episoden – beides in einem Lauf.

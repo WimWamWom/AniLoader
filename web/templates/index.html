@@ -170,6 +170,7 @@
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
       <h3 style="margin-bottom:0;">Datenbank</h3>
       <span id="db-count" class="db-count-badge"></span>
+      <small id="db-msg" style="display:none;" class="toast-msg"></small>
     </div>
 
     <!-- Suchleiste -->
@@ -211,6 +212,7 @@
             <th class="db-col-url">Link</th>
             <th class="db-col-bool" onclick="sortDb('complete')">Komplett</th>
             <th class="db-col-bool">DE</th>
+            <th class="db-col-langs" title="Gewünschte Sprachen – klicken zum Bearbeiten">Sprachen</th>
             <th class="db-col-missing-de">Fehlende DE</th>
             <th class="db-col-se" onclick="sortDb('last_season')">S/E</th>
             <th class="db-col-film" onclick="sortDb('last_film')">Film</th>
@@ -218,7 +220,7 @@
           </tr>
         </thead>
         <tbody id="db-tbody">
-          <tr><td colspan="9" class="db-empty">Lade...</td></tr>
+          <tr><td colspan="10" class="db-empty">Lade...</td></tr>
         </tbody>
       </table>
     </div>
@@ -557,6 +559,38 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeSeriesSelector()">Abbrechen</button>
       <button class="btn btn-primary" onclick="addSelectedSeriesToFilter()">Hinzufügen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ Sprachen-Modal ═══════════════════════ -->
+<div id="languages-modal" class="modal" style="display:none;">
+  <div class="modal-overlay" onclick="closeLanguagesModal()"></div>
+  <div class="modal-content lang-modal-content">
+    <div class="modal-header">
+      <h2>🌍 Sprachen – <span id="lang-modal-title"></span></h2>
+      <button class="modal-close" onclick="closeLanguagesModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="lang-hint">
+        Ausgewählte Sprachen werden <strong>nacheinander</strong> geladen und als jeweils
+        eigene Datei abgelegt. Fehlende Sprachen bereits vorhandener Episoden werden beim
+        nächsten Lauf nachgeholt – nichts wird doppelt geladen.
+      </p>
+
+      <div class="lang-options" id="lang-options"></div>
+
+      <p class="lang-hint lang-hint-muted" id="lang-cascade-hint">
+        <strong>Keine Auswahl</strong> = globale Sprach-Kaskade aus der Konfiguration
+        (erste verfügbare Sprache gewinnt). Dabei wird nichts gelöscht.
+      </p>
+
+      <div id="lang-preview" class="lang-preview" style="display:none;"></div>
+    </div>
+    <div class="modal-footer">
+      <span id="lang-modal-msg" class="toast-msg" style="display:none;"></span>
+      <button class="btn btn-secondary" onclick="closeLanguagesModal()">Abbrechen</button>
+      <button class="btn btn-primary" id="lang-save-btn" onclick="saveLanguages()">Speichern</button>
     </div>
   </div>
 </div>

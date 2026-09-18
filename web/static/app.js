@@ -10,9 +10,10 @@ const INTERVAL_LOG_FULL       =  2000;  // ms – Inkrementelles Log-Polling im 
 const INTERVAL_DISK           = 60000;  // ms – Speicherplatz-Anzeige
 const INTERVAL_AUTOMATION     = 30000;  // ms – Automation-Status
 
-// Log-Performance-Konstanten
-const LOG_INITIAL_TAIL  = 500;   // Zeilen beim ersten Öffnen des Logs-Tabs
-const LOG_MAX_DOM_LINES = 3000;  // Maximale Zeilen gleichzeitig im DOM
+// Log-Performance-Konstanten (Byte-Offset-basiert, kein Ganzdatei-Read)
+const LOG_TAIL_BYTES     = 131072; // ~128 KB neueste Log-Bytes beim Öffnen (Tail-first)
+const LOG_MAX_DOM_LINES  = 12000;  // Max. Zeilen gleichzeitig im DOM (hoch, damit Backfill Platz hat)
+const LOG_BACKFILL_LINES = 4000;   // Bis so viele Zeilen ältere automatisch nachladen ("nach und nach")
 
 // ──────────────────────── Hilfsfunktionen ────────────────────────
 
@@ -261,10 +262,10 @@ async function stopDownload() {
 
 async function refreshLog() {
   try {
-    const data = await api('/last_run');
+    const data = await api('/last_run?tail_bytes=8192');
     const el = $('#log-output-mini');
     if (el) {
-      const lines = (data.log || '').trim().split('\n');
+      const lines = (data.text || data.log || '').trim().split('\n');
       el.textContent = lines.slice(-15).map(l =>
         l.replace(/\[(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})\]/g,
           (_, y, mo, d, t) => `[${t} ${d}.${mo}.${y.slice(2)}]`)
@@ -284,7 +285,11 @@ let _parsedLines = [];       // Cache aller geparsten Zeilen (im DOM)
 let _renderedCount = 0;      // Anzahl bereits gerenderter Zeilen (ohne Filter)
 let _activeFilter = false;   // Ob zuletzt ein Filter aktiv war
 let _renderLogTimer = null;
-let _logServerOffset = 0;    // Wie viele Zeilen der Server zuletzt hatte (für inkrementelles Polling)
+let _logBottomByte = null;   // Byte-Offset bis wohin geladen (Live-Tail-Position); null = noch nichts geladen
+let _logTopByte    = null;   // ältester geladener Byte-Offset (für Backfill nach oben)
+let _logBof        = false;  // Dateianfang erreicht?
+let _logBackfilling = false; // läuft gerade ein Backfill?
+let _logCurrentFile = null;  // null = aktueller Lauf (last_run); sonst archivierter Dateiname
 let _logViewingArchive = false; // Ob aktuell ein archivierter Log angezeigt wird
 function debouncedRenderLog() {
   clearTimeout(_renderLogTimer);
@@ -325,24 +330,26 @@ const TAG_TO_LEVEL = {
   'DL': 'dl', 'CMD': 'dl', 'ANIWORLD': 'dl', 'LANG': 'dl', 'DOWNLOAD': 'dl',
 };
 
-function parseLogLine(line) {
+// Trennlinien: ───, ═══ und das ältere === aus archivierten Logs
+const SEPARATOR_RE = /^[=─═_-]{5,}$/;
+
+function parseLogLine(rawLine) {
+  // Windows schreibt CRLF; nach split('\n') bleibt sonst ein \r am Zeilenende
+  const line = rawLine.replace(/\r+$/, '');
+
   // Format: [2025-03-02 14:30:00] [TAG] message
   const m = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*\[([^\]]+)\]\s*(.*)$/);
   if (m) {
     return { timestamp: m[1], tag: m[2], message: m[3], raw: line };
   }
-  // Separator lines (═══ or ───)
-  if (/^[\[?\d].*[═─]{5,}/.test(line) || /^[═─]{5,}/.test(line)) {
-    const m2 = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*(.*)$/);
-    if (m2) {
-      return { timestamp: m2[1], tag: null, message: m2[2], raw: line, isSeparator: true };
-    }
-    return { timestamp: null, tag: null, message: line, raw: line, isSeparator: true };
-  }
-  // Timestamp but no tag
+  // Timestamp ohne Tag – ggf. eine Trennlinie
   const m3 = line.match(/^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*(.*)$/);
   if (m3) {
-    return { timestamp: m3[1], tag: null, message: m3[2], raw: line };
+    const isSeparator = SEPARATOR_RE.test(m3[2].trim());
+    return { timestamp: m3[1], tag: null, message: m3[2], raw: line, isSeparator };
+  }
+  if (SEPARATOR_RE.test(line.trim())) {
+    return { timestamp: null, tag: null, message: line, raw: line, isSeparator: true };
   }
   return { timestamp: null, tag: null, message: line, raw: line };
 }
@@ -490,59 +497,116 @@ function setLogLevel(level) {
   renderFormattedLog(true);
 }
 
-async function refreshFullLog() {
-  if (_logViewingArchive) return;  // Kein Auto-Refresh für archivierte Logs
+// URL für aktuellen Lauf oder eine archivierte Datei bauen
+function _logUrl(params) {
+  const qs = new URLSearchParams(params).toString();
+  return _logCurrentFile
+    ? `/archived_logs/${encodeURIComponent(_logCurrentFile)}?${qs}`
+    : `/last_run?${qs}`;
+}
 
+// Initiales Laden: neueste Zeilen (Tail) SOFORT zeigen, dann Ältere "nach und nach" nachladen
+async function loadLogInitial() {
   try {
-    let data;
-
-    if (_logServerOffset === 0) {
-      // Erstes Laden: nur die letzten LOG_INITIAL_TAIL Zeilen holen
-      data = await api(`/last_run?tail=${LOG_INITIAL_TAIL}`);
-      _parsedLines = [];
-      _renderedCount = 0;
-      rawLogText = '';
-    } else {
-      // Inkrementell: nur neue Zeilen seit letztem Poll holen
-      data = await api(`/last_run?offset=${_logServerOffset}`);
-    }
-
-    // Rotation erkennen: Server hat weniger Zeilen als unser Offset → neuer Lauf
-    if (data.total_lines !== undefined && data.total_lines < _logServerOffset) {
-      _logServerOffset = 0;
-      _parsedLines = [];
-      _renderedCount = 0;
-      rawLogText = '';
-      data = await api(`/last_run?tail=${LOG_INITIAL_TAIL}`);
-    }
-
-    if (data.total_lines !== undefined) {
-      _logServerOffset = data.total_lines;
-    }
-
-    if (data.lines && data.lines.length > 0) {
-      // Neue Zeilen an rawLogText anhängen
-      const newText = data.lines.join('\n');
-      rawLogText = rawLogText ? rawLogText + '\n' + newText : newText;
-      renderFormattedLog(false);
-    } else if (_logServerOffset === 0) {
-      // Erste Antwort war leer
-      renderFormattedLog(false);
-    }
+    const data = await api(_logUrl({ tail_bytes: LOG_TAIL_BYTES }));
+    rawLogText = data.text || '';
+    _logTopByte = data.start || 0;
+    _logBottomByte = data.end || 0;
+    _logBof = !!data.bof;
+    _parsedLines = [];
+    _renderedCount = 0;
+    renderFormattedLog(true);
+    const c = $('#log-output-full');
+    if (c) { c.scrollTop = c.scrollHeight; _attachLogScrollHandler(c); }
+    backfillProgressively();
   } catch (e) {
-    const container = $('#log-output-full');
-    if (container && !container.children.length) {
-      container.innerHTML = '<span style="color:var(--danger)">Logs konnten nicht geladen werden.</span>';
+    const c = $('#log-output-full');
+    if (c && !c.children.length) {
+      c.innerHTML = '<span style="color:var(--danger)">Logs konnten nicht geladen werden.</span>';
     }
   }
 }
 
+// Live-Tailing des aktuellen Laufs – holt nur NEUE Bytes ab _logBottomByte
+async function refreshFullLog() {
+  if (_logViewingArchive) return;                 // archivierte Logs: kein Live-Refresh
+  if (_logBottomByte === null) { await loadLogInitial(); return; }
+  try {
+    const data = await api(_logUrl({ after: _logBottomByte }));
+    // Rotation erkennen: Datei kleiner als unsere Position → neuer Lauf
+    if (data.size !== undefined && data.size < _logBottomByte) {
+      resetLogState();
+      await loadLogInitial();
+      return;
+    }
+    if (data.text) {
+      rawLogText += data.text;                     // Ausschnitte sind zeilenbündig
+      _logBottomByte = data.end;
+      renderFormattedLog(false);
+    } else if (data.end !== undefined) {
+      _logBottomByte = data.end;
+    }
+  } catch (e) { /* transient – nächster Poll versucht es erneut */ }
+}
+
+// Einen Block ältere Zeilen OBEN anfügen (Backfill). Gibt true zurück, wenn geladen.
+async function backfillOlder() {
+  if (_logBof || _logBackfilling || !_logTopByte || _logTopByte <= 0) return false;
+  _logBackfilling = true;
+  try {
+    const data = await api(_logUrl({ before: _logTopByte }));
+    if (!data.text) { _logBof = true; return false; }
+    const c = $('#log-output-full');
+    const prevH = c ? c.scrollHeight : 0;
+    const prevTop = c ? c.scrollTop : 0;
+    rawLogText = data.text + rawLogText;
+    _logTopByte = data.start || 0;
+    _logBof = !!data.bof;
+    _parsedLines = [];
+    _renderedCount = 0;
+    renderFormattedLog(true);                       // Prepend → voll neu rendern
+    // Scrollposition erhalten (außer Autoscroll ist an → bleibt unten)
+    if (c && !$('#log-autoscroll')?.checked) {
+      c.scrollTop = prevTop + (c.scrollHeight - prevH);
+    }
+    return true;
+  } catch (e) {
+    return false;
+  } finally {
+    _logBackfilling = false;
+  }
+}
+
+// Ältere Blöcke schrittweise nachladen, bis Dateianfang oder Zeilen-Cap erreicht
+async function backfillProgressively() {
+  while (!_logBof) {
+    const lineCount = rawLogText ? rawLogText.split('\n').length : 0;
+    if (lineCount >= LOG_BACKFILL_LINES) break;
+    const ok = await backfillOlder();
+    if (!ok) break;
+    await new Promise(r => setTimeout(r, 120));     // "nach und nach", UI bleibt responsiv
+  }
+}
+
+// Scroll-Handler: nahe am oberen Rand automatisch weiter ältere Zeilen nachladen
+function _attachLogScrollHandler(c) {
+  if (!c || c._backfillBound) return;
+  c._backfillBound = true;
+  c.addEventListener('scroll', () => {
+    if (c.scrollTop < 80 && !_logBof && !_logBackfilling) backfillOlder();
+  });
+}
+
 function resetLogState() {
-  _logServerOffset = 0;
+  _logBottomByte = null;
+  _logTopByte = null;
+  _logBof = false;
+  _logBackfilling = false;
   _parsedLines = [];
   _renderedCount = 0;
   rawLogText = '';
   _logViewingArchive = false;
+  _logCurrentFile = null;
 }
 
 function toggleLogAutoRefresh() {
@@ -616,32 +680,23 @@ async function loadSelectedLog() {
   if (!selector) return;
   
   const selectedLog = selector.value;
-  
-  try {
-    if (selectedLog === 'current') {
-      // Aktueller Log: State zurücksetzen und frisch laden
-      resetLogState();
-      await refreshFullLog();
-    } else {
-      // Archivierter Log: einmalig laden, kein Auto-Refresh
-      _logViewingArchive = true;
-      const data = await api(`/archived_logs/${encodeURIComponent(selectedLog)}`);
-      rawLogText = data.content || '';
-      _parsedLines = [];
-      _renderedCount = 0;
-      renderFormattedLog(true);  // Neue Datei → immer voll neu rendern
-      
-      // Auto-Refresh deaktivieren für archivierte Logs
-      const autoRefresh = $('#log-auto-refresh');
-      if (autoRefresh && autoRefresh.checked) {
-        autoRefresh.checked = false;
-        toggleLogAutoRefresh();
-      }
-    }
-  } catch (e) {
-    const container = $('#log-output-full');
-    if (container) {
-      container.innerHTML = '<span style="color:var(--danger)">Log konnte nicht geladen werden: ' + e.message + '</span>';
+  resetLogState();
+
+  if (selectedLog === 'current') {
+    // Aktueller Lauf: Tail-first + Backfill + Live-Tailing
+    _logCurrentFile = null;
+    _logViewingArchive = false;
+    await loadLogInitial();
+  } else {
+    // Archivierter Log: Tail-first + Backfill per Byte-Offset, kein Live-Refresh
+    _logCurrentFile = selectedLog;
+    _logViewingArchive = true;
+    await loadLogInitial();
+
+    const autoRefresh = $('#log-auto-refresh');
+    if (autoRefresh && autoRefresh.checked) {
+      autoRefresh.checked = false;
+      toggleLogAutoRefresh();
     }
   }
 }
@@ -847,8 +902,13 @@ function renderDatabase(entries) {
   const tbody = $('#db-tbody');
   const countEl = $('#db-count');
   if (countEl) countEl.textContent = entries?.length ? `${entries.length} Einträge` : '';
+  // Titel je ID merken – das Sprachen-Modal liest ihn von hier, statt ihn durch
+  // ein onclick-Attribut zu schleusen (Titel können Anführungszeichen enthalten).
+  dbTitlesById = {};
+  (entries || []).forEach(e => { dbTitlesById[e.id] = e.title || ''; });
+
   if (!entries || !entries.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="db-empty">Keine Einträge gefunden</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="db-empty">Keine Einträge gefunden</td></tr>';
     return;
   }
 
@@ -882,6 +942,12 @@ function renderDatabase(entries) {
       fehlendeDE = '–';
     }
 
+    // Gewünschte Sprachen als kompakte Chips (leer = globale Kaskade)
+    const langs = parseEntryLanguages(e.languages);
+    const langChips = langs.length
+      ? langs.map(l => `<span class="db-lang-chip">${esc(LANG_SHORT[l] || l)}</span>`).join('')
+      : '<span class="db-lang-chip db-lang-chip-auto">Kaskade</span>';
+
     const deletedBadge = isDeleted
       ? `<span class="db-deleted-badge">&#128465; Gelöscht</span> `
       : '';
@@ -897,6 +963,10 @@ function renderDatabase(entries) {
       <td><a class="db-url-link" href="${e.url}" target="_blank" rel="noreferrer" title="${e.url}">${esc(displayUrl)}</a></td>
       <td style="text-align:center">${komplett}</td>
       <td style="text-align:center">${deKomp}</td>
+      <td style="text-align:center">
+        <button class="db-lang-btn" onclick="openLanguagesModal(${e.id})"
+                title="Gewünschte Sprachen bearbeiten">${langChips}</button>
+      </td>
       <td class="db-missing-de" title="${esc(JSON.stringify(missing || []))}">${esc(fehlendeDE)}</td>
       <td class="db-se">${se}</td>
       <td style="text-align:center">${film || '–'}</td>
@@ -938,6 +1008,216 @@ async function restoreAnime(id) {
   if (!confirm('Diesen Eintrag erneut herunterladen? Der Status wird zurückgesetzt.')) return;
   await api(`/anime/${id}/restore`, { method: 'POST' });
   loadDatabase();
+}
+
+// ──────────────────────── Sprachen pro Eintrag ────────────────────────
+
+const LANG_ALL = ['German Dub', 'German Sub', 'English Dub', 'English Sub'];
+
+// Kurzform für die Chips in der Tabelle
+const LANG_SHORT = {
+  'German Dub': 'DE',
+  'German Sub': 'DE-Sub',
+  'English Dub': 'EN',
+  'English Sub': 'EN-Sub',
+};
+
+const LANG_LABEL = {
+  'German Dub': '🇩🇪 German Dub',
+  'German Sub': '🇩🇪 German Sub',
+  'English Dub': '🇬🇧 English Dub',
+  'English Sub': '🇬🇧 English Sub',
+};
+
+const LANG_FILE_HINT = {
+  'German Dub': 'S01E001 - Titel.mkv (ohne Suffix)',
+  'German Sub': 'S01E001 - Titel [Sub].mkv',
+  'English Dub': 'S01E001 - Titel [English Dub].mkv',
+  'English Sub': 'S01E001 - Titel [English Sub].mkv',
+};
+
+let langModalId = null;
+let langModalInitial = [];
+let langPreviewSeq = 0;
+let dbTitlesById = {};
+
+/** Liest die `languages`-Spalte (JSON-String oder null) als Array. */
+function parseEntryLanguages(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Aktuell im Modal angehakte Sprachen – in fester Prioritätsreihenfolge. */
+function selectedLanguages() {
+  return LANG_ALL.filter((lang, idx) => $(`#lang-cb-${idx}`)?.checked);
+}
+
+async function openLanguagesModal(id) {
+  langModalId = id;
+  const modal = $('#languages-modal');
+  if (!modal) return;
+
+  // Wie beim Serien-Modal: unter <body> hängen, damit position:fixed am Viewport klebt
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
+
+  $('#lang-modal-title').textContent = dbTitlesById[id] || `#${id}`;
+  $('#lang-preview').style.display = 'none';
+  $('#lang-preview').innerHTML = '';
+  $('#lang-modal-msg').style.display = 'none';
+  $('#lang-options').innerHTML = '<div class="series-loading">Lade …</div>';
+  modal.style.display = 'flex';
+
+  let current = [];
+  try {
+    const res = await api(`/anime/${id}/languages`);
+    current = res.languages || [];
+  } catch (e) {
+    console.error('Sprachen laden fehlgeschlagen:', e);
+  }
+  langModalInitial = current.slice();
+
+  $('#lang-options').innerHTML = LANG_ALL.map((lang, idx) => `
+    <label class="lang-option" for="lang-cb-${idx}">
+      <input type="checkbox" id="lang-cb-${idx}" ${current.includes(lang) ? 'checked' : ''}
+             onchange="onLanguageToggle()">
+      <span class="lang-option-text">
+        <span class="lang-option-name">${LANG_LABEL[lang]}</span>
+        <span class="lang-option-file">${esc(LANG_FILE_HINT[lang])}</span>
+      </span>
+    </label>
+  `).join('');
+
+  updateCascadeHint();
+}
+
+function closeLanguagesModal() {
+  const modal = $('#languages-modal');
+  if (modal) modal.style.display = 'none';
+  langModalId = null;
+  langModalInitial = [];
+}
+
+function updateCascadeHint() {
+  const hint = $('#lang-cascade-hint');
+  if (hint) hint.style.display = selectedLanguages().length ? 'none' : '';
+}
+
+/** Bei jeder Änderung: Vorschau der zu löschenden Dateien aktualisieren. */
+async function onLanguageToggle() {
+  updateCascadeHint();
+
+  const selected = selectedLanguages();
+  const removed = langModalInitial.filter(l => !selected.includes(l));
+  const preview = $('#lang-preview');
+  if (!preview) return;
+
+  // Leere Auswahl = zurück zur Kaskade → es wird nichts gelöscht
+  if (!removed.length || !selected.length) {
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+    return;
+  }
+
+  preview.style.display = '';
+  preview.innerHTML = '<div class="lang-preview-loading">Prüfe betroffene Dateien …</div>';
+
+  // Bei schnellem Klicken darf eine ältere Antwort die neuere nicht überschreiben
+  const seq = ++langPreviewSeq;
+  const stale = () => seq !== langPreviewSeq || langModalId === null;
+
+  try {
+    const res = await api(`/anime/${langModalId}/languages`, {
+      method: 'PUT',
+      body: JSON.stringify({ languages: selected, dry_run: true }),
+    });
+    if (stale()) return;
+
+    if (res.status === 'error') {
+      preview.innerHTML = `<div class="lang-preview-error">⚠ ${esc(res.message || 'Vorschau fehlgeschlagen')}</div>`;
+      return;
+    }
+
+    const files = res.deleted_files || [];
+    const errors = res.errors || [];
+    const removedLabel = removed.join(', ');
+
+    if (!files.length) {
+      preview.innerHTML = `
+        <div class="lang-preview-head">🗑 ${esc(removedLabel)} entfernen</div>
+        <div class="lang-preview-empty">Keine passenden Dateien auf der Platte gefunden.</div>
+        ${errors.map(er => `<div class="lang-preview-error">⚠ ${esc(er)}</div>`).join('')}`;
+      return;
+    }
+
+    preview.innerHTML = `
+      <div class="lang-preview-head">
+        🗑 <strong>${files.length}</strong> Datei(en) werden gelöscht (${esc(removedLabel)})
+      </div>
+      <div class="lang-preview-list">
+        ${files.map(f => `<div class="lang-preview-file">${esc(f.split(/[\\/]/).pop())}</div>`).join('')}
+      </div>
+      <div class="lang-preview-note">Andere Sprachversionen und Serien bleiben unberührt.</div>
+      ${errors.map(er => `<div class="lang-preview-error">⚠ ${esc(er)}</div>`).join('')}`;
+  } catch (e) {
+    if (stale()) return;
+    preview.innerHTML = '<div class="lang-preview-error">⚠ Vorschau fehlgeschlagen</div>';
+  }
+}
+
+async function saveLanguages() {
+  if (langModalId === null) return;
+
+  const selected = selectedLanguages();
+  const removed = langModalInitial.filter(l => !selected.includes(l));
+  const added = selected.filter(l => !langModalInitial.includes(l));
+
+  if (!removed.length && !added.length) {
+    closeLanguagesModal();
+    return;
+  }
+
+  // Löschungen ausdrücklich bestätigen lassen
+  if (removed.length && selected.length) {
+    const fileCount = $$('#lang-preview .lang-preview-file').length;
+    const msg = fileCount
+      ? `${removed.join(', ')} entfernen?\n\n${fileCount} Datei(en) dieser Sprache(n) werden GELÖSCHT.\nAndere Sprachen und Serien bleiben unberührt.`
+      : `${removed.join(', ')} aus der Auswahl entfernen?`;
+    if (!confirm(msg)) return;
+  }
+
+  const btn = $('#lang-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Speichere …'; }
+
+  try {
+    const res = await api(`/anime/${langModalId}/languages`, {
+      method: 'PUT',
+      body: JSON.stringify({ languages: selected }),
+    });
+
+    if (res.status === 'error') {
+      showMsg('#lang-modal-msg', res.message || 'Fehler', 'danger');
+      return;
+    }
+
+    const parts = [];
+    if (res.deleted_files?.length) parts.push(`${res.deleted_files.length} Datei(en) gelöscht`);
+    if (added.length) parts.push(`${added.length} Sprache(n) ergänzt – wird beim nächsten Lauf nachgeladen`);
+    if (res.errors?.length) parts.push(`${res.errors.length} Fehler (siehe Logs)`);
+
+    closeLanguagesModal();
+    loadDatabase();
+    showMsg('#db-msg', parts.length ? parts.join(' · ') : 'Sprachen gespeichert', 'success');
+  } catch (e) {
+    showMsg('#lang-modal-msg', 'Speichern fehlgeschlagen', 'danger');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Speichern'; }
+  }
 }
 
 // ──────────────────────── Einstellungen Tab ────────────────────────
