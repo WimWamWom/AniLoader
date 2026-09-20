@@ -1117,8 +1117,12 @@ async function onLanguageToggle() {
   const preview = $('#lang-preview');
   if (!preview) return;
 
-  // Leere Auswahl = zurück zur Kaskade → es wird nichts gelöscht
-  if (!removed.length || !selected.length) {
+  // Leere Auswahl = zurück zur globalen Kaskade. Auch dann wird aufgeräumt:
+  // pro Folge bleibt die erste verfügbare Sprache der Kaskade, der Rest wird
+  // gelöscht. Die Vorschau muss deshalb auch in diesem Fall laufen.
+  const toCascade = !selected.length;
+
+  if (!removed.length) {
     preview.style.display = 'none';
     preview.innerHTML = '';
     return;

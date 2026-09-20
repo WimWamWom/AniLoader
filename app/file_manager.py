@@ -835,8 +835,9 @@ def delete_language_files(
                     continue
 
                 if dry_run:
+                    # Vorschau, kein Vorgang – sie laeuft bei jedem Klick in der
+                    # Sprachauswahl und hat frueher das Log geflutet.
                     result["deleted"].append(str(f))
-                    log(f"[LANG-DEL-DRY] Würde löschen [{language}]: {f}")
                     continue
 
                 try:
@@ -847,11 +848,11 @@ def delete_language_files(
                     result["errors"].append(f"{f}: {e}")
                     log(f"[LANG-DEL-ERROR] {f}: {e}")
 
-    verb = "würden gelöscht" if dry_run else "gelöscht"
-    log(
-        f"[LANG-DEL] {folder_name} – {len(result['deleted'])} Datei(en) [{language}] {verb}, "
-        f"{result['kept']} Datei(en) anderer Sprachen unberührt, {len(result['errors'])} Fehler"
-    )
+    if not dry_run:
+        log(
+            f"[LANG-DEL] {folder_name} – {len(result['deleted'])} Datei(en) [{language}] gelöscht, "
+            f"{result['kept']} Datei(en) anderer Sprachen unberührt, {len(result['errors'])} Fehler"
+        )
     return result
 
 
@@ -925,6 +926,11 @@ def reduce_to_cascade(
         )
         return result
 
+    # Nur fuer die Zusammenfassung – pro Datei zu loggen flutet das Log, und der
+    # Dry-Run laeuft bei jedem Klick in der Sprachauswahl erneut.
+    per_language: dict = {}
+    untouched = 0
+
     for series_dir in series_dirs:
         try:
             subdirs = [
@@ -962,10 +968,7 @@ def reduce_to_cascade(
                 if not present:
                     # Regel 6: keine Kaskaden-Sprache vorhanden → nichts anfassen
                     result["kept"] += len(files)
-                    log(
-                        f"[CASCADE] {subdir.name}/{key}: keine Sprache der Kaskade "
-                        f"vorhanden ({sorted(by_language)}) – bleibt unverändert"
-                    )
+                    untouched += 1
                     continue
 
                 keep = present[0]
@@ -977,23 +980,28 @@ def reduce_to_cascade(
 
                         if dry_run:
                             result["deleted"].append(str(f))
-                            log(f"[CASCADE-DRY] Würde löschen [{language}], behalte [{keep}]: {f}")
+                            per_language[language] = per_language.get(language, 0) + 1
                             continue
 
                         try:
                             f.unlink()
                             result["deleted"].append(str(f))
-                            log(f"[CASCADE-DEL] Gelöscht [{language}], behalte [{keep}]: {f}")
+                            per_language[language] = per_language.get(language, 0) + 1
                         except Exception as e:
                             result["errors"].append(f"{f}: {e}")
                             log(f"[CASCADE-ERROR] {f}: {e}")
 
-    verb = "würden gelöscht" if dry_run else "gelöscht"
-    log(
-        f"[CASCADE] {folder_name} – auf Kaskade {known} reduziert: "
-        f"{len(result['deleted'])} Datei(en) {verb}, {result['kept']} behalten, "
-        f"{len(result['errors'])} Fehler"
-    )
+    # Der Dry-Run ist reine UI-Vorschau und laeuft bei jedem Klick – er schweigt.
+    if not dry_run:
+        detail = ", ".join(f"{lang}: {n}" for lang, n in sorted(per_language.items()))
+        parts = [f"{len(result['deleted'])} Datei(en) gelöscht" + (f" ({detail})" if detail else "")]
+        parts.append(f"{result['kept']} behalten")
+        if untouched:
+            parts.append(f"{untouched} Folge(n) ohne Kaskaden-Sprache unverändert")
+        if result["errors"]:
+            parts.append(f"{len(result['errors'])} Fehler")
+        log(f"[CASCADE] {folder_name} – auf Kaskade reduziert: " + ", ".join(parts))
+
     return result
 
 

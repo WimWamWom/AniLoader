@@ -622,11 +622,9 @@ def apply_language_selection(
             ),
             cfg,
         )
-        log(
-            f"[DB] ID {anime_id}: Sprachauswahl geleert – reduziere vorhandene "
-            f"Dateien auf die globale Kaskade {cascade}"
-        )
-
+        # Kein eigener Log-Eintrag: set_anime_languages meldet bereits den
+        # Wechsel zur Kaskade, reduce_to_cascade fasst das Aufräumen zusammen.
+        # Beim Dry-Run (Vorschau) soll ohnehin nichts im Log landen.
         fm = _get_file_manager()
         cleanup = fm.reduce_to_cascade(
             cfg,
