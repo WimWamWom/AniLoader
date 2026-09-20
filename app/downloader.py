@@ -612,15 +612,20 @@ def _download_episode(
                 log(f"[SKIP] Bereits vorhanden: {ep_label}")
                 return _result("skipped")
 
-    # Sprachen IMMER von der Episoden-Seite holen (vor dem Download)
+    # Sprachen der Episode bestimmen.
+    #
+    # Von der Staffelseite kommen sie NICHT mehr: scraper.get_episodes_for_season
+    # enumeriert Episoden bewusst mit genau einem Fetch und laesst "languages" leer,
+    # weil die Sprachen pro Episode einen eigenen Fetch kosten. Das Feld bleibt
+    # trotzdem erhalten – Aufrufer, die die Sprachen ohnehin schon ermittelt haben
+    # (siehe German-Modus), reichen sie hier durch und sparen den zweiten Fetch.
     ep_langs = _normalize_language_list(episode_info.get("languages", []))
-    log(f"[LANG] {ep_label} – Sprachen aus Staffel-Seite: {ep_langs}")
 
-    if not ep_langs:
-        # Von Staffelseite nicht vorhanden → von Episoden-Seite scrapen
-        log(f"[LANG] Scrape Sprachen von Episode-Seite …")
+    if ep_langs:
+        log(f"[LANG] {ep_label} – Sprachen bereits bekannt: {ep_langs}")
+    else:
         ep_langs = _normalize_language_list(scraper.get_episode_languages(episode_url))
-        log(f"[LANG] Von Episode-Seite gescraped: {ep_langs}")
+        log(f"[LANG] {ep_label} – Sprachen von der Episoden-Seite: {ep_langs}")
 
     # AniWorld: Prüfe ob Episode überhaupt Streams hat (kein Ankündigungs-Placeholder)
     if scraper.is_aniworld(episode_url) and not ep_langs:
@@ -996,15 +1001,17 @@ def _run_german(cfg: dict, data_folder: str) -> Dict[str, List[Dict[str, Any]]]:
                 if detect_file_language(f) not in keep_languages
             ]
 
-            # Vollständiges episode_info aus dem Cache verwenden (wie in anderen Modi),
-            # damit Titel und Sprachen direkt von der Staffelseite stammen.
-            episode_info = cached_ep if cached_ep is not None else {
+            # Titel aus dem Staffel-Scan uebernehmen und die oben bereits
+            # ermittelten Sprachen durchreichen. Ohne das Durchreichen holt
+            # _download_episode dieselbe Episodenseite ein zweites Mal, denn der
+            # Staffel-Scan laesst "languages" grundsaetzlich leer.
+            episode_info = dict(cached_ep) if cached_ep is not None else {
                 "episode": episode_num,
                 "url": episode_url,
                 "title_de": "",
                 "title_en": "",
-                "languages": available_langs,
             }
+            episode_info["languages"] = available_langs
 
             # Download in TMP; erst nach Erfolg alte Datei ersetzen.
             detailed_result = _download_episode(
