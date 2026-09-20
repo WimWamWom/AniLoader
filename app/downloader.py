@@ -45,7 +45,7 @@ from .file_manager import (
     move_tmp_to_final,
 
 )
-from .logger import log, start_new_run
+from .logger import debug, log, start_new_run
 
 # ──────────────────────── Status-Tracking ────────────────────────
 
@@ -569,6 +569,10 @@ def _download_episode(
     min_free = cfg.get("download", {}).get("min_free_gb", 2.0)
     timeout = cfg.get("download", {}).get("timeout_seconds", 900)
     output_path = get_download_path(cfg, anime["url"], is_film)
+    debug(
+        f"[DL] {ep_label} – Ziel: {target_languages} | "
+        f"{'Mehrsprach-Modus' if multi_mode else 'Kaskade'} | Pfad: {output_path}"
+    )
 
     # Status aktualisieren
     status["current_season"] = season
@@ -653,6 +657,8 @@ def _download_episode(
         cascading_languages = [l for l in cascading_languages if l in _sto_supported]
         if _removed:
             log(f"[LANG] serienstream: Nicht unterstützte Sprachen entfernt: {_removed}")
+
+    debug(f"[LANG] {ep_label} – zu ladende Sprachen: {cascading_languages}")
 
     if not cascading_languages:
         log(f"[SKIP] {ep_label} – keine der gewünschten Sprachen verfügbar "
@@ -742,6 +748,10 @@ def _download_episode(
     if "German Dub" in target_languages and "German Dub" not in all_present:
         return _result("no_german", primary_language, downloaded_languages, missing_languages)
 
+    debug(
+        f"[DL] {ep_label} – fertig: geladen={downloaded_languages} "
+        f"vorhanden={present_languages} fehlt={missing_languages}"
+    )
     return _result("downloaded", primary_language, downloaded_languages, missing_languages)
 
 

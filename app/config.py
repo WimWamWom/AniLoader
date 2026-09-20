@@ -98,10 +98,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "logging": {
         "log_retention_days": 7,
+        # debug | info | warn – steuert, was ueberhaupt geschrieben wird.
+        # Details siehe app/logger.py.
+        "level": "info",
     },
 }
 
 VALID_LANGUAGES = ["German Dub", "German Sub", "English Dub", "English Sub"]
+VALID_LOG_LEVELS = ["debug", "info", "warn"]
 VALID_MODES = [None, "default", "german", "new", "check", "german_new"]
 VALID_STORAGE_MODES = ["standard", "separate"]
 VALID_FILM_NAMING_MODES = ["local", "jellyfin"]
@@ -397,6 +401,18 @@ def validate_config(cfg: dict) -> List[str]:
         blacklist = mode_cfg.get("blacklist", [])
         if not _validate_string_list(blacklist):
             errors.append(f"automation.{mode}.blacklist muss eine Liste von Strings sein")
+
+    # Logging
+    logging_cfg = cfg.get("logging", {}) or {}
+    # Fehlender Schluessel ist in Ordnung – _deep_merge setzt dann den Standard.
+    # Ein GESETZTER, aber unbekannter Wert ist ein Fehler (auch "").
+    level = logging_cfg.get("level", None)
+    if level is not None and str(level).strip().lower() not in VALID_LOG_LEVELS:
+        errors.append(f"logging.level muss einer von {VALID_LOG_LEVELS} sein")
+
+    retention = logging_cfg.get("log_retention_days", 7)
+    if not isinstance(retention, int) or not (1 <= retention <= 365):
+        errors.append("logging.log_retention_days muss zwischen 1 und 365 liegen")
 
     return errors
 

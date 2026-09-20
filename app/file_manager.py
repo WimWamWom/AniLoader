@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import get_download_path
-from .logger import log
+from .logger import debug, log
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -836,14 +836,14 @@ def delete_language_files(
 
                 if dry_run:
                     # Vorschau, kein Vorgang – sie laeuft bei jedem Klick in der
-                    # Sprachauswahl und hat frueher das Log geflutet.
+                    # Sprachauswahl und wuerde das Log sonst fluten.
                     result["deleted"].append(str(f))
                     continue
 
                 try:
                     f.unlink()
                     result["deleted"].append(str(f))
-                    log(f"[LANG-DEL] Gelöscht [{language}]: {f}")
+                    debug(f"[LANG-DEL] Gelöscht [{language}]: {f}")
                 except Exception as e:
                     result["errors"].append(f"{f}: {e}")
                     log(f"[LANG-DEL-ERROR] {f}: {e}")
@@ -969,6 +969,10 @@ def reduce_to_cascade(
                     # Regel 6: keine Kaskaden-Sprache vorhanden → nichts anfassen
                     result["kept"] += len(files)
                     untouched += 1
+                    debug(
+                        f"[CASCADE] {subdir.name}/{key}: keine Sprache der Kaskade "
+                        f"vorhanden ({sorted(by_language)}) – bleibt unverändert"
+                    )
                     continue
 
                 keep = present[0]
@@ -987,6 +991,7 @@ def reduce_to_cascade(
                             f.unlink()
                             result["deleted"].append(str(f))
                             per_language[language] = per_language.get(language, 0) + 1
+                            debug(f"[CASCADE] Gelöscht [{language}], behalte [{keep}]: {f}")
                         except Exception as e:
                             result["errors"].append(f"{f}: {e}")
                             log(f"[CASCADE-ERROR] {f}: {e}")

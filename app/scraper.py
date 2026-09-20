@@ -38,7 +38,7 @@ from aniworld import (
 )
 from aniworld import search as _aw_search
 
-from .logger import log
+from .logger import debug, log
 from .aniworld_session import (  # noqa: F401 – get_shared_session bewusst re-exportiert
     install_session,
     available_labels,
@@ -182,7 +182,9 @@ def get_series_title(url: str) -> Optional[str]:
         series = _series_obj(url)
         if series is None:
             return None
-        return _clean_text(series.title) or None
+        title = _clean_text(series.title) or None
+        debug(f"[SCRAPER] Titel für {url}: {title!r}")
+        return title
     except Exception as e:
         log(f"[SCRAPER] Titel-Fehler für {url}: {e}")
         return None
@@ -232,7 +234,9 @@ def get_season_numbers(url: str) -> List[int]:
                     numbers.add(0)
             except Exception:
                 pass
-        return sorted(numbers)
+        found = sorted(numbers)
+        debug(f"[SCRAPER] Staffeln für {url}: {found}")
+        return found
     except Exception as e:
         log(f"[SCRAPER] Staffeln-Fehler für {url}: {e}")
         return []
@@ -319,7 +323,9 @@ def get_episode_title(episode_url: str) -> Optional[str]:
         ep = _episode_obj(episode_url)
         if ep is None:
             return None
-        return _clean_text(ep.title_de) or None
+        title = _clean_text(ep.title_de) or None
+        debug(f"[SCRAPER] Episodentitel für {episode_url}: {title!r}")
+        return title
     except Exception as e:
         log(f"[SCRAPER] Episodentitel-Fehler für {episode_url}: {e}")
         return None
@@ -338,7 +344,9 @@ def get_episode_languages(episode_url: str) -> List[str]:
         ep = _episode_obj(episode_url)
         if ep is None:
             return []
-        return available_labels(ep.provider_data)
+        labels = available_labels(ep.provider_data)
+        debug(f"[SCRAPER] Sprachen für {episode_url}: {labels}")
+        return labels
     except Exception as e:
         log(f"[SCRAPER] Sprachen-Fehler für {episode_url}: {e}")
         return []

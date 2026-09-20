@@ -8,6 +8,7 @@ Schreibt Logs in:
 """
 
 import os
+import re
 import shutil
 import threading
 import time
@@ -17,6 +18,62 @@ from pathlib import Path
 _log_lock = threading.Lock()
 _data_folder: str = ""
 _run_log_lines: list = []
+
+# ──────────────────────── Log-Level ────────────────────────
+#
+# Drei Stufen, kleiner = gesprächiger. Gefiltert wird beim SCHREIBEN, nicht
+# beim Anzeigen – der Level-Filter im Log-Tab ist etwas anderes: der blendet
+# bereits geschriebene Zeilen nur aus.
+#
+#   debug  alles, inkl. Detailzeilen (welche Datei, welcher Fetch, welche
+#          Sprachentscheidung). Für Fehlersuche.
+#   info   der Normalbetrieb – genau das, was AniLoader bisher geschrieben hat.
+#   warn   nur noch Probleme: WARN/ERROR/FAIL/FATAL.
+
+LEVEL_DEBUG = 10
+LEVEL_INFO = 20
+LEVEL_WARN = 30
+
+LEVEL_BY_NAME = {"debug": LEVEL_DEBUG, "info": LEVEL_INFO, "warn": LEVEL_WARN}
+NAME_BY_LEVEL = {v: k for k, v in LEVEL_BY_NAME.items()}
+VALID_LOG_LEVELS = list(LEVEL_BY_NAME)
+
+DEFAULT_LOG_LEVEL = LEVEL_INFO
+_level = DEFAULT_LOG_LEVEL
+
+# Führendes [TAG] einer Meldung – daraus wird die Stufe abgeleitet, wenn der
+# Aufrufer keine angibt. So bleiben die bestehenden ~200 log()-Aufrufe
+# unverändert und verhalten sich trotzdem im warn-Modus richtig.
+_TAG_RE = re.compile(r"^\[([A-Za-z0-9_-]+)\]")
+_PROBLEM_TAG_RE = re.compile(r"ERROR|ERR$|FAIL|FATAL|WARN", re.IGNORECASE)
+
+
+def set_level(level) -> int:
+    """Setzt den Log-Level (Name oder Zahl). Gibt den gesetzten Level zurück."""
+    global _level
+    if isinstance(level, str):
+        _level = LEVEL_BY_NAME.get(level.strip().lower(), DEFAULT_LOG_LEVEL)
+    elif isinstance(level, int) and level in NAME_BY_LEVEL:
+        _level = level
+    else:
+        _level = DEFAULT_LOG_LEVEL
+    return _level
+
+
+def get_level() -> int:
+    return _level
+
+
+def get_level_name() -> str:
+    return NAME_BY_LEVEL.get(_level, "info")
+
+
+def _implicit_level(msg: str) -> int:
+    """Stufe aus dem [TAG] der Meldung ableiten."""
+    match = _TAG_RE.match(str(msg))
+    if match and _PROBLEM_TAG_RE.search(match.group(1)):
+        return LEVEL_WARN
+    return LEVEL_INFO
 
 
 def init_logger(data_folder: str) -> None:
@@ -59,8 +116,22 @@ def init_logger(data_folder: str) -> None:
         f.write(f"{ts} === Neuer Lauf gestartet ===\n")
 
 
-def log(msg: str) -> None:
-    """Thread-safe Log-Eintrag in alle Ziele."""
+def debug(msg: str) -> None:
+    """Detailzeile – erscheint nur im Level 'debug'."""
+    log(msg, level=LEVEL_DEBUG)
+
+
+def log(msg: str, level=None) -> None:
+    """Thread-safe Log-Eintrag in alle Ziele.
+
+    Args:
+        level: Stufe der Meldung. Ohne Angabe wird sie aus dem [TAG] abgeleitet
+               (WARN/ERROR/FAIL/FATAL → warn, alles andere → info).
+    """
+    msg_level = _implicit_level(msg) if level is None else level
+    if msg_level < _level:
+        return
+
     ts = time.strftime("[%Y-%m-%d %H:%M:%S]")
     line = f"{ts} {msg}"
 
@@ -235,6 +306,73 @@ def cleanup_old_logs(days: int = 7) -> int:
             print(f"[LOG-ERROR] cleanup logs folder: {e}")
     
     return removed_count
+
+
+# ──────────────────────── Periodische Bereinigung ────────────────────────
+#
+# Beim Serverstart wird einmal bereinigt. Ein durchlaufender Server (Docker,
+# Autostart) kam danach nie wieder dazu – bei wochenlanger Laufzeit wuchs
+# data/logs/ also ungebremst. Dieser Thread holt das im Betrieb nach.
+
+_CLEANUP_INTERVAL_SECONDS = 6 * 3600
+
+_cleanup_thread = None
+_cleanup_stop = threading.Event()
+
+
+def start_cleanup_scheduler(days_provider, interval_seconds: int = _CLEANUP_INTERVAL_SECONDS) -> None:
+    """Startet die periodische Log-Bereinigung im Hintergrund (idempotent).
+
+    Args:
+        days_provider: Callable, das die aktuelle Aufbewahrungsdauer liefert.
+                       Bewusst ein Callable und kein fester Wert: die Einstellung
+                       ist zur Laufzeit änderbar, und der Logger darf config
+                       nicht importieren (config → domains → logger wäre zirkulär).
+        interval_seconds: Abstand zwischen zwei Durchläufen.
+    """
+    global _cleanup_thread
+
+    if _cleanup_thread is not None and _cleanup_thread.is_alive():
+        return
+
+    _cleanup_stop.clear()
+
+    def _loop() -> None:
+        # wait() kehrt sofort zurück, sobald gestoppt wird – kein Nachhängen
+        # beim Herunterfahren, obwohl das Intervall Stunden betraegt.
+        while not _cleanup_stop.wait(interval_seconds):
+            try:
+                days = int(days_provider())
+            except Exception as exc:
+                log(f"[LOG-ERROR] Aufbewahrungsdauer nicht lesbar ({exc}) – nutze 7 Tage")
+                days = 7
+
+            try:
+                removed = cleanup_old_logs(days=days)
+            except Exception as exc:
+                log(f"[LOG-ERROR] Log-Bereinigung fehlgeschlagen: {exc}")
+                continue
+
+            # Nur melden, wenn wirklich etwas passiert ist – sonst stuendlich
+            # dieselbe Nichtmeldung im Log.
+            if removed:
+                log(f"[SERVER] Log-Bereinigung: {removed} Datei(en) älter als {days} Tage entfernt")
+            else:
+                debug(f"[SERVER] Log-Bereinigung: nichts älter als {days} Tage")
+
+    _cleanup_thread = threading.Thread(target=_loop, name="log-cleanup", daemon=True)
+    _cleanup_thread.start()
+    debug(f"[SERVER] Log-Bereinigung läuft alle {interval_seconds // 3600 or 1} h")
+
+
+def stop_cleanup_scheduler() -> None:
+    """Beendet den Bereinigungs-Thread."""
+    global _cleanup_thread
+    _cleanup_stop.set()
+    thread = _cleanup_thread
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=2)
+    _cleanup_thread = None
 
 
 def start_new_run() -> None:

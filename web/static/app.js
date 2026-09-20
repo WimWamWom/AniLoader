@@ -705,6 +705,8 @@ async function loadLogSettings() {
   try {
     const cfg = await api('/config');
     $('#cfg-log-retention-days').value = cfg.logging?.log_retention_days || 7;
+    const lvl = $('#cfg-log-level');
+    if (lvl) lvl.value = cfg.logging?.level || 'info';
   } catch (e) {
     console.error('Fehler beim Laden der Log-Einstellungen:', e);
   }
@@ -718,6 +720,7 @@ async function saveLogSettings() {
     // Nur den Logging-Teil aktualisieren
     cfg.logging = cfg.logging || {};
     cfg.logging.log_retention_days = parseInt($('#cfg-log-retention-days').value) || 7;
+    cfg.logging.level = $('#cfg-log-level')?.value || 'info';
     
     // Speichern
     const res = await api('/config', {
@@ -1480,7 +1483,7 @@ function buildConfigFromForm() {
       refresh_titles: $('#cfg-refresh-titles').checked,
     },
     data: currentConfig.data || {},
-    logging: currentConfig.logging || { log_retention_days: 7 },
+    logging: currentConfig.logging || { log_retention_days: 7, level: 'info' },
     automation: collectAutomationSettings(),
   };
 }

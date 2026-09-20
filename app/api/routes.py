@@ -23,7 +23,10 @@ from ..config import (
     validate_config,
 )
 from ..file_manager import count_episodes_on_disk, get_free_space_gb, migrate_film_naming
-from ..logger import get_all_logs, get_last_run_log, get_log_from_offset, log, read_log_slice
+from ..logger import (
+    get_all_logs, get_last_run_log, get_level_name, get_log_from_offset, log, read_log_slice,
+)
+from ..logger import set_level as set_log_level
 
 router = APIRouter()
 
@@ -477,7 +480,10 @@ async def update_config(request: Request):
         # Domain-Registry ist gecacht – nach einer Änderung neu einlesen,
         # damit eine ergänzte Mirror-Domain sofort greift.
         domains.reload_domains()
-        log("[CONFIG] Konfiguration aktualisiert")
+        # Log-Level sofort uebernehmen – sonst greift die Aenderung erst nach
+        # einem Neustart des Servers.
+        set_log_level(body.get("logging", {}).get("level", "info"))
+        log(f"[CONFIG] Konfiguration aktualisiert (Log-Level: {get_level_name()})")
         return {"status": "ok"}
     return JSONResponse(
         status_code=500,
