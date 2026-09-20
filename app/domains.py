@@ -24,10 +24,25 @@ Regeln:
     kanonische Domain normalisiert (alte Links, Mirrors, IP-Adressen).
   * Ein neuer Mirror wird einfach unter ``aliases`` ergänzt – kein Code-Eingriff.
 
-⚠ Die aniworld-Library bringt ihre eigene Domainliste mit (``aniworld/config.py``
-  → ``_STO_HOST`` und ``aniworld/cf_bypass.py`` → ``_CF_BYPASS_DOMAINS``). Ein hier
-  ergänzter Mirror wird von AniLoader akzeptiert und normalisiert, aber erst dann
-  auch von der Library geladen, wenn sie ihn ebenfalls kennt.
+⚠ ``canonical`` kann NICHT frei gewählt werden – die aniworld-Library kennt ihre
+  Hosts hartkodiert, und zwar an drei Stellen mit unterschiedlicher Wirkung:
+
+  * ``aniworld/config.py`` → ``_STO_HOST`` / ``ANIWORLD_*_PATTERN``: die Modelle
+    VALIDIEREN jede URL im Konstruktor. Ein hier eingetragener Host, den die
+    Library nicht kennt, führt zu ``ValueError: Invalid ... URL`` – die Serie
+    lässt sich dann gar nicht mehr laden.
+  * ``aniworld/models/s_to/http.py`` → ``STO_DOMAINS``/``STO_IP``: serienstream-
+    Requests laufen über ``sto_get()``, das JEDE serienstream-URL auf den
+    aktiven Host umschreibt. Die hier konfigurierte Domain bestimmt also NICHT,
+    welcher Host tatsächlich abgefragt wird – die Library probiert immer erst
+    serienstream.to, dann serienstream.cx, und die IP nur als letzten Ausweg.
+    (AniWorld verhält sich anders: dort geht der Request an die URL, die wir
+    übergeben.)
+  * ``aniworld/cf_bypass.py`` → ``_CF_BYPASS_DOMAINS``: nur ``s.to`` und
+    ``serienstream.to`` bekommen den Cloudflare-Bypass.
+
+  Kurz: ``aliases`` erfüllen ihren Zweck (Eingabe-Normalisierung alter Links),
+  ``canonical`` muss aber ein Host bleiben, den die Library bereits kennt.
 """
 
 import re

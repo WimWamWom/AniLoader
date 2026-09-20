@@ -147,9 +147,43 @@ def get_shared_session() -> Session:
 # und liefert verfügbare Sprachen als Keys von ProviderData._data.
 
 
+# ⚠ Das Modul hat ZWEI unterschiedliche Enum-Paare für denselben Zweck:
+#   * ``aniworld.config.Audio/Subtitles``            – Basis von LANG_KEY_MAP und
+#                                                      von AniWorlds ProviderData
+#   * ``aniworld.models.s_to.episode.Audio/Subtitles`` – lokal definierte Enums,
+#                                                      die serienstream in seine
+#                                                      provider_data-Keys legt
+# Enum-Member verschiedener Klassen sind NIE gleich (Enum.__eq__ vergleicht die
+# Identität, nicht den Wert). Ein Lookup eines serienstream-Tupels in
+# INVERSE_LANG_KEY_MAP liefert deshalb immer None – für serienstream käme sonst
+# eine leere Sprachliste zurück und jede Episode gälte als "nicht verfügbar".
+# Darum wird zusätzlich über die Enum-WERTE ("German"/"None") aufgelöst; das ist
+# klassenunabhängig und deckt beide Varianten ab.
+
+
+def _lang_values(lang_tuple) -> Optional[tuple]:
+    """(Audio, Subtitles)-Tupel → reines Wertepaar, z.B. ``("German", "None")``."""
+    if not isinstance(lang_tuple, (tuple, list)) or len(lang_tuple) != 2:
+        return None
+    return tuple(getattr(part, "value", part) for part in lang_tuple)
+
+
+# Wertebasierte Umkehrung von LANG_KEY_MAP – die vier Wertepaare sind eindeutig.
+_VALUES_TO_KEY = {_lang_values(tpl): key for key, tpl in LANG_KEY_MAP.items()}
+
+
 def tuple_to_label(lang_tuple) -> Optional[str]:
-    """(Audio, Subtitles)-Tupel → AniLoader-Label, oder None."""
-    key = INVERSE_LANG_KEY_MAP.get(lang_tuple)
+    """(Audio, Subtitles)-Tupel → AniLoader-Label, oder None.
+
+    Akzeptiert sowohl die config-Enums (AniWorld) als auch die lokalen
+    s_to-Enums (serienstream) – siehe Erklärung oben.
+    """
+    try:
+        key = INVERSE_LANG_KEY_MAP.get(lang_tuple)
+    except TypeError:  # nicht hashbar (z.B. Liste statt Tupel)
+        key = None
+    if key is None:
+        key = _VALUES_TO_KEY.get(_lang_values(lang_tuple))
     return LANG_LABELS.get(key) if key else None
 
 

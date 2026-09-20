@@ -23,6 +23,7 @@ Download-Entscheidung sie tatsächlich braucht (get_episode_languages /
 is_episode_available). Das minimiert Requests im Sinne des Projektziels.
 """
 
+import html as _html
 import re
 from typing import Dict, List, Optional
 from urllib.parse import urljoin
@@ -134,6 +135,30 @@ def _episode_obj(episode_url: str):
     return None
 
 
+def _clean_text(text: Optional[str]) -> str:
+    r"""Normalisiert jeden Titel-/Beschreibungstext aus dem `aniworld`-Modul.
+
+    Das Modul entschärft HTML-Entities nur an EINIGEN Stellen: AniWorlds
+    Serientitel laufen durch ``html.unescape`` (models/aniworld_to/series.py:233),
+    serienstreams Serientitel (models/s_to/series.py:188), AniWorlds
+    Episodentitel (models/aniworld_to/season.py:272/281/287) und die Suchtreffer
+    (search.py:349) dagegen NICHT. Dadurch kam z.B. "Widow&#039;s Bay" statt
+    "Widow's Bay" in der Datenbank und im Ordnernamen an.
+
+    Deshalb wird hier – an der einzigen Stelle, an der Modultexte in AniLoader
+    eintreten – einheitlich aufgeräumt:
+      1. ``<em>``-Markup der Suchtreffer entfernen (vor dem Entschärfen, damit
+         echte ``&lt;em&gt;``-Texte nicht nachträglich zu Markup werden),
+      2. HTML-Entities auflösen ("&#039;" → "'", "&amp;" → "&"),
+      3. Whitespace normalisieren – ``&nbsp;`` wird beim Entschärfen zu U+00A0
+         und landet sonst unsichtbar in Ordner- und Dateinamen (``\s`` deckt
+         das mit ab), ebenso Tabs/Zeilenumbrüche aus dem HTML.
+    """
+    value = str(text or "").replace("<em>", "").replace("</em>", "")
+    value = _html.unescape(value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
 def _num_from_url(url: str) -> Optional[int]:
     """Extrahiert die Episoden-/Filmnummer aus einer URL (rein, kein HTTP)."""
     m = re.search(r"/staffel-\d+/episode-(\d+)", url)
@@ -157,8 +182,7 @@ def get_series_title(url: str) -> Optional[str]:
         series = _series_obj(url)
         if series is None:
             return None
-        title = series.title
-        return str(title).strip() if title else None
+        return _clean_text(series.title) or None
     except Exception as e:
         log(f"[SCRAPER] Titel-Fehler für {url}: {e}")
         return None
@@ -251,8 +275,8 @@ def get_episodes_for_season(base_url: str, season: int) -> List[Dict]:
                     num = _num_from_url(ep.url)
                 result.append({
                     "episode": int(num) if num is not None else 0,
-                    "title_de": (ep.title_de or "").strip(),
-                    "title_en": (ep.title_en or "").strip(),
+                    "title_de": _clean_text(ep.title_de),
+                    "title_en": _clean_text(ep.title_en),
                     "url": ep.url,
                     "languages": [],
                 })
@@ -295,8 +319,7 @@ def get_episode_title(episode_url: str) -> Optional[str]:
         ep = _episode_obj(episode_url)
         if ep is None:
             return None
-        title = ep.title_de
-        return str(title).strip() if title else None
+        return _clean_text(ep.title_de) or None
     except Exception as e:
         log(f"[SCRAPER] Episodentitel-Fehler für {episode_url}: {e}")
         return None
@@ -340,10 +363,6 @@ def is_episode_available(episode_url: str) -> bool:
 # ──────────────────────── Suche ────────────────────────
 
 
-def _strip_em(text: str) -> str:
-    return str(text or "").replace("<em>", "").replace("</em>", "")
-
-
 def search_anime(query: str, platform: str = "both", log_search: bool = False) -> List[Dict]:
     """
     Sucht nach Serien/Animes über die Modul-Suchfunktionen (aniworld.search).
@@ -367,9 +386,9 @@ def search_anime(query: str, platform: str = "both", log_search: bool = False) -
                 if "/anime/stream/" in link:
                     full_url = link if link.startswith("http") else f"{canonical_origin(ANIWORLD)}{link}"
                     aniworld_results.append({
-                        "title": _strip_em(item.get("title", "")),
+                        "title": _clean_text(item.get("title")),
                         "url": full_url,
-                        "description": item.get("description", "") or "",
+                        "description": _clean_text(item.get("description")),
                         "platform": "AniWorld",
                     })
         except Exception as e:
@@ -384,7 +403,7 @@ def search_anime(query: str, platform: str = "both", log_search: bool = False) -
                     continue
                 full_url = f"{canonical_origin(SERIENSTREAM)}{link}" if link.startswith("/") else link
                 sto_results.append({
-                    "title": _strip_em(show.get("title", "")),
+                    "title": _clean_text(show.get("title")),
                     "url": full_url,
                     "description": "",
                     "platform": canonical_host(SERIENSTREAM),
