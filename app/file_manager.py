@@ -48,6 +48,27 @@ VIDEO_EXTENSIONS = (".mkv", ".mp4")
 # Dient als Sicherheitsnetz beim Löschen: Dateien ohne Episodencode werden nie angefasst.
 _RE_ANY_EPISODE_CODE = re.compile(r"(?:^|[^A-Za-z0-9])(?:S\d{2,3}E\d{2,3}|Film\d{2,3})(?![0-9])")
 
+# Wie oben, aber mit benannten Gruppen: erlaubt das Zusammenfassen aller
+# Sprachversionen DERSELBEN Episode, unabhaengig von Zero-Padding und
+# Benennungsmodus (Film01 und S00E01 meinen denselben Film).
+_RE_EPISODE_CODE_PARTS = re.compile(
+    r"(?:^|[^A-Za-z0-9])(?:S(?P<season>\d{2,3})E(?P<episode>\d{2,3})|Film(?P<film>\d{2,3}))(?![0-9])"
+)
+
+
+def _episode_group_key(stem: str):
+    """Normalisierter Schluessel einer Episode, oder None ohne Episodencode."""
+    match = _RE_EPISODE_CODE_PARTS.search(str(stem))
+    if not match:
+        return None
+    if match.group("film") is not None:
+        return ("film", int(match.group("film")))
+    season = int(match.group("season"))
+    episode = int(match.group("episode"))
+    # Staffel 0 sind Filme – im Jellyfin-Modus heissen sie S00Exx statt Filmxx
+    return ("film", episode) if season == 0 else ("episode", season, episode)
+
+
 
 def get_language_suffix(language: str) -> str:
     """Gibt das Dateinamen-Suffix einer Sprache zurück ('' für German Dub)."""
@@ -830,6 +851,148 @@ def delete_language_files(
     log(
         f"[LANG-DEL] {folder_name} – {len(result['deleted'])} Datei(en) [{language}] {verb}, "
         f"{result['kept']} Datei(en) anderer Sprachen unberührt, {len(result['errors'])} Fehler"
+    )
+    return result
+
+
+def reduce_to_cascade(
+    cfg: dict,
+    url: str,
+    folder_name: Optional[str],
+    cascade: list[str],
+    dry_run: bool = False,
+) -> dict:
+    """
+    Reduziert jede Episode auf die Sprachversion, die der Kaskade entspricht.
+
+    Wird beim Wechsel von einer eigenen Sprachauswahl zurück zur globalen
+    Kaskade aufgerufen. Pro Episode wird die ERSTE in der Kaskade vorhandene
+    Sprache behalten, alle anderen Sprachversionen derselben Episode werden
+    gelöscht. Die Entscheidung fällt einzeln pro Episode: liegt Folge 1 als
+    German Dub + English Dub vor, bleibt German Dub; hat Folge 2 nur
+    German Sub + English Dub, bleibt German Sub.
+
+    Sicherheitsregeln (alle müssen erfüllt sein, sonst wird nichts gelöscht):
+        1. Die Kaskade muss mindestens eine bekannte Sprache enthalten.
+        2. Der Serien-Ordnername muss in der DB stehen – es wird nie geraten.
+        3. Es werden nur Ordner der Serie selbst durchsucht: exakter
+           Ordnername oder identische imdbid.
+        4. Nur Video-Dateien in 'Season xx'-/'Filme'-Ordnern.
+        5. Der Dateiname muss einen Episoden-/Filmcode enthalten.
+        6. Enthält eine Episode KEINE der Kaskaden-Sprachen, bleibt sie
+           komplett unangetastet. Die letzte Datei einer Episode wird nie
+           gelöscht, nur weil die Kaskade ihre Sprache nicht kennt.
+
+    Args:
+        cascade: Sprachen in Prioritätsreihenfolge (erste = höchste Priorität)
+        dry_run: True → es wird nur ermittelt, was gelöscht würde.
+
+    Returns:
+        {"cascade": [str], "deleted": [str], "kept": int, "errors": [str]}
+    """
+    known = [lang for lang in cascade if lang in LANGUAGE_FILE_SUFFIX]
+    result: dict = {"cascade": known, "deleted": [], "kept": 0, "errors": []}
+
+    if not known:
+        result["errors"].append(
+            "Kaskade enthält keine bekannte Sprache – es wird nichts gelöscht"
+        )
+        return result
+
+    if not folder_name:
+        result["errors"].append(
+            "Ordnername der Serie ist nicht bekannt – Dateien können nicht "
+            "eindeutig zugeordnet werden, es wird nichts gelöscht"
+        )
+        return result
+
+    # Serien- und Film-Basispfad können bei separate-Storage unterschiedlich sein
+    base_paths: list[Path] = []
+    for is_film in (False, True):
+        candidate = Path(get_download_path(cfg, url, is_film))
+        if candidate not in base_paths:
+            base_paths.append(candidate)
+
+    series_dirs: list[Path] = []
+    for base in base_paths:
+        for d in _resolve_series_dirs_strict(base, folder_name):
+            if d not in series_dirs:
+                series_dirs.append(d)
+
+    if not series_dirs:
+        result["errors"].append(
+            f"Kein Serien-Ordner '{folder_name}' gefunden – nichts zu löschen"
+        )
+        return result
+
+    for series_dir in series_dirs:
+        try:
+            subdirs = [
+                d for d in series_dir.iterdir()
+                if d.is_dir() and (d.name.lower().startswith("season ") or d.name.lower() == "filme")
+            ]
+        except OSError as e:
+            result["errors"].append(f"Ordner nicht lesbar ({series_dir}): {e}")
+            continue
+
+        for subdir in sorted(subdirs, key=lambda p: p.name.lower()):
+            try:
+                entries = sorted(subdir.iterdir(), key=lambda p: p.name.lower())
+            except OSError as e:
+                result["errors"].append(f"Ordner nicht lesbar ({subdir}): {e}")
+                continue
+
+            # Alle Sprachversionen einer Episode zusammenfassen
+            groups: dict = {}
+            for f in entries:
+                if not f.is_file() or f.suffix.lower() not in VIDEO_EXTENSIONS:
+                    continue
+                key = _episode_group_key(f.stem)
+                if key is None:
+                    continue
+                groups.setdefault(key, []).append(f)
+
+            for key in sorted(groups):
+                files = groups[key]
+                by_language: dict = {}
+                for f in files:
+                    by_language.setdefault(detect_file_language(f), []).append(f)
+
+                present = [lang for lang in known if lang in by_language]
+                if not present:
+                    # Regel 6: keine Kaskaden-Sprache vorhanden → nichts anfassen
+                    result["kept"] += len(files)
+                    log(
+                        f"[CASCADE] {subdir.name}/{key}: keine Sprache der Kaskade "
+                        f"vorhanden ({sorted(by_language)}) – bleibt unverändert"
+                    )
+                    continue
+
+                keep = present[0]
+                for language, lang_files in by_language.items():
+                    for f in lang_files:
+                        if language == keep:
+                            result["kept"] += 1
+                            continue
+
+                        if dry_run:
+                            result["deleted"].append(str(f))
+                            log(f"[CASCADE-DRY] Würde löschen [{language}], behalte [{keep}]: {f}")
+                            continue
+
+                        try:
+                            f.unlink()
+                            result["deleted"].append(str(f))
+                            log(f"[CASCADE-DEL] Gelöscht [{language}], behalte [{keep}]: {f}")
+                        except Exception as e:
+                            result["errors"].append(f"{f}: {e}")
+                            log(f"[CASCADE-ERROR] {f}: {e}")
+
+    verb = "würden gelöscht" if dry_run else "gelöscht"
+    log(
+        f"[CASCADE] {folder_name} – auf Kaskade {known} reduziert: "
+        f"{len(result['deleted'])} Datei(en) {verb}, {result['kept']} behalten, "
+        f"{len(result['errors'])} Fehler"
     )
     return result
 

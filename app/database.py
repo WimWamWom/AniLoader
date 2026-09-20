@@ -8,11 +8,12 @@ AniLoader.txt Import- und Backup-Funktionalität.
 
 import json
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .config import normalize_language_list, sort_languages_by_priority
+from .config import DEFAULT_CONFIG, normalize_language_list, sort_languages_by_priority
 from .logger import log
 
 # Verzögerter Import um zirkuläre Abhängigkeiten zu vermeiden
@@ -231,6 +232,47 @@ def get_anime_by_id(data_folder: str, anime_id: int) -> Optional[Dict[str, Any]]
         conn.close()
 
 
+# Stufen der Trefferqualitaet fuer die Suche – kleiner ist besser.
+_RANK_EXACT, _RANK_PREFIX, _RANK_WORD, _RANK_INFIX, _RANK_URL_ONLY = 0, 1, 2, 3, 4
+
+
+def _search_rank(title: Any, needle: str) -> int:
+    """Bewertet, wie gut ``title`` zum Suchbegriff passt (0 = beste Übereinstimmung).
+
+    ``LIKE '%x%'`` findet jeden Teilstring – auch mitten im Wort ("Ted" steckt
+    in "Wanted", "Limited", "United"). Ohne Bewertung entscheidet allein die
+    Spaltensortierung, und ein kurzer, exakt passender Titel verschwindet
+    zwischen den Zufallstreffern. Bei langen Suchbegriffen fällt das nicht auf,
+    weil es dort kaum Teilwort-Treffer gibt.
+
+    Stufen:
+      0  exakter Titel          "Ted"
+      1  beginnt mit dem Begriff "Ted Lasso", "Ted 2"
+      2  Begriff als ganzes Wort "Der Fall Ted Bundy"
+      3  nur Wortbestandteil     "Wanted", "Limited"
+      4  Titel passt gar nicht – der Treffer kam über die URL
+    """
+    text = str(title or "").casefold().strip()
+    if not text or not needle:
+        return _RANK_URL_ONLY
+    if text == needle:
+        return _RANK_EXACT
+
+    escaped = re.escape(needle)
+    # Wortgrenzen nur dort setzen, wo der Begriff selbst mit einem Wortzeichen
+    # anfaengt/endet – sonst greift \b bei Eingaben wie "re:" oder "(2020)" nie.
+    left = r"\b" if needle[:1].isalnum() else ""
+    right = r"\b" if needle[-1:].isalnum() else ""
+
+    if re.match(escaped + right, text):
+        return _RANK_PREFIX
+    if re.search(left + escaped + right, text):
+        return _RANK_WORD
+    if needle in text:
+        return _RANK_INFIX
+    return _RANK_URL_ONLY
+
+
 def get_all_anime(
     data_folder: str,
     include_deleted: bool = False,
@@ -280,7 +322,16 @@ def get_all_anime(
 
         c = conn.cursor()
         c.execute(query, params)
-        return [dict(row) for row in c.fetchall()]
+        rows = [dict(row) for row in c.fetchall()]
+
+        if search:
+            # Nach Trefferqualitaet vorsortieren. Pythons sort ist stabil, die
+            # oben per ORDER BY gewaehlte Spaltensortierung bleibt innerhalb
+            # einer Stufe also vollstaendig erhalten.
+            needle = search.casefold().strip()
+            rows.sort(key=lambda row: _search_rank(row.get("title"), needle))
+
+        return rows
     finally:
         conn.close()
 
@@ -557,11 +608,35 @@ def apply_language_selection(
 
     if delete_files and result["removed"] and not result["languages"]:
         # Leere Auswahl bedeutet "zurück zur globalen Kaskade", NICHT "alles weg".
-        # Ohne diese Bremse würde das Leeren der Liste die komplette Serie löschen.
-        log(
-            f"[DB] ID {anime_id}: Sprachauswahl geleert (globale Kaskade) – "
-            f"es werden keine Dateien gelöscht"
+        # Statt gar nichts zu tun, werden die vorhandenen Dateien auf die Kaskade
+        # reduziert: pro Episode bleibt die höchstpriorisierte vorhandene Sprache,
+        # die übrigen Sprachversionen werden entfernt. Eine Episode, von der keine
+        # Kaskaden-Sprache vorliegt, bleibt vollständig erhalten.
+        if cfg is None:
+            from .config import load_config
+            cfg = load_config()
+
+        cascade = sort_languages_by_priority(
+            normalize_language_list(
+                cfg.get("languages") or DEFAULT_CONFIG["languages"], strict=True
+            ),
+            cfg,
         )
+        log(
+            f"[DB] ID {anime_id}: Sprachauswahl geleert – reduziere vorhandene "
+            f"Dateien auf die globale Kaskade {cascade}"
+        )
+
+        fm = _get_file_manager()
+        cleanup = fm.reduce_to_cascade(
+            cfg,
+            anime["url"],
+            anime.get("folder_name"),
+            cascade,
+            dry_run=dry_run,
+        )
+        deleted_files.extend(cleanup["deleted"])
+        errors.extend(cleanup["errors"])
     elif delete_files and result["removed"]:
         if cfg is None:
             from .config import load_config

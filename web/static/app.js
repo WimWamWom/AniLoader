@@ -1146,10 +1146,16 @@ async function onLanguageToggle() {
     const files = res.deleted_files || [];
     const errors = res.errors || [];
     const removedLabel = removed.join(', ');
+    const head = toCascade
+      ? 'Auf globale Kaskade reduzieren'
+      : `${removedLabel} entfernen`;
+    const note = toCascade
+      ? 'Pro Folge bleibt die erste verfügbare Sprache der Kaskade. Folgen ohne Kaskaden-Sprache bleiben unverändert.'
+      : 'Andere Sprachversionen und Serien bleiben unberührt.';
 
     if (!files.length) {
       preview.innerHTML = `
-        <div class="lang-preview-head">🗑 ${esc(removedLabel)} entfernen</div>
+        <div class="lang-preview-head">🗑 ${esc(head)}</div>
         <div class="lang-preview-empty">Keine passenden Dateien auf der Platte gefunden.</div>
         ${errors.map(er => `<div class="lang-preview-error">⚠ ${esc(er)}</div>`).join('')}`;
       return;
@@ -1157,12 +1163,12 @@ async function onLanguageToggle() {
 
     preview.innerHTML = `
       <div class="lang-preview-head">
-        🗑 <strong>${files.length}</strong> Datei(en) werden gelöscht (${esc(removedLabel)})
+        🗑 <strong>${files.length}</strong> Datei(en) werden gelöscht (${esc(head)})
       </div>
       <div class="lang-preview-list">
         ${files.map(f => `<div class="lang-preview-file">${esc(f.split(/[\\/]/).pop())}</div>`).join('')}
       </div>
-      <div class="lang-preview-note">Andere Sprachversionen und Serien bleiben unberührt.</div>
+      <div class="lang-preview-note">${esc(note)}</div>
       ${errors.map(er => `<div class="lang-preview-error">⚠ ${esc(er)}</div>`).join('')}`;
   } catch (e) {
     if (stale()) return;
@@ -1183,11 +1189,19 @@ async function saveLanguages() {
   }
 
   // Löschungen ausdrücklich bestätigen lassen
-  if (removed.length && selected.length) {
+  if (removed.length) {
     const fileCount = $$('#lang-preview .lang-preview-file').length;
-    const msg = fileCount
-      ? `${removed.join(', ')} entfernen?\n\n${fileCount} Datei(en) dieser Sprache(n) werden GELÖSCHT.\nAndere Sprachen und Serien bleiben unberührt.`
-      : `${removed.join(', ')} aus der Auswahl entfernen?`;
+    let msg;
+    if (!selected.length) {
+      // Wechsel zur Kaskade raeumt jetzt auf – das muss bestaetigt werden.
+      msg = fileCount
+        ? `Auf globale Kaskade umstellen?\n\n${fileCount} Datei(en) werden GELÖSCHT.\nPro Folge bleibt nur die erste verfügbare Sprache der Kaskade.`
+        : 'Auf globale Kaskade umstellen?';
+    } else {
+      msg = fileCount
+        ? `${removed.join(', ')} entfernen?\n\n${fileCount} Datei(en) dieser Sprache(n) werden GELÖSCHT.\nAndere Sprachen und Serien bleiben unberührt.`
+        : `${removed.join(', ')} aus der Auswahl entfernen?`;
+    }
     if (!confirm(msg)) return;
   }
 
